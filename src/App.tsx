@@ -3,8 +3,17 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ChildProvider } from "@/contexts/ChildContext";
+import RequireAuth from "@/components/RequireAuth";
+import AppShell from "@/components/AppShell";
+import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import NewChild from "./pages/NewChild";
+import History from "./pages/History";
+import Analytics from "./pages/Analytics";
+import Settings from "./pages/Settings";
+import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
@@ -14,11 +23,19 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <ChildProvider>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/child/new" element={<RequireAuth><NewChild /></RequireAuth>} />
+              <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+              <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
+              <Route path="/history" element={<RequireAuth><AppShell><History /></AppShell></RequireAuth>} />
+              <Route path="/analytics" element={<RequireAuth><AppShell><Analytics /></AppShell></RequireAuth>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ChildProvider>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
