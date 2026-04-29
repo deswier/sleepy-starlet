@@ -14,16 +14,323 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      child_settings: {
+        Row: {
+          child_id: string
+          max_wake_window_minutes: number
+          min_wake_window_minutes: number
+          night_end_time: string
+          night_start_time: string
+          show_falling_asleep_method: boolean
+          show_interruptions: boolean
+          show_sleep_place: boolean
+          split_night_sleep_by_date: boolean
+          updated_at: string
+        }
+        Insert: {
+          child_id: string
+          max_wake_window_minutes?: number
+          min_wake_window_minutes?: number
+          night_end_time?: string
+          night_start_time?: string
+          show_falling_asleep_method?: boolean
+          show_interruptions?: boolean
+          show_sleep_place?: boolean
+          split_night_sleep_by_date?: boolean
+          updated_at?: string
+        }
+        Update: {
+          child_id?: string
+          max_wake_window_minutes?: number
+          min_wake_window_minutes?: number
+          night_end_time?: string
+          night_start_time?: string
+          show_falling_asleep_method?: boolean
+          show_interruptions?: boolean
+          show_sleep_place?: boolean
+          split_night_sleep_by_date?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "child_settings_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: true
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      child_users: {
+        Row: {
+          child_id: string
+          created_at: string
+          custom_relation_name: string | null
+          id: string
+          relation_type: Database["public"]["Enums"]["relation_type"]
+          user_id: string
+        }
+        Insert: {
+          child_id: string
+          created_at?: string
+          custom_relation_name?: string | null
+          id?: string
+          relation_type?: Database["public"]["Enums"]["relation_type"]
+          user_id: string
+        }
+        Update: {
+          child_id?: string
+          created_at?: string
+          custom_relation_name?: string | null
+          id?: string
+          relation_type?: Database["public"]["Enums"]["relation_type"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "child_users_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      children: {
+        Row: {
+          birth_date: string | null
+          created_at: string
+          gender: Database["public"]["Enums"]["gender_type"] | null
+          id: string
+          name: string
+          photo_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          birth_date?: string | null
+          created_at?: string
+          gender?: Database["public"]["Enums"]["gender_type"] | null
+          id?: string
+          name: string
+          photo_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          birth_date?: string | null
+          created_at?: string
+          gender?: Database["public"]["Enums"]["gender_type"] | null
+          id?: string
+          name?: string
+          photo_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      settling_methods: {
+        Row: {
+          child_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          child_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          child_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settling_methods_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sleep_interruptions: {
+        Row: {
+          comment: string | null
+          created_at: string
+          created_by_user_id: string | null
+          end_time: string | null
+          id: string
+          sleep_session_id: string
+          start_time: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          end_time?: string | null
+          id?: string
+          sleep_session_id: string
+          start_time: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          end_time?: string | null
+          id?: string
+          sleep_session_id?: string
+          start_time?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sleep_interruptions_sleep_session_id_fkey"
+            columns: ["sleep_session_id"]
+            isOneToOne: false
+            referencedRelation: "sleep_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sleep_places: {
+        Row: {
+          child_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          child_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          child_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sleep_places_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sleep_sessions: {
+        Row: {
+          child_id: string
+          comment: string | null
+          created_at: string
+          created_by_user_id: string | null
+          end_time: string | null
+          id: string
+          settling_method_id: string | null
+          sleep_place_id: string | null
+          sleep_type: Database["public"]["Enums"]["sleep_type"]
+          start_time: string
+          updated_at: string
+          updated_by_user_id: string | null
+        }
+        Insert: {
+          child_id: string
+          comment?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          end_time?: string | null
+          id?: string
+          settling_method_id?: string | null
+          sleep_place_id?: string | null
+          sleep_type?: Database["public"]["Enums"]["sleep_type"]
+          start_time: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Update: {
+          child_id?: string
+          comment?: string | null
+          created_at?: string
+          created_by_user_id?: string | null
+          end_time?: string | null
+          id?: string
+          settling_method_id?: string | null
+          sleep_place_id?: string | null
+          sleep_type?: Database["public"]["Enums"]["sleep_type"]
+          start_time?: string
+          updated_at?: string
+          updated_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sleep_sessions_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sleep_sessions_settling_method_id_fkey"
+            columns: ["settling_method_id"]
+            isOneToOne: false
+            referencedRelation: "settling_methods"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sleep_sessions_sleep_place_id_fkey"
+            columns: ["sleep_place_id"]
+            isOneToOne: false
+            referencedRelation: "sleep_places"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      user_has_child_access: {
+        Args: { _child_id: string; _user_id: string }
+        Returns: boolean
+      }
+      user_has_session_access: {
+        Args: { _session_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      gender_type: "male" | "female" | "other"
+      relation_type: "mother" | "father" | "other"
+      sleep_type: "day" | "night"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +457,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      gender_type: ["male", "female", "other"],
+      relation_type: ["mother", "father", "other"],
+      sleep_type: ["day", "night"],
+    },
   },
 } as const
