@@ -25,19 +25,16 @@ export default function NewChild() {
     e.preventDefault();
     if (!user) return;
     setBusy(true);
-    const { data: child, error } = await supabase
-      .from("children")
-      .insert({ name, birth_date: birthDate || null, gender: gender || null })
-      .select()
-      .single();
-    if (error || !child) { toast.error(error?.message ?? "Failed"); setBusy(false); return; }
-    const { error: linkErr } = await supabase.from("child_users").insert({
-      child_id: child.id, user_id: user.id, relation_type: relation,
+    const { data: childId, error } = await supabase.rpc("create_child_with_link", {
+      _name: name,
+      _birth_date: birthDate || null,
+      _gender: (gender || null) as any,
+      _relation: relation,
     });
-    if (linkErr) { toast.error(linkErr.message); setBusy(false); return; }
+    if (error || !childId) { toast.error(error?.message ?? "Failed"); setBusy(false); return; }
     await refresh();
-    setActiveChildId(child.id);
-    toast.success(`Welcome, ${child.name}!`);
+    setActiveChildId(childId as string);
+    toast.success(`Welcome, ${name}!`);
     navigate("/");
   };
 
