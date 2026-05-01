@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import ImageCropDialog from "@/components/ImageCropDialog";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -46,14 +48,18 @@ export default function Profile() {
     if (error) toast.error(error.message); else { toast.success(t("common.saved")); i18n.changeLanguage(language); }
   };
 
-  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) setPendingFile(f);
+    e.target.value = "";
+  };
+
+  const uploadCropped = async (blob: Blob) => {
     if (!user) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+    setPendingFile(null);
+    const path = `${user.id}/avatar-${Date.now()}.jpg`;
     setBusy(true);
-    const up = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+    const up = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" });
     if (up.error) { toast.error(up.error.message); setBusy(false); return; }
     const { data } = supabase.storage.from("avatars").getPublicUrl(path);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", user.id);
@@ -92,6 +98,7 @@ export default function Profile() {
             </Button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
           </div>
+          <ImageCropDialog file={pendingFile} open={!!pendingFile} onClose={() => setPendingFile(null)} onConfirm={uploadCropped} />
           <div className="space-y-1.5">
             <Label>{t("profile.name")}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
