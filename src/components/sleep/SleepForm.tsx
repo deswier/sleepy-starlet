@@ -11,6 +11,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { inferSleepType } from "@/lib/sleep-utils";
 import { toast } from "sonner";
 import DateTimeField from "@/components/DateTimeField";
+import { useTranslation } from "react-i18next";
+import { enqueue } from "@/lib/offline-queue";
 
 interface Settings {
   night_start_time: string;
@@ -27,6 +29,7 @@ interface Props {
 }
 
 export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
+  const { t } = useTranslation();
   const { activeChild } = useChildren();
   const { user } = useAuth();
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
@@ -66,7 +69,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeChild || !user) return;
-    if (end <= start) { toast.error("End must be after start"); return; }
+    if (end <= start) { toast.error(t("sleep.endAfterStart")); return; }
     setBusy(true);
     const payload = {
       child_id: activeChild.id,
@@ -78,43 +81,63 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
       comment: comment || null,
       updated_by_user_id: user.id,
     };
+
+    if (!navigator.onLine) {
+      if (mode === "edit" && sessionId) {
+        await enqueue({
+          table: "sleep_sessions", op: "update",
+          payload, match: { id: sessionId },
+          baseUpdatedAt: initial?.updated_at ?? null,
+        });
+      } else {
+        await enqueue({
+          table: "sleep_sessions", op: "insert",
+          payload: { ...payload, created_by_user_id: user.id },
+        });
+      }
+      setBusy(false);
+      toast.success(mode === "edit" ? t("sleep.updated") : t("sleep.sleepAdded"));
+      onDone();
+      return;
+    }
+
     const { error } = mode === "edit" && sessionId
       ? await supabase.from("sleep_sessions").update(payload).eq("id", sessionId)
       : await supabase.from("sleep_sessions").insert({ ...payload, created_by_user_id: user.id });
     setBusy(false);
     if (error) toast.error(error.message);
-    else { toast.success(mode === "edit" ? "Updated" : "Sleep added"); onDone(); }
+    else { toast.success(mode === "edit" ? t("sleep.updated") : t("sleep.sleepAdded")); onDone(); }
   };
 
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-3">
-        <DateTimeField label="Start" value={start} onChange={setStart} />
-        <DateTimeField label="End" value={end} onChange={setEnd} />
+        <DateTimeField label={t("sleep.start")} value={start} onChange={setStart} />
+        <DateTimeField label={t("sleep.end")} value={end} onChange={setEnd} />
       </div>
 
       <Collapsible>
         <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground py-2">
-          <ChevronDown className="w-4 h-4" /> Additional
+          <ChevronDown className="w-4 h-4" /> {t("sleep.additional")}
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-2">
           <div>
-            <Label>Sleep type</Label>
+            <Label>{t("sleep.type")}</Label>
             <Select value={sleepType} onValueChange={(v: any) => { setSleepType(v); setTypeManuallySet(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Day sleep</SelectItem>
-                <SelectItem value="night">Night sleep</SelectItem>
+                <SelectItem value="day">{t("sleep.day")}</SelectItem>
+                <SelectItem value="night">{t("sleep.night")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           {settings?.show_sleep_place !== false && (
             <div>
-              <Label>Sleep place</Label>
+              <Label>{t("sleep.place")}</Label>
               <Select value={placeId || "none"} onValueChange={(v) => setPlaceId(v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">— None —</SelectItem>
+                  <SelectItem value="none">{t("common.none")}</SelectItem>
                   {places.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -122,24 +145,26 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
           )}
           {settings?.show_falling_asleep_method !== false && (
             <div>
-              <Label>Settling method</Label>
+              <Label>{t("sleep.settling")}</Label>
               <Select value={methodId || "none"} onValueChange={(v) => setMethodId(v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">— None —</SelectItem>
+                  <SelectItem value="none">{t("common.none")}</SelectItem>
                   {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           )}
           <div>
-            <Label>Comment</Label>
+            <Label>{t("sleep.comment")}</Label>
             <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} />
           </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <Button type="submit" className="w-full" disabled={busy}>{mode === "edit" ? "Save changes" : "Add sleep"}</Button>
+      <Button type="submit" className="w-full" disabled={busy}>
+        {mode === "edit" ? t("common.save") : t("sleep.addSleep")}
+      </Button>
     </form>
   );
 }
