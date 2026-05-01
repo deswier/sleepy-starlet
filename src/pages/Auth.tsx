@@ -11,6 +11,18 @@ import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+async function routePostAuth(navigate: (to: string, opts?: any) => void) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) { navigate("/auth", { replace: true }); return; }
+  const { data } = await supabase
+    .from("child_users")
+    .select("child_id")
+    .eq("user_id", user.id)
+    .limit(1);
+  if (data && data.length > 0) navigate("/", { replace: true });
+  else navigate("/child/new", { replace: true });
+}
+
 export default function Auth() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
@@ -20,7 +32,7 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) navigate("/", { replace: true });
+    if (!loading && user) routePostAuth(navigate);
   }, [user, loading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -29,7 +41,7 @@ export default function Auth() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) toast.error(error.message);
-    else navigate("/");
+    else routePostAuth(navigate);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -42,7 +54,7 @@ export default function Auth() {
     });
     setBusy(false);
     if (error) toast.error(error.message);
-    else { toast.success("Welcome! Setting things up…"); navigate("/"); }
+    else { toast.success("Welcome! Setting things up…"); routePostAuth(navigate); }
   };
 
   const handleGoogle = async () => {
@@ -50,7 +62,7 @@ export default function Auth() {
     const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
     if (result.error) { toast.error("Google sign-in failed"); setBusy(false); return; }
     if (result.redirected) return;
-    navigate("/");
+    routePostAuth(navigate);
   };
 
   return (

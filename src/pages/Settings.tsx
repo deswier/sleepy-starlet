@@ -10,11 +10,14 @@ import { useChildren } from "@/contexts/ChildContext";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ageInMonths, wakeWindowForAge } from "@/lib/sleep-utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function Settings() {
   const navigate = useNavigate();
   const { activeChild, refresh } = useChildren();
+  const { user } = useAuth();
   const [s, setS] = useState<any>(null);
+  const [birthDate, setBirthDate] = useState<string>("");
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   const [newPlace, setNewPlace] = useState("");
@@ -22,6 +25,7 @@ export default function Settings() {
 
   const load = async () => {
     if (!activeChild) return;
+    setBirthDate(activeChild.birth_date ?? "");
     const [se, p, m] = await Promise.all([
       supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
       supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
@@ -46,19 +50,62 @@ export default function Settings() {
   useEffect(() => { load(); }, [activeChild]);
 
   const saveSettings = async () => {
+    if (!activeChild || !user) return;
+    // Detect whether the user changed min/max while in custom mode
+    const { data: prev } = await supabase
+      .from("child_settings")
+      .select("min_wake_window_minutes,max_wake_window_minutes,use_age_default_wake_window")
+      .eq("child_id", activeChild.id).single();
+    const wasDefault = !!prev?.use_age_default_wake_window;
+    const isDefault = !!s.use_age_default_wake_window;
+    const minChanged = prev?.min_wake_window_minutes !== s.min_wake_window_minutes;
+    const maxChanged = prev?.max_wake_window_minutes !== s.max_wake_window_minutes;
+    const needsNewRule = !isDefault && (wasDefault || minChanged || maxChanged);
+
     const { error } = await supabase.from("child_settings").update({
       night_start_time: s.night_start_time,
       night_end_time: s.night_end_time,
       min_wake_window_minutes: s.min_wake_window_minutes,
       max_wake_window_minutes: s.max_wake_window_minutes,
       use_age_default_wake_window: s.use_age_default_wake_window,
-    }).eq("child_id", activeChild!.id);
-    if (error) toast.error(error.message); else toast.success("Saved");
+      split_night_sleep_by_date: s.split_night_sleep_by_date,
+      show_sleep_place: s.show_sleep_place,
+      show_falling_asleep_method: s.show_falling_asleep_method,
+      show_interruptions: s.show_interruptions,
+    }).eq("child_id", activeChild.id);
+    if (error) { toast.error(error.message); return; }
+
+    if (needsNewRule) {
+      const nowIso = new Date().toISOString();
+      // Close any open custom rule
+      await supabase.from("wake_window_rules")
+        .update({ effective_to: nowIso })
+        .eq("child_id", activeChild.id)
+        .is("effective_to", null);
+      await supabase.from("wake_window_rules").insert({
+        child_id: activeChild.id,
+        source: "custom",
+        min_minutes: s.min_wake_window_minutes,
+        max_minutes: s.max_wake_window_minutes,
+        effective_from: nowIso,
+        created_by_user_id: user.id,
+      });
+    } else if (isDefault && !wasDefault) {
+      // Switched back to age defaults: close the active custom rule.
+      await supabase.from("wake_window_rules")
+        .update({ effective_to: new Date().toISOString() })
+        .eq("child_id", activeChild.id)
+        .is("effective_to", null);
+    }
+    toast.success("Saved");
   };
 
-  const saveName = async () => {
+  const saveChild = async () => {
     if (!activeChild) return;
-    const { error } = await supabase.from("children").update({ name: activeChild.name }).eq("id", activeChild.id);
+    const { error } = await supabase.from("children").update({
+      name: activeChild.name,
+      birth_date: birthDate || null,
+    }).eq("id", activeChild.id);
     if (error) toast.error(error.message); else { toast.success("Saved"); refresh(); }
   };
 
@@ -86,8 +133,14 @@ export default function Settings() {
 
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">Child</h3>
-          <Label>Name</Label>
-          <Input value={activeChild.name} onChange={(e) => { activeChild.name = e.target.value; refresh(); }} onBlur={saveName} />
+          <div className="space-y-1.5">
+            <Label>Name</Label>
+            <Input value={activeChild.name} onChange={(e) => { activeChild.name = e.target.value; refresh(); }} onBlur={saveChild} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Birth date</Label>
+            <Input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} onBlur={saveChild} className="block w-full" />
+          </div>
         </Card>
 
         <Card className="p-5 shadow-card mb-4 space-y-3">
@@ -122,6 +175,23 @@ export default function Settings() {
                 disabled={!!s.use_age_default_wake_window}
                 onChange={(e) => setS({ ...s, max_wake_window_minutes: +e.target.value })} /></div>
           </div>
+          <Button onClick={saveSettings} className="w-full">Save</Button>
+        </Card>
+
+        <Card className="p-5 shadow-card mb-4 space-y-3">
+          <h3 className="font-semibold">Display</h3>
+          <p className="text-xs text-muted-foreground">Show or hide optional fields when adding sleep.</p>
+          {[
+            { key: "show_sleep_place", label: "Show sleep place" },
+            { key: "show_falling_asleep_method", label: "Show settling method" },
+            { key: "show_interruptions", label: "Show interruptions" },
+            { key: "split_night_sleep_by_date", label: "Split night sleep by date" },
+          ].map((o) => (
+            <label key={o.key} className="flex items-center gap-2 cursor-pointer select-none">
+              <Checkbox checked={!!s[o.key]} onCheckedChange={(v) => setS({ ...s, [o.key]: !!v })} />
+              <span className="text-sm">{o.label}</span>
+            </label>
+          ))}
           <Button onClick={saveSettings} className="w-full">Save</Button>
         </Card>
 
