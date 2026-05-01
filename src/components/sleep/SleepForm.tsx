@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { inferSleepType } from "@/lib/sleep-utils";
-import { format } from "date-fns";
+import { format, parse, isValid } from "date-fns";
 import { toast } from "sonner";
 
 interface Settings {
@@ -32,7 +32,11 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
 
-  const fmt = (d: Date) => format(d, "yyyy-MM-dd'T'HH:mm");
+  const fmt = (d: Date) => format(d, "dd.MM.yy HH:mm");
+  const parseFmt = (str: string): Date | null => {
+    const d = parse(str, "dd.MM.yy HH:mm", new Date());
+    return isValid(d) ? d : null;
+  };
   const now = new Date();
   const [start, setStart] = useState(initial?.start_time ? fmt(new Date(initial.start_time)) : fmt(new Date(now.getTime() - 60 * 60 * 1000)));
   const [end, setEnd] = useState(initial?.end_time ? fmt(new Date(initial.end_time)) : fmt(now));
@@ -59,18 +63,23 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
 
   useEffect(() => {
     if (!typeManuallySet && settings) {
-      setSleepType(inferSleepType(new Date(start), settings.night_start_time, settings.night_end_time));
+      const d = parseFmt(start);
+      if (d) setSleepType(inferSleepType(d, settings.night_start_time, settings.night_end_time));
     }
   }, [start, settings, typeManuallySet]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeChild || !user) return;
+    const startD = parseFmt(start);
+    const endD = parseFmt(end);
+    if (!startD || !endD) { toast.error("Use format dd.MM.yy HH:mm"); return; }
+    if (endD <= startD) { toast.error("End must be after start"); return; }
     setBusy(true);
     const payload = {
       child_id: activeChild.id,
-      start_time: new Date(start).toISOString(),
-      end_time: new Date(end).toISOString(),
+      start_time: startD.toISOString(),
+      end_time: endD.toISOString(),
       sleep_type: sleepType,
       sleep_place_id: placeId || null,
       settling_method_id: methodId || null,
@@ -87,11 +96,29 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Start</Label>
-          <Input type="datetime-local" required value={start} onChange={(e) => setStart(e.target.value)} /></div>
-        <div><Label>End</Label>
-          <Input type="datetime-local" required value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label>Start</Label>
+          <Input
+            type="text"
+            inputMode="numeric"
+            placeholder="dd.MM.yy HH:mm"
+            required
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>End</Label>
+          <Input
+            type="text"
+            inputMode="numeric"
+            placeholder="dd.MM.yy HH:mm"
+            required
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
+        </div>
       </div>
       <div>
         <Label>Sleep type</Label>
