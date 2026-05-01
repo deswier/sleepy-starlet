@@ -7,7 +7,8 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import SyncStatus from "./SyncStatus";
 
@@ -21,11 +22,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-hero flex flex-col pb-20">
-      <header className="px-4 pt-6 pb-3 flex items-center justify-between">
+      <header className="px-4 pt-6 pb-3 flex items-center justify-between gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-3 group">
               <Avatar className="w-10 h-10 bg-primary/15">
+                {activeChild?.photo_url && <AvatarImage src={activeChild.photo_url} alt="" />}
                 <AvatarFallback className="bg-primary/15 text-primary font-semibold">{initials}</AvatarFallback>
               </Avatar>
               <div className="text-left">
@@ -46,11 +48,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <DropdownMenuItem onClick={() => navigate("/child/new")}>
               <Plus className="w-4 h-4 mr-2" /> {t("child.addChild")}
             </DropdownMenuItem>
-            {activeChild && (
-              <DropdownMenuItem onClick={() => navigate("/settings")}>
-                <Settings className="w-4 h-4 mr-2" /> {t("settings.title")}
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem onClick={() => navigate("/profile")}>
               <User className="w-4 h-4 mr-2" /> {t("profile.open")}
             </DropdownMenuItem>
@@ -60,6 +57,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {activeChild && (
+          <Button variant="ghost" size="icon" onClick={() => navigate("/settings")} aria-label={t("settings.title")}>
+            <Settings className="w-5 h-5" />
+          </Button>
+        )}
       </header>
 
       <SyncStatus />
