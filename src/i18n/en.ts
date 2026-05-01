@@ -149,10 +149,5 @@ const en = {
     passwordChanged: "Password updated",
     open: "Profile",
   },
-  child: {
-    photo: "Photo",
-    changePhoto: "Change photo",
-    removePhoto: "Remove",
-  } as any,
 };
 export default en;
