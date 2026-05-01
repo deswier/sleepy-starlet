@@ -8,7 +8,7 @@ import { useChildren } from "@/contexts/ChildContext";
 import {
   formatDuration, formatTime, sessionDuration, wakeWindowMinutes,
   wwStatus, groupByDay, SleepSession,
-  fetchWakeWindowRules, wwThresholdsAt, WakeWindowRule,
+  wwThresholdsAt,
 } from "@/lib/sleep-utils";
 import { format, isToday, isYesterday } from "date-fns";
 import SleepForm from "@/components/sleep/SleepForm";
@@ -17,18 +17,18 @@ import SleepDetail from "@/components/sleep/SleepDetail";
 export default function History() {
   const { activeChild } = useChildren();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
-  const [rules, setRules] = useState<WakeWindowRule[]>([]);
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const load = async () => {
     if (!activeChild) return;
-    const [s, r] = await Promise.all([
-      supabase.from("sleep_sessions").select("*").eq("child_id", activeChild.id).not("end_time", "is", null).order("start_time", { ascending: false }).limit(200),
-      fetchWakeWindowRules(activeChild.id),
-    ]);
-    setSessions((s.data ?? []) as SleepSession[]);
-    setRules(r);
+    const { data } = await supabase
+      .from("sleep_sessions").select("*")
+      .eq("child_id", activeChild.id)
+      .not("end_time", "is", null)
+      .order("start_time", { ascending: false })
+      .limit(200);
+    setSessions((data ?? []) as SleepSession[]);
   };
 
   useEffect(() => { load(); }, [activeChild]);
@@ -61,7 +61,7 @@ export default function History() {
       <div className="space-y-6">
         {groups.map((g) => (
           <DayGroup key={g.date.toISOString()} date={g.date} sessions={g.sessions}
-            rules={rules} birthDate={activeChild.birth_date} onOpen={setOpen} />
+            birthDate={activeChild.birth_date} onOpen={setOpen} />
         ))}
       </div>
 
@@ -76,9 +76,8 @@ function dayLabel(d: Date) {
   return format(d, "EEEE, MMMM d");
 }
 
-function DayGroup({ date, sessions, rules, birthDate, onOpen }: {
+function DayGroup({ date, sessions, birthDate, onOpen }: {
   date: Date; sessions: SleepSession[];
-  rules: WakeWindowRule[];
   birthDate: string | null;
   onOpen: (s: SleepSession) => void;
 }) {
@@ -99,7 +98,7 @@ function DayGroup({ date, sessions, rules, birthDate, onOpen }: {
           const ww = prev ? wakeWindowMinutes(prev, s) : null;
           let status: "good" | "warn" | null = null;
           if (ww !== null) {
-            const th = wwThresholdsAt(new Date(s.start_time), rules, birthDate);
+            const th = wwThresholdsAt(new Date(s.start_time), birthDate);
             if (th) status = wwStatus(ww, th.min, th.max);
           }
           return (
