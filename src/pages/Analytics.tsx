@@ -13,8 +13,7 @@ import {
   ageInMonthsAt, wakeWindowForAge,
 } from "@/lib/sleep-utils";
 import {
-  isSameDay, startOfDay, subDays, addDays, differenceInMinutes,
-  startOfWeek, endOfWeek, format, isAfter,
+  isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
 } from "date-fns";
 
 // Minutes a sleep session contributes to a specific calendar day [d, d+1).
