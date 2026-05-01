@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Moon, Sun, Plus, Pause, Play } from "lucide-react";
+import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatDuration, sessionDuration, formatTime, inferSleepType, SleepSession } from "@/lib/sleep-utils";
+import { formatDuration, sessionDuration, formatTime, inferSleepType, SleepSession, formatDateTimeDisplay } from "@/lib/sleep-utils";
 import SleepForm from "@/components/sleep/SleepForm";
 import { toast } from "sonner";
+import { format, parse, isValid } from "date-fns";
 
 export default function CurrentSleep() {
   const navigate = useNavigate();
@@ -19,6 +21,8 @@ export default function CurrentSleep() {
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
   const [now, setNow] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
+  const [editingStart, setEditingStart] = useState(false);
+  const [startDraft, setStartDraft] = useState("");
 
   useEffect(() => {
     if (!childLoading && !activeChild) navigate("/child/new");
@@ -67,7 +71,7 @@ export default function CurrentSleep() {
       created_by_user_id: user.id,
     });
     if (error) toast.error(error.message);
-    else { toast.success("Sweet dreams 💤"); load(); }
+    else { load(); }
   };
 
   const wakeUp = async () => {
@@ -77,7 +81,7 @@ export default function CurrentSleep() {
     }
     const { error } = await supabase.from("sleep_sessions").update({ end_time: new Date().toISOString() }).eq("id", active.id);
     if (error) toast.error(error.message);
-    else { toast.success("Good morning! ☀️"); load(); }
+    else { load(); }
   };
 
   const toggleInterruption = async () => {
@@ -90,6 +94,25 @@ export default function CurrentSleep() {
       });
     }
     load();
+  };
+
+  const beginEditStart = () => {
+    if (!active) return;
+    setStartDraft(format(new Date(active.start_time), "dd.MM.yy HH:mm"));
+    setEditingStart(true);
+  };
+
+  const saveEditStart = async () => {
+    if (!active) return;
+    const d = parse(startDraft, "dd.MM.yy HH:mm", new Date());
+    if (!isValid(d)) { toast.error("Use format dd.MM.yy HH:mm"); return; }
+    if (d > new Date()) { toast.error("Start cannot be in the future"); return; }
+    const { error } = await supabase
+      .from("sleep_sessions")
+      .update({ start_time: d.toISOString() })
+      .eq("id", active.id);
+    if (error) toast.error(error.message);
+    else { setEditingStart(false); load(); }
   };
 
   if (!activeChild) return null;
@@ -122,7 +145,31 @@ export default function CurrentSleep() {
             <Moon className="w-10 h-10" strokeWidth={1.5} />
           </div>
           <h2 className="font-display text-2xl font-semibold mb-1">{activeChild.name} is sleeping</h2>
-          <p className="opacity-80 text-sm mb-1">Started at {formatTime(active.start_time)}</p>
+          {editingStart ? (
+            <div className="flex items-center gap-2 justify-center mb-1">
+              <Input
+                value={startDraft}
+                onChange={(e) => setStartDraft(e.target.value)}
+                placeholder="dd.MM.yy HH:mm"
+                className="h-8 w-44 text-foreground text-sm"
+              />
+              <Button size="icon" variant="ghost" className="h-8 w-8 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground" onClick={saveEditStart}>
+                <Check className="w-4 h-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground" onClick={() => setEditingStart(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={beginEditStart}
+              className="opacity-80 text-sm mb-1 inline-flex items-center gap-1 hover:opacity-100"
+            >
+              Started at {formatTime(active.start_time)}
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
           <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
           {interruption && (
             <div className="bg-white/10 rounded-xl px-4 py-2 mb-4 text-sm">
