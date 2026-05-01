@@ -6,6 +6,7 @@ const en = {
     none: "— None —", select: "Select…",
     today: "Today", yesterday: "Yesterday",
     minutes: "minutes", language: "Language", english: "English", russian: "Russian",
+    sleepTab: "Sleep",
     confirmDelete: "Delete this sleep?",
     pendingChanges: "{{count}} pending change",
     pendingChanges_other: "{{count}} pending changes",
