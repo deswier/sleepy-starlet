@@ -15,6 +15,7 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Conflicts from "./pages/Conflicts";
 import Heatmap from "./pages/Heatmap";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
               <Route path="/history" element={<RequireAuth><AppShell><History /></AppShell></RequireAuth>} />
               <Route path="/analytics" element={<RequireAuth><AppShell><Analytics /></AppShell></RequireAuth>} />
               <Route path="/heatmap" element={<RequireAuth><Heatmap /></RequireAuth>} />
+              <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </ChildProvider>
