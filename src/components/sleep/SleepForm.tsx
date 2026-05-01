@@ -1,20 +1,16 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, CalendarIcon } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { inferSleepType } from "@/lib/sleep-utils";
-import { format } from "date-fns";
 import { toast } from "sonner";
+import DateTimeField from "@/components/DateTimeField";
 
 interface Settings {
   night_start_time: string;
@@ -145,51 +141,5 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
 
       <Button type="submit" className="w-full" disabled={busy}>{mode === "edit" ? "Save changes" : "Add sleep"}</Button>
     </form>
-  );
-}
-
-function DateTimeField({ label, value, onChange }: { label: string; value: Date; onChange: (d: Date) => void }) {
-  const timeStr = format(value, "HH:mm");
-  const handleDate = (d: Date | undefined) => {
-    if (!d) return;
-    const next = new Date(value);
-    next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
-    onChange(next);
-  };
-  const handleTime = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const [h, m] = e.target.value.split(":").map(Number);
-    if (Number.isNaN(h) || Number.isNaN(m)) return;
-    const next = new Date(value);
-    next.setHours(h, m, 0, 0);
-    onChange(next);
-  };
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <div className="flex gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              className={cn("flex-1 justify-start text-left font-normal")}
-            >
-              <CalendarIcon className="w-4 h-4 mr-2 opacity-70" />
-              {format(value, "dd.MM.yy")}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={value}
-              onSelect={handleDate}
-              initialFocus
-              className={cn("p-3 pointer-events-auto")}
-            />
-          </PopoverContent>
-        </Popover>
-        <Input type="time" value={timeStr} onChange={handleTime} className="w-32" />
-      </div>
-    </div>
   );
 }
