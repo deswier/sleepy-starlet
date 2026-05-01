@@ -3,17 +3,19 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { Moon, History, BarChart3, Settings, LogOut, ChevronDown, Plus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useChildren } from "@/contexts/ChildContext";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useTranslation } from "react-i18next";
+import SyncStatus from "./SyncStatus";
 
 export default function AppShell({ children }: { children: ReactNode }) {
-  const { signOut, user } = useAuth();
+  const { signOut } = useAuth();
   const { children: kids, activeChild, setActiveChildId } = useChildren();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const initials = (activeChild?.name ?? "").trim().split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "•";
 
@@ -28,9 +30,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </Avatar>
               <div className="text-left">
                 <div className="font-display text-lg font-semibold leading-tight flex items-center gap-1">
-                  {activeChild?.name ?? "No child"} <ChevronDown className="w-4 h-4 opacity-60 group-hover:opacity-100" />
+                  {activeChild?.name ?? t("child.noChild")} <ChevronDown className="w-4 h-4 opacity-60 group-hover:opacity-100" />
                 </div>
-                <div className="text-xs text-muted-foreground">Lullaby</div>
+                <div className="text-xs text-muted-foreground">{t("app.name")}</div>
               </div>
             </button>
           </DropdownMenuTrigger>
@@ -42,28 +44,30 @@ export default function AppShell({ children }: { children: ReactNode }) {
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/child/new")}>
-              <Plus className="w-4 h-4 mr-2" /> Add child
+              <Plus className="w-4 h-4 mr-2" /> {t("child.addChild")}
             </DropdownMenuItem>
             {activeChild && (
               <DropdownMenuItem onClick={() => navigate("/settings")}>
-                <Settings className="w-4 h-4 mr-2" /> Child settings
+                <Settings className="w-4 h-4 mr-2" /> {t("settings.title")}
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut} className="text-destructive">
-              <LogOut className="w-4 h-4 mr-2" /> Sign out
+              <LogOut className="w-4 h-4 mr-2" /> {t("auth.signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
 
+      <SyncStatus />
+
       <main className="flex-1">{children}</main>
 
       <nav className="fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border">
         <div className="max-w-md mx-auto grid grid-cols-3">
-          <NavTab to="/" icon={<Moon />} label="Sleep" />
-          <NavTab to="/history" icon={<History />} label="History" />
-          <NavTab to="/analytics" icon={<BarChart3 />} label="Analytics" />
+          <NavTab to="/" icon={<Moon />} label={t("history.title") /* shorter "Sleep" via "common"? */} />
+          <NavTab to="/history" icon={<History />} label={t("history.title")} />
+          <NavTab to="/analytics" icon={<BarChart3 />} label={t("analytics.title")} />
         </div>
       </nav>
     </div>
