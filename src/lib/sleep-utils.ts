@@ -65,3 +65,43 @@ export const groupByDay = (sessions: SleepSession[]) => {
 };
 
 export const formatTime = (iso: string) => format(new Date(iso), "HH:mm");
+
+// Date input formatting for native datetime-local (still ISO-like for the input value)
+export const toDateTimeLocalValue = (d: Date): string => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// Display format dd.MM.yy HH:mm
+export const formatDateTimeDisplay = (d: Date): string => format(d, "dd.MM.yy HH:mm");
+
+// Compute child's age in whole months from a birth date string
+export const ageInMonths = (birthDate: string | null | undefined): number | null => {
+  if (!birthDate) return null;
+  const b = new Date(birthDate);
+  const now = new Date();
+  let m = (now.getFullYear() - b.getFullYear()) * 12 + (now.getMonth() - b.getMonth());
+  if (now.getDate() < b.getDate()) m -= 1;
+  return Math.max(0, m);
+};
+
+// Map age in months to default wake window range (in minutes)
+export const wakeWindowForAge = (months: number): { min: number; max: number } => {
+  const table: { upTo: number; min: number; max: number }[] = [
+    { upTo: 1, min: 30, max: 60 },
+    { upTo: 2, min: 45, max: 75 },
+    { upTo: 3, min: 60, max: 90 },
+    { upTo: 4, min: 75, max: 120 },
+    { upTo: 5, min: 90, max: 150 },
+    { upTo: 6, min: 120, max: 165 },
+    { upTo: 7, min: 135, max: 180 },
+    { upTo: 8, min: 150, max: 195 },
+    { upTo: 10, min: 180, max: 210 },
+    { upTo: 12, min: 180, max: 240 },
+    { upTo: 15, min: 210, max: 270 },
+    { upTo: 18, min: 270, max: 330 },
+    { upTo: 24, min: 300, max: 360 },
+  ];
+  for (const row of table) if (months < row.upTo) return { min: row.min, max: row.max };
+  return { min: 300, max: 360 };
+};

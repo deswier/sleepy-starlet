@@ -17,8 +17,9 @@ export default function NewChild() {
   const { refresh, setActiveChildId, children: kids } = useChildren();
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [gender, setGender] = useState<"male" | "female" | "other" | "">("");
+  const [gender, setGender] = useState<"male" | "female" | "">("");
   const [relation, setRelation] = useState<"mother" | "father" | "other">("mother");
+  const [customRelation, setCustomRelation] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -30,6 +31,7 @@ export default function NewChild() {
       _birth_date: birthDate || null,
       _gender: (gender || null) as any,
       _relation: relation,
+      _custom_relation_name: relation === "other" ? (customRelation.trim() || null) : null,
     });
     if (error || !childId) { toast.error(error?.message ?? "Failed"); setBusy(false); return; }
     await refresh();
@@ -58,7 +60,7 @@ export default function NewChild() {
             <div><Label htmlFor="n">Name</Label>
               <Input id="n" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Mia" /></div>
             <div><Label htmlFor="b">Birth date</Label>
-              <Input id="b" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} /></div>
+              <Input id="b" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="block w-full" /></div>
             <div>
               <Label>Gender</Label>
               <Select value={gender} onValueChange={(v: any) => setGender(v)}>
@@ -66,7 +68,6 @@ export default function NewChild() {
                 <SelectContent>
                   <SelectItem value="female">Girl</SelectItem>
                   <SelectItem value="male">Boy</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -81,6 +82,17 @@ export default function NewChild() {
                 </SelectContent>
               </Select>
             </div>
+            {relation === "other" && (
+              <div>
+                <Label htmlFor="cr">Specify relation</Label>
+                <Input
+                  id="cr"
+                  value={customRelation}
+                  onChange={(e) => setCustomRelation(e.target.value)}
+                  placeholder="e.g. Grandma, Nanny"
+                />
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={busy || !name}>Create</Button>
           </form>
         </Card>

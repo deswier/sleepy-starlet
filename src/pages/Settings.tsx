@@ -8,6 +8,8 @@ import { ArrowLeft, Plus, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ageInMonths, wakeWindowForAge } from "@/lib/sleep-utils";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -25,7 +27,21 @@ export default function Settings() {
       supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
       supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
     ]);
-    setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
+    let data = se.data;
+    // If using age defaults, sync min/max from age table
+    if (data?.use_age_default_wake_window) {
+      const months = ageInMonths(activeChild.birth_date);
+      if (months !== null) {
+        const { min, max } = wakeWindowForAge(months);
+        if (data.min_wake_window_minutes !== min || data.max_wake_window_minutes !== max) {
+          await supabase.from("child_settings")
+            .update({ min_wake_window_minutes: min, max_wake_window_minutes: max })
+            .eq("child_id", activeChild.id);
+          data = { ...data, min_wake_window_minutes: min, max_wake_window_minutes: max };
+        }
+      }
+    }
+    setS(data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
   };
   useEffect(() => { load(); }, [activeChild]);
 
@@ -35,6 +51,7 @@ export default function Settings() {
       night_end_time: s.night_end_time,
       min_wake_window_minutes: s.min_wake_window_minutes,
       max_wake_window_minutes: s.max_wake_window_minutes,
+      use_age_default_wake_window: s.use_age_default_wake_window,
     }).eq("child_id", activeChild!.id);
     if (error) toast.error(error.message); else toast.success("Saved");
   };
@@ -46,6 +63,18 @@ export default function Settings() {
   };
 
   if (!activeChild || !s) return null;
+
+  const toggleAgeDefault = (checked: boolean) => {
+    if (checked) {
+      const months = ageInMonths(activeChild.birth_date);
+      if (months !== null) {
+        const { min, max } = wakeWindowForAge(months);
+        setS({ ...s, use_age_default_wake_window: true, min_wake_window_minutes: min, max_wake_window_minutes: max });
+        return;
+      }
+    }
+    setS({ ...s, use_age_default_wake_window: checked });
+  };
 
   return (
     <main className="min-h-screen bg-hero p-4">
@@ -64,10 +93,10 @@ export default function Settings() {
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">Night window</h3>
           <p className="text-xs text-muted-foreground">Used to auto-classify day vs night sleep.</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>Night starts</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Night starts</Label>
               <Input type="time" value={s.night_start_time} onChange={(e) => setS({ ...s, night_start_time: e.target.value })} /></div>
-            <div><Label>Night ends</Label>
+            <div className="space-y-1.5"><Label>Night ends</Label>
               <Input type="time" value={s.night_end_time} onChange={(e) => setS({ ...s, night_end_time: e.target.value })} /></div>
           </div>
         </Card>
@@ -75,11 +104,23 @@ export default function Settings() {
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">Wake window</h3>
           <p className="text-xs text-muted-foreground">Used to color-code wake windows in history.</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>Min (minutes)</Label>
-              <Input type="number" min={15} max={600} value={s.min_wake_window_minutes} onChange={(e) => setS({ ...s, min_wake_window_minutes: +e.target.value })} /></div>
-            <div><Label>Max (minutes)</Label>
-              <Input type="number" min={15} max={600} value={s.max_wake_window_minutes} onChange={(e) => setS({ ...s, max_wake_window_minutes: +e.target.value })} /></div>
+          <label className="flex items-start gap-2 cursor-pointer select-none">
+            <Checkbox
+              checked={!!s.use_age_default_wake_window}
+              onCheckedChange={(v) => toggleAgeDefault(!!v)}
+              className="mt-0.5"
+            />
+            <span className="text-sm leading-snug">Use default values for the child's age</span>
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Min (minutes)</Label>
+              <Input type="number" min={15} max={600} value={s.min_wake_window_minutes}
+                disabled={!!s.use_age_default_wake_window}
+                onChange={(e) => setS({ ...s, min_wake_window_minutes: +e.target.value })} /></div>
+            <div className="space-y-1.5"><Label>Max (minutes)</Label>
+              <Input type="number" min={15} max={600} value={s.max_wake_window_minutes}
+                disabled={!!s.use_age_default_wake_window}
+                onChange={(e) => setS({ ...s, max_wake_window_minutes: +e.target.value })} /></div>
           </div>
           <Button onClick={saveSettings} className="w-full">Save</Button>
         </Card>
