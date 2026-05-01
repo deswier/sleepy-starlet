@@ -17,8 +17,6 @@ export type Database = {
       child_settings: {
         Row: {
           child_id: string
-          max_wake_window_minutes: number
-          min_wake_window_minutes: number
           night_end_time: string
           night_start_time: string
           show_falling_asleep_method: boolean
@@ -26,12 +24,9 @@ export type Database = {
           show_sleep_place: boolean
           split_night_sleep_by_date: boolean
           updated_at: string
-          use_age_default_wake_window: boolean
         }
         Insert: {
           child_id: string
-          max_wake_window_minutes?: number
-          min_wake_window_minutes?: number
           night_end_time?: string
           night_start_time?: string
           show_falling_asleep_method?: boolean
@@ -39,12 +34,9 @@ export type Database = {
           show_sleep_place?: boolean
           split_night_sleep_by_date?: boolean
           updated_at?: string
-          use_age_default_wake_window?: boolean
         }
         Update: {
           child_id?: string
-          max_wake_window_minutes?: number
-          min_wake_window_minutes?: number
           night_end_time?: string
           night_start_time?: string
           show_falling_asleep_method?: boolean
@@ -52,7 +44,6 @@ export type Database = {
           show_sleep_place?: boolean
           split_night_sleep_by_date?: boolean
           updated_at?: string
-          use_age_default_wake_window?: boolean
         }
         Relationships: [
           {
@@ -322,50 +313,6 @@ export type Database = {
             columns: ["sleep_place_id"]
             isOneToOne: false
             referencedRelation: "sleep_places"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      wake_window_rules: {
-        Row: {
-          child_id: string
-          created_at: string
-          created_by_user_id: string | null
-          effective_from: string
-          effective_to: string | null
-          id: string
-          max_minutes: number
-          min_minutes: number
-          source: string
-        }
-        Insert: {
-          child_id: string
-          created_at?: string
-          created_by_user_id?: string | null
-          effective_from?: string
-          effective_to?: string | null
-          id?: string
-          max_minutes: number
-          min_minutes: number
-          source: string
-        }
-        Update: {
-          child_id?: string
-          created_at?: string
-          created_by_user_id?: string | null
-          effective_from?: string
-          effective_to?: string | null
-          id?: string
-          max_minutes?: number
-          min_minutes?: number
-          source?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "wake_window_rules_child_id_fkey"
-            columns: ["child_id"]
-            isOneToOne: false
-            referencedRelation: "children"
             referencedColumns: ["id"]
           },
         ]

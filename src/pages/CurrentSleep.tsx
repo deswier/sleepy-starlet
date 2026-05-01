@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -12,8 +11,9 @@ import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDuration, sessionDuration, formatTime, inferSleepType, SleepSession } from "@/lib/sleep-utils";
 import SleepForm from "@/components/sleep/SleepForm";
+import DateTimeField from "@/components/DateTimeField";
 import { toast } from "sonner";
-import { format, parse, isValid } from "date-fns";
+import { format } from "date-fns";
 
 export default function CurrentSleep() {
   const navigate = useNavigate();
@@ -24,7 +24,7 @@ export default function CurrentSleep() {
   const [now, setNow] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
-  const [startDraft, setStartDraft] = useState("");
+  const [startDraft, setStartDraft] = useState<Date>(new Date());
   const [showInterruptionFlag, setShowInterruptionFlag] = useState(true);
   const [showMethodFlag, setShowMethodFlag] = useState(true);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
@@ -130,18 +130,16 @@ export default function CurrentSleep() {
 
   const beginEditStart = () => {
     if (!active) return;
-    setStartDraft(format(new Date(active.start_time), "dd.MM.yy HH:mm"));
+    setStartDraft(new Date(active.start_time));
     setEditingStart(true);
   };
 
   const saveEditStart = async () => {
     if (!active) return;
-    const d = parse(startDraft, "dd.MM.yy HH:mm", new Date());
-    if (!isValid(d)) { toast.error("Use format dd.MM.yy HH:mm"); return; }
-    if (d > new Date()) { toast.error("Start cannot be in the future"); return; }
+    if (startDraft > new Date()) { toast.error("Start cannot be in the future"); return; }
     const { error } = await supabase
       .from("sleep_sessions")
-      .update({ start_time: d.toISOString() })
+      .update({ start_time: startDraft.toISOString() })
       .eq("id", active.id);
     if (error) toast.error(error.message);
     else { setEditingStart(false); load(); }
@@ -178,17 +176,12 @@ export default function CurrentSleep() {
           </div>
           <h2 className="font-display text-2xl font-semibold mb-1">{activeChild.name} is sleeping</h2>
           {editingStart ? (
-            <div className="flex items-center gap-2 justify-center mb-1">
-              <Input
-                value={startDraft}
-                onChange={(e) => setStartDraft(e.target.value)}
-                placeholder="dd.MM.yy HH:mm"
-                className="h-8 w-44 text-foreground text-sm"
-              />
-              <Button size="icon" variant="ghost" className="h-8 w-8 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground" onClick={saveEditStart}>
+            <div className="flex items-center gap-2 justify-center mb-1 text-foreground bg-background/95 rounded-lg p-2">
+              <DateTimeField value={startDraft} onChange={setStartDraft} />
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={saveEditStart}>
                 <Check className="w-4 h-4" />
               </Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8 text-primary-foreground hover:bg-white/10 hover:text-primary-foreground" onClick={() => setEditingStart(false)}>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingStart(false)}>
                 <X className="w-4 h-4" />
               </Button>
             </div>
@@ -198,7 +191,7 @@ export default function CurrentSleep() {
               onClick={beginEditStart}
               className="opacity-80 text-sm mb-1 inline-flex items-center gap-1 hover:opacity-100"
             >
-              Started at {formatTime(active.start_time)}
+              Started at {format(new Date(active.start_time), "dd.MM.yy HH:mm")}
               <Pencil className="w-3 h-3" />
             </button>
           )}
