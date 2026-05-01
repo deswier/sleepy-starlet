@@ -91,6 +91,30 @@ export type Database = {
           },
         ]
       }
+      child_user_roles: {
+        Row: {
+          child_id: string
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          child_id: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          child_id?: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       child_users: {
         Row: {
           child_id: string
@@ -153,6 +177,30 @@ export type Database = {
           name?: string
           photo_url?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      invite_attempts: {
+        Row: {
+          attempted_at: string
+          device_id: string | null
+          id: string
+          success: boolean
+          user_id: string | null
+        }
+        Insert: {
+          attempted_at?: string
+          device_id?: string | null
+          id?: string
+          success?: boolean
+          user_id?: string | null
+        }
+        Update: {
+          attempted_at?: string
+          device_id?: string | null
+          id?: string
+          success?: boolean
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -379,10 +427,27 @@ export type Database = {
             }
             Returns: string
           }
+      get_child_role: {
+        Args: { _child_id: string; _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_child_role: {
+        Args: {
+          _child_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      invite_cooldown_remaining: {
+        Args: { _device_id: string; _user_id: string }
+        Returns: number
+      }
       redeem_child_invite: {
         Args: {
           _code: string
           _custom_relation_name?: string
+          _device_id?: string
           _relation?: Database["public"]["Enums"]["relation_type"]
         }
         Returns: string
@@ -397,6 +462,7 @@ export type Database = {
       }
     }
     Enums: {
+      app_role: "viewer" | "user" | "admin"
       gender_type: "male" | "female" | "other"
       relation_type: "mother" | "father" | "other"
       sleep_type: "day" | "night"
@@ -527,6 +593,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["viewer", "user", "admin"],
       gender_type: ["male", "female", "other"],
       relation_type: ["mother", "father", "other"],
       sleep_type: ["day", "night"],

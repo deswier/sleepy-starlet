@@ -65,7 +65,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       <nav className="fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border">
         <div className="max-w-md mx-auto grid grid-cols-3">
-          <NavTab to="/" icon={<Moon />} label={t("history.title") /* shorter "Sleep" via "common"? */} />
+          <NavTab to="/" icon={<Moon />} label={t("common.sleepTab")} />
           <NavTab to="/history" icon={<History />} label={t("history.title")} />
           <NavTab to="/analytics" icon={<BarChart3 />} label={t("analytics.title")} />
         </div>

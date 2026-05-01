@@ -1,4 +1,8 @@
 import { differenceInMinutes, format, isSameDay, startOfDay } from "date-fns";
+import { enUS, ru } from "date-fns/locale";
+import i18n from "@/i18n";
+
+const dfLocale = () => (i18n.language?.startsWith("ru") ? ru : enUS);
 
 export interface SleepSession {
   id: string;
@@ -79,6 +83,13 @@ export const groupByDay = (sessions: SleepSession[]) => {
 };
 
 export const formatTime = (iso: string) => format(new Date(iso), "HH:mm");
+
+// Localized date helpers (dd.MM.yy and dd.MM.yy HH:mm)
+export const fmtDate = (d: Date | string) =>
+  format(typeof d === "string" ? new Date(d) : d, "dd.MM.yy", { locale: dfLocale() });
+export const fmtDateTime = (d: Date | string) =>
+  format(typeof d === "string" ? new Date(d) : d, "dd.MM.yy HH:mm", { locale: dfLocale() });
+export const fmtWeekday = (d: Date) => format(d, "EEEE, dd.MM.yy", { locale: dfLocale() });
 
 // Date input formatting for native datetime-local (still ISO-like for the input value)
 export const toDateTimeLocalValue = (d: Date): string => {

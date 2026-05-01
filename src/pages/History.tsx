@@ -8,15 +8,17 @@ import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import {
   formatDuration, formatTime, sessionDuration, wakeWindowMinutes,
-  wwStatus, SleepSession, wwThresholdsAt,
+  wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
 } from "@/lib/sleep-utils";
-import { format, isToday, isYesterday, startOfDay, isSameDay, subDays } from "date-fns";
+import { isToday, isYesterday, startOfDay, subDays } from "date-fns";
+import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import SleepForm from "@/components/sleep/SleepForm";
 import SleepDetail from "@/components/sleep/SleepDetail";
 
 export default function History() {
   const { activeChild } = useChildren();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { role } = useChildRole();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [splitByDate, setSplitByDate] = useState(false);
   const [open, setOpen] = useState<SleepSession | null>(null);
@@ -34,6 +36,17 @@ export default function History() {
   };
   useEffect(() => { load(); }, [activeChild]);
 
+  useEffect(() => {
+    if (!activeChild) return;
+    const ch = supabase
+      .channel(`history-${activeChild.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
+        () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [activeChild?.id]);
+
   if (!activeChild) return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
 
   const groups = groupSessions(sessions, splitByDate);
@@ -42,7 +55,7 @@ export default function History() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("history.title")}</h2>
-        <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        {canCreateSleep(role) && <Dialog open={showAdd} onOpenChange={setShowAdd}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-1" /> {t("common.add")}</Button>
           </DialogTrigger>
@@ -50,7 +63,7 @@ export default function History() {
             <DialogHeader><DialogTitle>{t("sleep.addPast")}</DialogTitle></DialogHeader>
             <SleepForm mode="manual" onDone={() => { setShowAdd(false); load(); }} />
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {groups.length === 0 && (
@@ -91,7 +104,7 @@ function groupSessions(sessions: SleepSession[], splitByDate: boolean): DayBucke
 function dayLabel(d: Date, t: (k: string) => string) {
   if (isToday(d)) return t("common.today");
   if (isYesterday(d)) return t("common.yesterday");
-  return format(d, "EEEE, MMMM d");
+  return fmtWeekday(d);
 }
 
 function DayGroup({ date, sessions, birthDate, onOpen }: {
@@ -100,7 +113,8 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
   onOpen: (s: SleepSession) => void;
 }) {
   const { t } = useTranslation();
-  const ordered = [...sessions].reverse();
+  // Sessions arrive in DESC order (latest first) — display them that way.
+  const ordered = sessions;
   const totalMin = ordered.reduce((acc, s) => acc + sessionDuration(s), 0);
 
   return (
@@ -112,8 +126,9 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
 
       <Card className="p-5 shadow-card border-border/50">
         {ordered.map((s, i) => {
-          const prev = i > 0 ? ordered[i - 1] : null;
-          const ww = prev ? wakeWindowMinutes(prev, s) : null;
+          // Chronologically earlier sleep is the next row in DESC display.
+          const earlier = i + 1 < ordered.length ? ordered[i + 1] : null;
+          const ww = earlier ? wakeWindowMinutes(earlier, s) : null;
           let status: "good" | "warn" | null = null;
           if (ww !== null) {
             const th = wwThresholdsAt(new Date(s.start_time), birthDate);
@@ -121,14 +136,6 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
           }
           return (
             <div key={s.id}>
-              {prev && ww !== null && ww >= 0 && (
-                <div className="flex items-center gap-3 py-2 pl-2">
-                  <div className={`w-0.5 h-8 rounded-full ${status === "good" ? "bg-ww-good" : "bg-ww-warn"}`} />
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${status === "good" ? "bg-ww-good-soft text-[hsl(var(--ww-good))]" : "bg-ww-warn-soft text-[hsl(var(--ww-warn))]"}`}>
-                    {t("sleep.awake_label", { duration: formatDuration(ww) })}
-                  </span>
-                </div>
-              )}
               <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
                 <div className="flex items-center gap-3">
                   <span className={`w-2 h-2 rounded-full ${s.sleep_type === "night" ? "bg-primary" : "bg-accent"}`} />
@@ -136,6 +143,14 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
                 </div>
                 <span className="text-muted-foreground text-sm">{formatDuration(sessionDuration(s))}</span>
               </button>
+              {earlier && ww !== null && ww >= 0 && (
+                <div className="flex items-center gap-3 py-2 pl-2">
+                  <div className={`w-0.5 h-8 rounded-full ${status === "good" ? "bg-ww-good" : "bg-ww-warn"}`} />
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${status === "good" ? "bg-ww-good-soft text-[hsl(var(--ww-good))]" : "bg-ww-warn-soft text-[hsl(var(--ww-warn))]"}`}>
+                    {t("sleep.awake_label", { duration: formatDuration(ww) })}
+                  </span>
+                </div>
+              )}
             </div>
           );
         })}
