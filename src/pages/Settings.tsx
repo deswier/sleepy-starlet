@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ageInMonths, wakeWindowForAge, formatDuration, fmtDateTime } from "@/lib/sleep-utils";
 import { useTranslation } from "react-i18next";
-import { useChildRole, canEditChild, canManageMembers } from "@/hooks/useChildRole";
+import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 
 type Member = {
@@ -29,6 +29,7 @@ export default function Settings() {
   const { user } = useAuth();
   const { role } = useChildRole();
   const isAdmin = canEditChild(role);
+  const isViewer = role === "viewer";
 
   const [s, setS] = useState<any>(null);
   const [birthDate, setBirthDate] = useState<string>("");
@@ -42,18 +43,21 @@ export default function Settings() {
   const load = async () => {
     if (!activeChild) return;
     setBirthDate(activeChild.birth_date ?? "");
+    const invitesQuery = canManageMembers(role)
+      ? supabase.from("child_invites").select("*").eq("child_id", activeChild.id)
+          .is("redeemed_at", null).is("revoked_at", null).order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as any[] } as any);
     const [se, p, m, inv, links, roles, profs] = await Promise.all([
       supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
       supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
       supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-      supabase.from("child_invites").select("*").eq("child_id", activeChild.id)
-        .is("redeemed_at", null).is("revoked_at", null).order("created_at", { ascending: false }),
+      invitesQuery,
       supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
       supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
       supabase.from("profiles").select("id,display_name"),
     ]);
     setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
-    setInvites((inv.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
+    setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
     const roleMap = new Map((roles.data ?? []).map((r: any) => [r.user_id, r.role]));
     const profMap = new Map((profs.data ?? []).map((p: any) => [p.id, p.display_name]));
     setMembers((links.data ?? []).map((l: any) => ({
@@ -117,6 +121,34 @@ export default function Settings() {
 
   if (!activeChild || !s) return null;
 
+  // Viewers cannot edit any settings — show a read-only minimal screen.
+  if (isViewer) {
+    return (
+      <main className="min-h-screen bg-hero p-4">
+        <div className="max-w-md mx-auto py-4">
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+            <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
+          </Button>
+          <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
+          <Card className="p-5 shadow-card mb-4">
+            <h3 className="font-semibold mb-1">{activeChild.name}</h3>
+            <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
+          </Card>
+          <Card className="p-5 shadow-card mb-4 space-y-3">
+            <h3 className="font-semibold">{t("common.language")}</h3>
+            <Select value={i18n.language.startsWith("ru") ? "ru" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">{t("common.english")}</SelectItem>
+                <SelectItem value="ru">{t("common.russian")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Card>
+        </div>
+      </main>
+    );
+  }
+
   const months = ageInMonths(birthDate || activeChild.birth_date);
   const ww = months !== null ? wakeWindowForAge(months) : null;
 
@@ -140,7 +172,7 @@ export default function Settings() {
             <Label>{t("child.birthDate")}</Label>
             <Input type="date" value={birthDate} disabled={!isAdmin}
               onChange={(e) => setBirthDate(e.target.value)} onBlur={saveChild}
-              className="block w-full text-left" style={{ textAlign: "left" }} />
+              className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
           </div>
           {ww && (
             <p className="text-xs text-muted-foreground">
@@ -161,7 +193,7 @@ export default function Settings() {
                 <div key={mem.user_id} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
                   <span className="font-medium text-sm flex-1 truncate">
                     {mem.display_name ?? mem.user_id.slice(0, 8)}
-                    {mem.user_id === user?.id ? " (you)" : ""}
+                    {mem.user_id === user?.id ? ` (${t("settings.you")})` : ""}
                   </span>
                   {isAdmin && mem.user_id !== user?.id ? (
                     <Select value={mem.role} onValueChange={(v: any) => changeMemberRole(mem.user_id, v)}>
@@ -180,7 +212,7 @@ export default function Settings() {
             </div>
           )}
 
-          {invites.map((inv) => (
+          {canManageMembers(role) && invites.map((inv) => (
             <div key={inv.id} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
               <span className="font-mono font-semibold tracking-widest text-lg">{inv.code}</span>
               <span className="text-xs text-muted-foreground ml-2">{t("settings.expires24h")}</span>
@@ -212,13 +244,13 @@ export default function Settings() {
               <Label>{t("settings.nightStarts")}</Label>
               <Input type="time" value={s.night_start_time}
                 onChange={(e) => setS({ ...s, night_start_time: e.target.value })}
-                className="block w-full text-left" style={{ textAlign: "left" }} />
+                className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.nightEnds")}</Label>
               <Input type="time" value={s.night_end_time}
                 onChange={(e) => setS({ ...s, night_end_time: e.target.value })}
-                className="block w-full text-left" style={{ textAlign: "left" }} />
+                className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
           </div>
           <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>
