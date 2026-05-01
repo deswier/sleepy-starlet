@@ -123,14 +123,23 @@ export default function CurrentSleep() {
     if (error) toast.error(error.message); else load();
   };
 
+  // Pause: just start the interruption immediately. No method modal here.
+  // Resume: end the interruption, and ONLY then ask for the settling method
+  // that was used to put the child back to sleep.
   const toggleInterruption = async () => {
     if (!active || !user) return;
     if (interruption) {
-      await supabase.from("sleep_interruptions").update({ end_time: new Date().toISOString() }).eq("id", interruption.id);
-      load();
-    } else if (showMethodFlag && methods.length > 0) {
-      setPendingMethodId(""); setAskMethod(true);
+      // Resume flow — show method picker first if applicable.
+      if (showMethodFlag && methods.length > 0) {
+        setPendingMethodId(""); setAskMethod(true);
+      } else {
+        await supabase.from("sleep_interruptions")
+          .update({ end_time: new Date().toISOString() })
+          .eq("id", interruption.id);
+        load();
+      }
     } else {
+      // Pause flow — start an interruption right away, no modal.
       await supabase.from("sleep_interruptions").insert({
         sleep_session_id: active.id, start_time: new Date().toISOString(), created_by_user_id: user.id,
       });
@@ -138,12 +147,15 @@ export default function CurrentSleep() {
     }
   };
 
+  // Confirm resume: end the open interruption and persist the chosen settling method.
   const confirmInterruption = async () => {
-    if (!active || !user) return;
-    await supabase.from("sleep_interruptions").insert({
-      sleep_session_id: active.id, start_time: new Date().toISOString(),
-      created_by_user_id: user.id, settling_method_id: pendingMethodId || null,
-    });
+    if (!active || !user || !interruption) { setAskMethod(false); return; }
+    await supabase.from("sleep_interruptions")
+      .update({
+        end_time: new Date().toISOString(),
+        settling_method_id: pendingMethodId || null,
+      })
+      .eq("id", interruption.id);
     setAskMethod(false); load();
   };
 
@@ -206,7 +218,11 @@ export default function CurrentSleep() {
           ) : (
             <button type="button" onClick={beginEditStart} disabled={!canEditActive}
               className="opacity-80 text-sm mb-1 inline-flex items-center gap-1 hover:opacity-100 disabled:cursor-default">
-              {t("sleep.startedAt", { time: fmtDateTime(new Date(active.start_time)) })}
+              {t("sleep.startedAt", {
+                time: fmtDateTime(new Date(active.start_time)),
+                context: activeChild.gender === "male" ? "male"
+                  : activeChild.gender === "female" ? "female" : "other",
+              })}
               {canEditActive && <Pencil className="w-3 h-3" />}
             </button>
           )}
@@ -230,7 +246,7 @@ export default function CurrentSleep() {
       )}
       <Dialog open={askMethod} onOpenChange={setAskMethod}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{t("sleep.addInterruption")}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("sleep.endInterruption")}</DialogTitle></DialogHeader>
           <p className="text-xs text-muted-foreground">{t("sleep.interruptionHelp")}</p>
           <div className="space-y-1.5">
             <Label>{t("sleep.settling")}</Label>
@@ -242,7 +258,7 @@ export default function CurrentSleep() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={confirmInterruption} className="w-full">{t("sleep.addInterruption")}</Button>
+          <Button onClick={confirmInterruption} className="w-full">{t("sleep.endInterruption")}</Button>
         </DialogContent>
       </Dialog>
     </section>
