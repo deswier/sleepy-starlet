@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
+import { localizePlace, localizeMethod } from "@/lib/localize-default";
 
 interface Settings {
   night_start_time: string;
@@ -138,7 +139,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
-                  {places.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {places.map((p) => <SelectItem key={p.id} value={p.id}>{localizePlace(p.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -150,7 +151,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
-                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{localizeMethod(m.name)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
