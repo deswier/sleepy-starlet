@@ -14,7 +14,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
   const [place, setPlace] = useState<string | null>(null);
   const [method, setMethod] = useState<string | null>(null);
   const [creator, setCreator] = useState<string | null>(null);
-  const [interruptions, setInterruptions] = useState<{ start_time: string; end_time: string | null }[]>([]);
+  const [interruptions, setInterruptions] = useState<{ start_time: string; end_time: string | null; method_name: string | null }[]>([]);
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
@@ -26,7 +26,20 @@ export default function SleepDetail({ session, onClose, onChange }: {
         tasks.push(supabase.from("settling_methods").select("name").eq("id", session.settling_method_id).single().then((r) => setMethod(r.data?.name ?? null)));
       if (session.created_by_user_id)
         tasks.push(supabase.from("profiles").select("display_name").eq("id", session.created_by_user_id).single().then((r) => setCreator(r.data?.display_name ?? null)));
-      tasks.push(supabase.from("sleep_interruptions").select("start_time,end_time").eq("sleep_session_id", session.id).order("start_time").then((r) => setInterruptions(r.data ?? [])));
+      tasks.push(
+        supabase
+          .from("sleep_interruptions")
+          .select("start_time,end_time,settling_method:settling_methods(name)")
+          .eq("sleep_session_id", session.id)
+          .order("start_time")
+          .then((r) => setInterruptions(
+            (r.data ?? []).map((row: any) => ({
+              start_time: row.start_time,
+              end_time: row.end_time,
+              method_name: row.settling_method?.name ?? null,
+            })),
+          ))
+      );
       await Promise.all(tasks);
     })();
   }, [session]);
@@ -57,8 +70,9 @@ export default function SleepDetail({ session, onClose, onChange }: {
                 <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Interruptions</div>
                 <ul className="space-y-1">
                   {interruptions.map((i, idx) => (
-                    <li key={idx} className="bg-muted/60 rounded-lg px-3 py-1.5">
-                      {formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : "ongoing"}
+                    <li key={idx} className="bg-muted/60 rounded-lg px-3 py-1.5 flex justify-between gap-2">
+                      <span>{formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : "ongoing"}</span>
+                      {i.method_name && <span className="text-muted-foreground text-xs">{i.method_name}</span>}
                     </li>
                   ))}
                 </ul>
