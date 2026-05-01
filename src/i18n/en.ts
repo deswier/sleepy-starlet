@@ -35,7 +35,9 @@ const en = {
   sleep: {
     awake: "{{name}} is awake", sleeping: "{{name}} is sleeping",
     readyWhen: "Ready when sleep starts",
-    startSleep: "Start sleep", wakeUp: "Wake up",
+    startSleep: "Start sleep",
+    wakeUp: "Wake up",
+    wakeUp_male: "Wake up", wakeUp_female: "Wake up", wakeUp_other: "Wake up",
     addManually: "Add manually", addSleep: "Add sleep", addPast: "Add past sleep",
     editSleep: "Edit sleep", details: "Sleep details",
     addInterruption: "Add interruption", endInterruption: "End interruption",
@@ -53,6 +55,7 @@ const en = {
     startedAt: "Started at {{time}}",
     endAfterStart: "End must be after start",
     startNotFuture: "Start cannot be in the future",
+    overlap: "Sleep overlaps with an existing record",
     sleepAdded: "Sleep added", updated: "Updated",
     sleepsCount: "{{count}} sleep",
     sleepsCount_other: "{{count}} sleeps",
