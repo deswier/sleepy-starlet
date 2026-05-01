@@ -100,6 +100,10 @@ const ru = {
     leaveChild: "Покинуть профиль",
     confirmLeave: "Перестать отслеживать этого ребёнка? Вы сможете вернуться по коду.",
   },
+  defaults: {
+    places: { Crib: "Кроватка", Bed: "Кровать", Stroller: "Коляска", Car: "Машина" },
+    methods: { Rocking: "Укачивание", Nursing: "Кормление", Independent: "Самостоятельно", Walking: "Прогулка" },
+  },
   conflicts: {
     title: "Конфликты синхронизации",
     none: "Конфликтов нет.",
