@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Moon, History, BarChart3, Settings, LogOut, ChevronDown, Plus } from "lucide-react";
+import { Moon, History, BarChart3, Settings, LogOut, ChevronDown, Plus, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useChildren } from "@/contexts/ChildContext";
 import {
@@ -51,6 +51,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <Settings className="w-4 h-4 mr-2" /> {t("settings.title")}
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onClick={() => navigate("/profile")}>
+              <User className="w-4 h-4 mr-2" /> {t("profile.open")}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut} className="text-destructive">
               <LogOut className="w-4 h-4 mr-2" /> {t("auth.signOut")}

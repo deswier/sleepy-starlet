@@ -91,8 +91,8 @@ const en = {
     pickDate: "Pick date",
     weekIgnoresToday: "Today is excluded",
     openHeatmap: "Open diagram",
-    heatmapTitle: "Diagram",
-    heatmapHelp: "Dark blocks are sleep, light blocks are wake. Each column is a day, rows are hours of the day.",
+    heatmapTitle: "Sleep diagram",
+    heatmapHelp: "Each column is a day of the week, the vertical axis is time of day. Blocks show actual sleep periods.",
   },
   settings: {
     title: "Settings",
