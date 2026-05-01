@@ -13,6 +13,7 @@ import NewChild from "./pages/NewChild";
 import History from "./pages/History";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
+import Conflicts from "./pages/Conflicts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const App = () => (
               <Route path="/auth" element={<Auth />} />
               <Route path="/child/new" element={<RequireAuth><NewChild /></RequireAuth>} />
               <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+              <Route path="/conflicts" element={<RequireAuth><Conflicts /></RequireAuth>} />
               <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
               <Route path="/history" element={<RequireAuth><AppShell><History /></AppShell></RequireAuth>} />
               <Route path="/analytics" element={<RequireAuth><AppShell><Analytics /></AppShell></RequireAuth>} />
