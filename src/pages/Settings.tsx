@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, X, Copy, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, X, Copy, Trash2, Camera } from "lucide-react";
+import { useRef } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,7 +26,7 @@ type Member = {
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { activeChild, refresh } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
@@ -39,6 +41,21 @@ export default function Settings() {
   const [newMethod, setNewMethod] = useState("");
   const [invites, setInvites] = useState<any[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onPickChildPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!activeChild || !user) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${user.id}/${activeChild.id}-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("child-photos").upload(path, file, { upsert: true });
+    if (up.error) { toast.error(up.error.message); return; }
+    const { data } = supabase.storage.from("child-photos").getPublicUrl(path);
+    const { error } = await supabase.from("children").update({ photo_url: data.publicUrl }).eq("id", activeChild.id);
+    if (error) toast.error(error.message);
+    else { toast.success(t("common.saved")); refresh(); }
+  };
 
   const load = async () => {
     if (!activeChild) return;
@@ -133,16 +150,6 @@ export default function Settings() {
           <Card className="p-5 shadow-card mb-4">
             <h3 className="font-semibold mb-1">{activeChild.name}</h3>
             <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
-          </Card>
-          <Card className="p-5 shadow-card mb-4 space-y-3">
-            <h3 className="font-semibold">{t("common.language")}</h3>
-            <Select value={i18n.language.startsWith("ru") ? "ru" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">{t("common.english")}</SelectItem>
-                <SelectItem value="ru">{t("common.russian")}</SelectItem>
-              </SelectContent>
-            </Select>
           </Card>
         </div>
       </main>
@@ -293,18 +300,6 @@ export default function Settings() {
             setNewMethod(""); load();
           }}
           onDelete={async (id) => { await supabase.from("settling_methods").delete().eq("id", id); load(); }} />
-
-        {/* 7. Language */}
-        <Card className="p-5 shadow-card mb-4 space-y-3">
-          <h3 className="font-semibold">{t("common.language")}</h3>
-          <Select value={i18n.language.startsWith("ru") ? "ru" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">{t("common.english")}</SelectItem>
-              <SelectItem value="ru">{t("common.russian")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Card>
 
         {/* 8. Delete profile */}
         {isAdmin && (

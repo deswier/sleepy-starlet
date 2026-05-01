@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight } from "lucide-react";
+import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
@@ -141,18 +141,21 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(totalSleep)}
-        sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined} />
+        sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
+        arrow={<NormArrow value={totalSleep} norm={norm?.totalSleep} />} />
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(totalWake)} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={nightSleep ? formatDuration(nightSleep) : "—"}
-        sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined} />
+        sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined}
+        arrow={<NormArrow value={nightSleep} norm={norm?.nightSleep} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
-          value={avgWW ? formatDuration(avgWW) : "—"} />
+          value={avgWW ? formatDuration(avgWW) : "—"}
+          arrow={<NormArrow value={avgWW} norm={norm?.ww} />} />
         <SubGrid>
           <SubItem label={t("analytics.minWW")} value={wws.length ? formatDuration(minWW) : "—"} />
           <SubItem label={t("analytics.maxWW")} value={wws.length ? formatDuration(maxWW) : "—"} />
@@ -163,7 +166,8 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
       </Card>
 
       <Card className="p-5 shadow-card border-border/50">
-        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")} value={String(napsCount)} />
+        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")} value={String(napsCount)}
+          arrow={<NormArrow value={napsCount} norm={norm?.napsCount} />} />
         <SubGrid>
           <SubItem label={t("analytics.avgNap")} value={napsCount ? formatDuration(avgNap) : "—"} />
           <SubItem label={t("analytics.minNap")} value={napsCount ? formatDuration(minNap) : "—"} />
@@ -349,8 +353,8 @@ function humanDelta(v: number): string {
   return Math.round(v * 10) / 10 + "";
 }
 
-function Stat({ icon, label, value, sub, secondary }: {
-  icon: React.ReactNode; label: string; value: string; sub?: string; secondary?: string;
+function Stat({ icon, label, value, sub, secondary, arrow }: {
+  icon: React.ReactNode; label: string; value: string; sub?: string; secondary?: string; arrow?: React.ReactNode;
 }) {
   return (
     <Card className="p-5 shadow-card border-border/50">
@@ -358,23 +362,30 @@ function Stat({ icon, label, value, sub, secondary }: {
         <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">{icon}</span>
         {label}
       </div>
-      <div className="font-display text-3xl font-semibold mt-2">{value}</div>
+      <div className="font-display text-3xl font-semibold mt-2 flex items-center gap-2">{value}{arrow}</div>
       {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
       {secondary && <div className="text-xs text-muted-foreground mt-1">{secondary}</div>}
     </Card>
   );
 }
 
-function Header({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Header({ icon, label, value, arrow }: { icon: React.ReactNode; label: string; value: string; arrow?: React.ReactNode }) {
   return (
     <>
       <div className="flex items-center gap-3 text-muted-foreground text-sm mb-1">
         <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">{icon}</span>
         {label}
       </div>
-      <div className="font-display text-3xl font-semibold mt-2 mb-3">{value}</div>
+      <div className="font-display text-3xl font-semibold mt-2 mb-3 flex items-center gap-2">{value}{arrow}</div>
     </>
   );
+}
+
+export function NormArrow({ value, norm }: { value: number; norm: { min: number; max: number } | null | undefined }) {
+  if (!norm || !value) return null;
+  if (value >= norm.min && value <= norm.max) return <Check className="w-5 h-5 text-[hsl(var(--ww-good))]" />;
+  if (value < norm.min) return <ArrowDownRight className="w-5 h-5 text-[hsl(var(--ww-warn))]" />;
+  return <ArrowUpRight className="w-5 h-5 text-[hsl(var(--ww-warn))]" />;
 }
 
 function SubGrid({ children }: { children: React.ReactNode }) {

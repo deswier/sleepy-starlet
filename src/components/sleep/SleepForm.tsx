@@ -71,6 +71,16 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
     e.preventDefault();
     if (!activeChild || !user) return;
     if (end <= start) { toast.error(t("sleep.endAfterStart")); return; }
+    // Overlap check (skip when offline — enforced server-side too could be added later)
+    if (navigator.onLine) {
+      const { data: overlap } = await supabase.rpc("sleep_overlaps", {
+        _child_id: activeChild.id,
+        _start: start.toISOString(),
+        _end: end.toISOString(),
+        _exclude_id: mode === "edit" && sessionId ? sessionId : null,
+      });
+      if (overlap === true) { toast.error(t("sleep.overlap")); return; }
+    }
     setBusy(true);
     const payload = {
       child_id: activeChild.id,
