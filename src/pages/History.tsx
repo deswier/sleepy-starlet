@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ChevronDown, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import {
@@ -11,7 +10,7 @@ import {
   wwStatus, groupByDay, SleepSession,
   fetchWakeWindowRules, wwThresholdsAt, WakeWindowRule,
 } from "@/lib/sleep-utils";
-import { format, isSameDay, isToday, isYesterday } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
 import SleepForm from "@/components/sleep/SleepForm";
 import SleepDetail from "@/components/sleep/SleepDetail";
 
