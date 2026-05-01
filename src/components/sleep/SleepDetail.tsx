@@ -7,10 +7,12 @@ import SleepForm from "./SleepForm";
 import { format } from "date-fns";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 export default function SleepDetail({ session, onClose, onChange }: {
   session: SleepSession; onClose: () => void; onChange: () => void;
 }) {
+  const { t } = useTranslation();
   const [place, setPlace] = useState<string | null>(null);
   const [method, setMethod] = useState<string | null>(null);
   const [creator, setCreator] = useState<string | null>(null);
@@ -45,47 +47,47 @@ export default function SleepDetail({ session, onClose, onChange }: {
   }, [session]);
 
   const del = async () => {
-    if (!confirm("Delete this sleep?")) return;
+    if (!confirm(t("common.confirmDelete"))) return;
     const { error } = await supabase.from("sleep_sessions").delete().eq("id", session.id);
     if (error) toast.error(error.message);
-    else { toast.success("Deleted"); onChange(); onClose(); }
+    else { toast.success(t("common.deleted")); onChange(); onClose(); }
   };
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
-        <DialogHeader><DialogTitle>{editing ? "Edit sleep" : "Sleep details"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{editing ? t("sleep.editSleep") : t("sleep.details")}</DialogTitle></DialogHeader>
         {editing ? (
           <SleepForm mode="edit" sessionId={session.id} initial={session} onDone={() => { setEditing(false); onChange(); onClose(); }} />
         ) : (
           <div className="space-y-3 text-sm">
-            <Row label="Date" value={format(new Date(session.start_time), "MMMM d, yyyy")} />
-            <Row label="Time" value={`${formatTime(session.start_time)} – ${session.end_time ? formatTime(session.end_time) : "—"}`} />
-            <Row label="Duration" value={formatDuration(sessionDuration(session))} />
-            <Row label="Type" value={session.sleep_type === "night" ? "Night sleep" : "Day sleep"} />
-            {place && <Row label="Place" value={place} />}
-            {method && <Row label="Settling" value={method} />}
+            <Row label={t("sleep.start")} value={format(new Date(session.start_time), "dd.MM.yy")} />
+            <Row label={t("sleep.time")} value={`${formatTime(session.start_time)} – ${session.end_time ? formatTime(session.end_time) : "—"}`} />
+            <Row label={t("sleep.duration")} value={formatDuration(sessionDuration(session))} />
+            <Row label={t("sleep.type")} value={session.sleep_type === "night" ? t("sleep.night") : t("sleep.day")} />
+            {place && <Row label={t("sleep.place_label")} value={place} />}
+            {method && <Row label={t("sleep.settling_label")} value={method} />}
             {interruptions.length > 0 && (
               <div>
-                <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">Interruptions</div>
+                <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">{t("sleep.interruptions")}</div>
                 <ul className="space-y-1">
                   {interruptions.map((i, idx) => (
                     <li key={idx} className="bg-muted/60 rounded-lg px-3 py-1.5 flex justify-between gap-2">
-                      <span>{formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : "ongoing"}</span>
+                      <span>{formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : t("sleep.ongoing")}</span>
                       {i.method_name && <span className="text-muted-foreground text-xs">{i.method_name}</span>}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-            {session.comment && <Row label="Comment" value={session.comment} />}
-            {creator && <Row label="Created by" value={creator} />}
+            {session.comment && <Row label={t("sleep.comment")} value={session.comment} />}
+            {creator && <Row label={t("sleep.createdBy")} value={creator} />}
             <div className="flex gap-2 pt-3">
               <Button variant="outline" className="flex-1" onClick={() => setEditing(true)}>
-                <Pencil className="w-4 h-4 mr-1" /> Edit
+                <Pencil className="w-4 h-4 mr-1" /> {t("common.edit")}
               </Button>
               <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={del}>
-                <Trash2 className="w-4 h-4 mr-1" /> Delete
+                <Trash2 className="w-4 h-4 mr-1" /> {t("common.delete")}
               </Button>
             </div>
           </div>
