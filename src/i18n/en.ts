@@ -133,5 +133,23 @@ const en = {
     keepMine: "Keep mine", keepTheirs: "Keep theirs",
     resolved: "Resolved",
   },
+  profile: {
+    title: "Profile",
+    name: "Name",
+    email: "Email",
+    photo: "Photo",
+    changePhoto: "Change photo",
+    removePhoto: "Remove",
+    password: "Password",
+    newPassword: "New password",
+    changePassword: "Change password",
+    passwordChanged: "Password updated",
+    open: "Profile",
+  },
+  child: {
+    photo: "Photo",
+    changePhoto: "Change photo",
+    removePhoto: "Remove",
+  } as any,
 };
 export default en;
