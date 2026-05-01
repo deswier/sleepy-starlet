@@ -1,21 +1,26 @@
 import { useState, useEffect } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { inferSleepType } from "@/lib/sleep-utils";
-import { format, parse, isValid } from "date-fns";
+import { format } from "date-fns";
 import { toast } from "sonner";
 
 interface Settings {
   night_start_time: string;
   night_end_time: string;
+  show_sleep_place?: boolean;
+  show_falling_asleep_method?: boolean;
 }
 
 interface Props {
@@ -32,14 +37,9 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
 
-  const fmt = (d: Date) => format(d, "dd.MM.yy HH:mm");
-  const parseFmt = (str: string): Date | null => {
-    const d = parse(str, "dd.MM.yy HH:mm", new Date());
-    return isValid(d) ? d : null;
-  };
   const now = new Date();
-  const [start, setStart] = useState(initial?.start_time ? fmt(new Date(initial.start_time)) : fmt(new Date(now.getTime() - 60 * 60 * 1000)));
-  const [end, setEnd] = useState(initial?.end_time ? fmt(new Date(initial.end_time)) : fmt(now));
+  const [start, setStart] = useState<Date>(initial?.start_time ? new Date(initial.start_time) : new Date(now.getTime() - 60 * 60 * 1000));
+  const [end, setEnd] = useState<Date>(initial?.end_time ? new Date(initial.end_time) : now);
   const [sleepType, setSleepType] = useState<"day" | "night">(initial?.sleep_type ?? "day");
   const [placeId, setPlaceId] = useState<string>(initial?.sleep_place_id ?? "");
   const [methodId, setMethodId] = useState<string>(initial?.settling_method_id ?? "");
@@ -53,7 +53,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
       const [p, m, s] = await Promise.all([
         supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
         supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("child_settings").select("night_start_time,night_end_time").eq("child_id", activeChild.id).single(),
+        supabase.from("child_settings").select("night_start_time,night_end_time,show_sleep_place,show_falling_asleep_method").eq("child_id", activeChild.id).single(),
       ]);
       setPlaces(p.data ?? []);
       setMethods(m.data ?? []);
@@ -63,23 +63,19 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
 
   useEffect(() => {
     if (!typeManuallySet && settings) {
-      const d = parseFmt(start);
-      if (d) setSleepType(inferSleepType(d, settings.night_start_time, settings.night_end_time));
+      setSleepType(inferSleepType(start, settings.night_start_time, settings.night_end_time));
     }
   }, [start, settings, typeManuallySet]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeChild || !user) return;
-    const startD = parseFmt(start);
-    const endD = parseFmt(end);
-    if (!startD || !endD) { toast.error("Use format dd.MM.yy HH:mm"); return; }
-    if (endD <= startD) { toast.error("End must be after start"); return; }
+    if (end <= start) { toast.error("End must be after start"); return; }
     setBusy(true);
     const payload = {
       child_id: activeChild.id,
-      start_time: startD.toISOString(),
-      end_time: endD.toISOString(),
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
       sleep_type: sleepType,
       sleep_place_id: placeId || null,
       settling_method_id: methodId || null,
@@ -97,38 +93,8 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label>Start</Label>
-          <Input
-            type="text"
-            inputMode="numeric"
-            placeholder="dd.MM.yy HH:mm"
-            required
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>End</Label>
-          <Input
-            type="text"
-            inputMode="numeric"
-            placeholder="dd.MM.yy HH:mm"
-            required
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-          />
-        </div>
-      </div>
-      <div>
-        <Label>Sleep type</Label>
-        <Select value={sleepType} onValueChange={(v: any) => { setSleepType(v); setTypeManuallySet(true); }}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="day">Day sleep</SelectItem>
-            <SelectItem value="night">Night sleep</SelectItem>
-          </SelectContent>
-        </Select>
+        <DateTimeField label="Start" value={start} onChange={setStart} />
+        <DateTimeField label="End" value={end} onChange={setEnd} />
       </div>
 
       <Collapsible>
@@ -137,25 +103,39 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-2">
           <div>
-            <Label>Sleep place</Label>
-            <Select value={placeId || "none"} onValueChange={(v) => setPlaceId(v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+            <Label>Sleep type</Label>
+            <Select value={sleepType} onValueChange={(v: any) => { setSleepType(v); setTypeManuallySet(true); }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">— None —</SelectItem>
-                {places.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                <SelectItem value="day">Day sleep</SelectItem>
+                <SelectItem value="night">Night sleep</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label>Settling method</Label>
-            <Select value={methodId || "none"} onValueChange={(v) => setMethodId(v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— None —</SelectItem>
-                {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          {settings?.show_sleep_place !== false && (
+            <div>
+              <Label>Sleep place</Label>
+              <Select value={placeId || "none"} onValueChange={(v) => setPlaceId(v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— None —</SelectItem>
+                  {places.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {settings?.show_falling_asleep_method !== false && (
+            <div>
+              <Label>Settling method</Label>
+              <Select value={methodId || "none"} onValueChange={(v) => setMethodId(v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— None —</SelectItem>
+                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label>Comment</Label>
             <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} />
@@ -165,5 +145,51 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
 
       <Button type="submit" className="w-full" disabled={busy}>{mode === "edit" ? "Save changes" : "Add sleep"}</Button>
     </form>
+  );
+}
+
+function DateTimeField({ label, value, onChange }: { label: string; value: Date; onChange: (d: Date) => void }) {
+  const timeStr = format(value, "HH:mm");
+  const handleDate = (d: Date | undefined) => {
+    if (!d) return;
+    const next = new Date(value);
+    next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+    onChange(next);
+  };
+  const handleTime = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [h, m] = e.target.value.split(":").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+    const next = new Date(value);
+    next.setHours(h, m, 0, 0);
+    onChange(next);
+  };
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn("flex-1 justify-start text-left font-normal")}
+            >
+              <CalendarIcon className="w-4 h-4 mr-2 opacity-70" />
+              {format(value, "dd.MM.yy")}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={value}
+              onSelect={handleDate}
+              initialFocus
+              className={cn("p-3 pointer-events-auto")}
+            />
+          </PopoverContent>
+        </Popover>
+        <Input type="time" value={timeStr} onChange={handleTime} className="w-32" />
+      </div>
+    </div>
   );
 }
