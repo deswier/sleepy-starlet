@@ -20,7 +20,8 @@ const ru = {
     signOut: "Выйти",
   },
   child: {
-    addChild: "Добавить", noChild: "Нет профиля",
+    addChild: "Добавить ребёнка", noChild: "Нет профиля",
+    addTab: "Добавить", joinTab: "Присоединиться",
     title: "Добавить ребёнка", subtitle: "Немного данных, чтобы начать",
     name: "Имя", birthDate: "Дата рождения",
     gender: "Пол", boy: "Мальчик", girl: "Девочка",
