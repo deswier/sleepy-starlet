@@ -14,7 +14,11 @@ export default function Conflicts() {
   const [items, setItems] = useState<ConflictRow[]>([]);
 
   const load = async () => setItems(await db.conflicts.orderBy("createdAt").toArray());
-  useEffect(() => { load(); const off = onQueueChange(load); return off; }, []);
+  useEffect(() => {
+    load();
+    const off = onQueueChange(load);
+    return () => { off(); };
+  }, []);
 
   const choose = async (c: ConflictRow, side: "mine" | "theirs") => {
     await resolveConflict(c.id!, side);
