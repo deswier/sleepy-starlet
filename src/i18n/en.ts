@@ -31,6 +31,9 @@ const en = {
     enterCode: "Enter invite code", joining: "Joining…", joined: "Joined!",
     invalidCode: "Invalid code",
     cooldown: "Too many attempts. Try again in {{time}}.",
+    photo: "Photo",
+    changePhoto: "Change photo",
+    removePhoto: "Remove",
   },
   sleep: {
     awake: "{{name}} is awake", sleeping: "{{name}} is sleeping",
