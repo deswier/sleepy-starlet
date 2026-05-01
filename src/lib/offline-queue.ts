@@ -39,7 +39,10 @@ class LullabyDB extends Dexie {
 export const db = new LullabyDB();
 
 const listeners = new Set<() => void>();
-export const onQueueChange = (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); };
+export const onQueueChange = (fn: () => void): (() => void) => {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+};
 const emit = () => listeners.forEach((fn) => fn());
 
 export async function enqueue(m: Omit<QueuedMutation, "id" | "createdAt" | "attempts">) {
