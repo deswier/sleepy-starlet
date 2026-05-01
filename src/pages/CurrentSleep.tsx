@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,6 +25,11 @@ export default function CurrentSleep() {
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState("");
+  const [showInterruptionFlag, setShowInterruptionFlag] = useState(true);
+  const [showMethodFlag, setShowMethodFlag] = useState(true);
+  const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
+  const [askMethod, setAskMethod] = useState(false);
+  const [pendingMethodId, setPendingMethodId] = useState<string>("");
 
   useEffect(() => {
     if (!childLoading && !activeChild) navigate("/child/new");
@@ -30,6 +37,15 @@ export default function CurrentSleep() {
 
   const load = async () => {
     if (!activeChild) return;
+    const { data: cs } = await supabase
+      .from("child_settings")
+      .select("show_interruptions,show_falling_asleep_method")
+      .eq("child_id", activeChild.id).single();
+    setShowInterruptionFlag(cs?.show_interruptions !== false);
+    setShowMethodFlag(cs?.show_falling_asleep_method !== false);
+    const { data: mList } = await supabase
+      .from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name");
+    setMethods(mList ?? []);
     const { data } = await supabase
       .from("sleep_sessions")
       .select("*")
@@ -88,11 +104,27 @@ export default function CurrentSleep() {
     if (!active || !user) return;
     if (interruption) {
       await supabase.from("sleep_interruptions").update({ end_time: new Date().toISOString() }).eq("id", interruption.id);
+      load();
+    } else if (showMethodFlag && methods.length > 0) {
+      setPendingMethodId("");
+      setAskMethod(true);
     } else {
       await supabase.from("sleep_interruptions").insert({
         sleep_session_id: active.id, start_time: new Date().toISOString(), created_by_user_id: user.id,
       });
+      load();
     }
+  };
+
+  const confirmInterruption = async () => {
+    if (!active || !user) return;
+    await supabase.from("sleep_interruptions").insert({
+      sleep_session_id: active.id,
+      start_time: new Date().toISOString(),
+      created_by_user_id: user.id,
+      settling_method_id: pendingMethodId || null,
+    });
+    setAskMethod(false);
     load();
   };
 
@@ -180,12 +212,34 @@ export default function CurrentSleep() {
             <Button size="lg" variant="secondary" className="w-full h-14 text-base" onClick={wakeUp}>
               <Sun className="w-5 h-5 mr-2" /> Wake up
             </Button>
-            <Button variant="outline" className="w-full bg-white/10 border-white/30 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground" onClick={toggleInterruption}>
-              {interruption ? <><Play className="w-4 h-4 mr-2" /> End interruption</> : <><Pause className="w-4 h-4 mr-2" /> Add interruption</>}
-            </Button>
+            {showInterruptionFlag && (
+              <Button variant="outline" className="w-full bg-white/10 border-white/30 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground" onClick={toggleInterruption}>
+                {interruption ? <><Play className="w-4 h-4 mr-2" /> End interruption</> : <><Pause className="w-4 h-4 mr-2" /> Add interruption</>}
+              </Button>
+            )}
           </div>
         </Card>
       )}
+      <Dialog open={askMethod} onOpenChange={setAskMethod}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add interruption</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Interruptions do not split the sleep session. Sleep is considered continuous.
+            For long wake periods, end the current sleep and create a new one.
+          </p>
+          <div className="space-y-1.5">
+            <Label>Settling method</Label>
+            <Select value={pendingMethodId || "none"} onValueChange={(v) => setPendingMethodId(v === "none" ? "" : v)}>
+              <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— None —</SelectItem>
+                {methods.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={confirmInterruption} className="w-full">Add interruption</Button>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
