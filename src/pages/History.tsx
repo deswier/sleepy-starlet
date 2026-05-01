@@ -132,6 +132,3 @@ function DayGroup({ date, sessions, rules, birthDate, onOpen }: {
   );
 }
 
-const Row = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex justify-between"><span className="text-muted-foreground">{label}</span><span className="font-medium">{value}</span></div>
-);
