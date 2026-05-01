@@ -1,5 +1,4 @@
 import { differenceInMinutes, format, isSameDay, startOfDay } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
 
 export interface SleepSession {
   id: string;
@@ -40,51 +39,18 @@ export const wwStatus = (
   return ww >= min && ww <= max ? "good" : "warn";
 };
 
-// ---- Wake Window rules engine (historical accuracy) ----
-
-export interface WakeWindowRule {
-  id: string;
-  child_id: string;
-  source: "default" | "custom";
-  min_minutes: number;
-  max_minutes: number;
-  effective_from: string;
-  effective_to: string | null;
-}
-
 /**
- * Compute the WW thresholds active at `evaluationDate`.
- * Priority:
- *   1. Most-recent custom rule whose [effective_from, effective_to) contains the date.
- *   2. Age-based default table using child's age at evaluationDate.
+ * Compute the default age-based WW thresholds at `evaluationDate`.
+ * Wake windows are always derived from the child's age — no custom rules.
  */
 export const wwThresholdsAt = (
   evaluationDate: Date,
-  rules: WakeWindowRule[],
   birthDate: string | null,
 ): { min: number; max: number } | null => {
-  const ev = evaluationDate.getTime();
-  const matching = rules
-    .filter((r) => {
-      const from = new Date(r.effective_from).getTime();
-      const to = r.effective_to ? new Date(r.effective_to).getTime() : Infinity;
-      return from <= ev && ev < to;
-    })
-    .sort((a, b) => new Date(b.effective_from).getTime() - new Date(a.effective_from).getTime());
-  if (matching.length) return { min: matching[0].min_minutes, max: matching[0].max_minutes };
   if (!birthDate) return null;
   const months = ageInMonthsAt(birthDate, evaluationDate);
   if (months === null) return null;
   return wakeWindowForAge(months);
-};
-
-export const fetchWakeWindowRules = async (childId: string): Promise<WakeWindowRule[]> => {
-  const { data } = await supabase
-    .from("wake_window_rules")
-    .select("id,child_id,source,min_minutes,max_minutes,effective_from,effective_to")
-    .eq("child_id", childId)
-    .order("effective_from", { ascending: false });
-  return (data ?? []) as WakeWindowRule[];
 };
 
 export const inferSleepType = (
