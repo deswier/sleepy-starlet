@@ -318,15 +318,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      create_child_with_link: {
-        Args: {
-          _birth_date: string
-          _gender: Database["public"]["Enums"]["gender_type"]
-          _name: string
-          _relation: Database["public"]["Enums"]["relation_type"]
-        }
-        Returns: string
-      }
+      create_child_with_link:
+        | {
+            Args: {
+              _birth_date: string
+              _gender: Database["public"]["Enums"]["gender_type"]
+              _name: string
+              _relation: Database["public"]["Enums"]["relation_type"]
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              _birth_date: string
+              _custom_relation_name?: string
+              _gender: Database["public"]["Enums"]["gender_type"]
+              _name: string
+              _relation: Database["public"]["Enums"]["relation_type"]
+            }
+            Returns: string
+          }
       user_has_child_access: {
         Args: { _child_id: string; _user_id: string }
         Returns: boolean
