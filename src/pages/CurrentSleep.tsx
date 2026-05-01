@@ -94,6 +94,14 @@ export default function CurrentSleep() {
       .from("child_settings").select("night_start_time,night_end_time").eq("child_id", activeChild.id).single();
     const startTime = new Date();
     const type = settings ? inferSleepType(startTime, settings.night_start_time, settings.night_end_time) : "day";
+    // Prevent overlap with any existing record for this child
+    const { data: overlap } = await supabase.rpc("sleep_overlaps", {
+      _child_id: activeChild.id,
+      _start: startTime.toISOString(),
+      _end: new Date(startTime.getTime() + 60_000).toISOString(),
+      _exclude_id: null,
+    });
+    if (overlap === true) { toast.error(t("sleep.overlap")); return; }
     const { error } = await supabase.from("sleep_sessions").insert({
       child_id: activeChild.id,
       start_time: startTime.toISOString(),
