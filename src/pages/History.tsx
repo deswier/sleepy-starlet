@@ -6,7 +6,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { ChevronDown, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
-import { formatDuration, formatTime, sessionDuration, wakeWindowMinutes, wwStatus, groupByDay, SleepSession } from "@/lib/sleep-utils";
+import {
+  formatDuration, formatTime, sessionDuration, wakeWindowMinutes,
+  wwStatus, groupByDay, SleepSession,
+  fetchWakeWindowRules, wwThresholdsAt, WakeWindowRule,
+} from "@/lib/sleep-utils";
 import { format, isSameDay, isToday, isYesterday } from "date-fns";
 import SleepForm from "@/components/sleep/SleepForm";
 import SleepDetail from "@/components/sleep/SleepDetail";
@@ -14,18 +18,18 @@ import SleepDetail from "@/components/sleep/SleepDetail";
 export default function History() {
   const { activeChild } = useChildren();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
-  const [settings, setSettings] = useState<{ min_wake_window_minutes: number; max_wake_window_minutes: number } | null>(null);
+  const [rules, setRules] = useState<WakeWindowRule[]>([]);
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
   const load = async () => {
     if (!activeChild) return;
-    const [s, set] = await Promise.all([
+    const [s, r] = await Promise.all([
       supabase.from("sleep_sessions").select("*").eq("child_id", activeChild.id).not("end_time", "is", null).order("start_time", { ascending: false }).limit(200),
-      supabase.from("child_settings").select("min_wake_window_minutes,max_wake_window_minutes").eq("child_id", activeChild.id).single(),
+      fetchWakeWindowRules(activeChild.id),
     ]);
     setSessions((s.data ?? []) as SleepSession[]);
-    if (set.data) setSettings(set.data);
+    setRules(r);
   };
 
   useEffect(() => { load(); }, [activeChild]);
@@ -58,7 +62,7 @@ export default function History() {
       <div className="space-y-6">
         {groups.map((g) => (
           <DayGroup key={g.date.toISOString()} date={g.date} sessions={g.sessions}
-            settings={settings} onOpen={setOpen} />
+            rules={rules} birthDate={activeChild.birth_date} onOpen={setOpen} />
         ))}
       </div>
 
@@ -73,23 +77,15 @@ function dayLabel(d: Date) {
   return format(d, "EEEE, MMMM d");
 }
 
-function DayGroup({ date, sessions, settings, onOpen }: {
+function DayGroup({ date, sessions, rules, birthDate, onOpen }: {
   date: Date; sessions: SleepSession[];
-  settings: { min_wake_window_minutes: number; max_wake_window_minutes: number } | null;
+  rules: WakeWindowRule[];
+  birthDate: string | null;
   onOpen: (s: SleepSession) => void;
 }) {
   // sessions are desc; reverse for chronological display
   const ordered = [...sessions].reverse();
   const totalMin = ordered.reduce((acc, s) => acc + sessionDuration(s), 0);
-  const wws: number[] = [];
-  for (let i = 1; i < ordered.length; i++) {
-    const w = wakeWindowMinutes(ordered[i - 1], ordered[i]);
-    if (w !== null && w >= 0 && isSameDay(new Date(ordered[i - 1].end_time!), new Date(ordered[i].start_time)))
-      wws.push(w);
-  }
-  const avg = wws.length ? Math.round(wws.reduce((a, b) => a + b, 0) / wws.length) : null;
-  const mn = wws.length ? Math.min(...wws) : null;
-  const mx = wws.length ? Math.max(...wws) : null;
 
   return (
     <div>
@@ -102,7 +98,11 @@ function DayGroup({ date, sessions, settings, onOpen }: {
         {ordered.map((s, i) => {
           const prev = i > 0 ? ordered[i - 1] : null;
           const ww = prev ? wakeWindowMinutes(prev, s) : null;
-          const status = ww !== null && settings ? wwStatus(ww, settings.min_wake_window_minutes, settings.max_wake_window_minutes) : null;
+          let status: "good" | "warn" | null = null;
+          if (ww !== null) {
+            const th = wwThresholdsAt(new Date(s.start_time), rules, birthDate);
+            if (th) status = wwStatus(ww, th.min, th.max);
+          }
           return (
             <div key={s.id}>
               {prev && ww !== null && ww >= 0 && (
@@ -124,22 +124,9 @@ function DayGroup({ date, sessions, settings, onOpen }: {
           );
         })}
 
-        <div className="border-t border-border mt-3 pt-3">
-          <Collapsible>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total sleep</span>
-              <span className="font-display text-lg font-semibold">{formatDuration(totalMin)}</span>
-            </div>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2">
-              <ChevronDown className="w-3.5 h-3.5" /> More
-            </CollapsibleTrigger>
-            <CollapsibleContent className="mt-2 space-y-1 text-sm">
-              <Row label="Sleeps" value={String(ordered.length)} />
-              {avg !== null && <Row label="Average wake window" value={formatDuration(avg)} />}
-              {mn !== null && <Row label="Min wake window" value={formatDuration(mn)} />}
-              {mx !== null && <Row label="Max wake window" value={formatDuration(mx)} />}
-            </CollapsibleContent>
-          </Collapsible>
+        <div className="border-t border-border mt-3 pt-3 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">Total sleep</span>
+          <span className="font-display text-lg font-semibold">{formatDuration(totalMin)}</span>
         </div>
       </Card>
     </div>
