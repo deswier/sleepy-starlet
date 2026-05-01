@@ -20,7 +20,7 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) navigate("/", { replace: true });
+    if (!loading && user) routePostAuth(navigate);
   }, [user, loading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -29,7 +29,7 @@ export default function Auth() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) toast.error(error.message);
-    else navigate("/");
+    else routePostAuth(navigate);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -42,7 +42,7 @@ export default function Auth() {
     });
     setBusy(false);
     if (error) toast.error(error.message);
-    else { toast.success("Welcome! Setting things up…"); navigate("/"); }
+    else { toast.success("Welcome! Setting things up…"); routePostAuth(navigate); }
   };
 
   const handleGoogle = async () => {
@@ -50,7 +50,7 @@ export default function Auth() {
     const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
     if (result.error) { toast.error("Google sign-in failed"); setBusy(false); return; }
     if (result.redirected) return;
-    navigate("/");
+    routePostAuth(navigate);
   };
 
   return (
