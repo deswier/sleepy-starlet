@@ -15,7 +15,7 @@ import DateTimeField from "@/components/DateTimeField";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
-import { fmtDateTime } from "@/lib/sleep-utils";
+import { fmtDateTime, formatTime } from "@/lib/sleep-utils";
 import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
 
 export default function CurrentSleep() {
@@ -212,7 +212,7 @@ export default function CurrentSleep() {
           <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
           {interruption && (
             <div className="bg-white/10 rounded-xl px-4 py-2 mb-4 text-sm">
-              {t("sleep.interruptionSince", { time: format(new Date(interruption.start_time), "HH:mm") })}
+              {t("sleep.interruptionSince", { time: formatTime(interruption.start_time) })}
             </div>
           )}
           <div className="space-y-2">
