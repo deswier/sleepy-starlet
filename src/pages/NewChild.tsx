@@ -99,8 +99,8 @@ export default function NewChild() {
         <Card className="p-6 shadow-soft">
           <Tabs defaultValue="new">
             <TabsList className="grid grid-cols-2 w-full mb-4">
-              <TabsTrigger value="new">{t("child.addChild")}</TabsTrigger>
-              <TabsTrigger value="join">{t("child.joinExisting")}</TabsTrigger>
+              <TabsTrigger value="new">{t("child.addTab")}</TabsTrigger>
+              <TabsTrigger value="join">{t("child.joinTab")}</TabsTrigger>
             </TabsList>
             <TabsContent value="new">
               <form onSubmit={submit} className="space-y-4">
