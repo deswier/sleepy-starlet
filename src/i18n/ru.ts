@@ -6,6 +6,7 @@ const ru = {
     none: "— Нет —", select: "Выбрать…",
     today: "Сегодня", yesterday: "Вчера",
     minutes: "минут", language: "Язык", english: "Английский", russian: "Русский",
+    sleepTab: "Сон",
     confirmDelete: "Удалить этот сон?",
     pendingChanges: "{{count}} изменение ожидает синхронизации",
     pendingChanges_other: "{{count}} изменений ожидают синхронизации",
