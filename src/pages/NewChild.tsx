@@ -12,6 +12,7 @@ import { useChildren } from "@/contexts/ChildContext";
 import { toast } from "sonner";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { getDeviceId } from "@/lib/device-id";
 
 export default function NewChild() {
   const { t } = useTranslation();
@@ -55,14 +56,30 @@ export default function NewChild() {
       _code: code.trim().toUpperCase(),
       _relation: joinRelation,
       _custom_relation_name: joinRelation === "other" ? (joinCustom.trim() || null) : null,
+      _device_id: getDeviceId(),
     });
     setJoining(false);
-    if (error || !childId) { toast.error(error?.message ?? "Failed"); return; }
+    if (error || !childId) {
+      const msg = error?.message ?? "";
+      if (msg.includes("COOLDOWN")) {
+        const secs = parseInt(msg.split(":")[1] || "0", 10);
+        toast.error(t("child.cooldown", { time: humanCooldown(secs) }));
+      } else {
+        toast.error(t("child.invalidCode"));
+      }
+      return;
+    }
     await refresh();
     setActiveChildId(childId as string);
     toast.success(t("child.joined"));
     navigate("/");
   };
+
+  function humanCooldown(seconds: number): string {
+    if (seconds >= 3600) return `${Math.ceil(seconds / 3600)} h`;
+    if (seconds >= 60) return `${Math.ceil(seconds / 60)} min`;
+    return `${seconds} s`;
+  }
 
   return (
     <main className="min-h-screen bg-hero p-4 flex items-start sm:items-center justify-center">
