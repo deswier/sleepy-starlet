@@ -141,18 +141,21 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(totalSleep)}
-        sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined} />
+        sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
+        arrow={<NormArrow value={totalSleep} norm={norm?.totalSleep} />} />
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(totalWake)} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={nightSleep ? formatDuration(nightSleep) : "—"}
-        sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined} />
+        sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined}
+        arrow={<NormArrow value={nightSleep} norm={norm?.nightSleep} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
-          value={avgWW ? formatDuration(avgWW) : "—"} />
+          value={avgWW ? formatDuration(avgWW) : "—"}
+          arrow={<NormArrow value={avgWW} norm={norm?.ww} />} />
         <SubGrid>
           <SubItem label={t("analytics.minWW")} value={wws.length ? formatDuration(minWW) : "—"} />
           <SubItem label={t("analytics.maxWW")} value={wws.length ? formatDuration(maxWW) : "—"} />
@@ -163,7 +166,8 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
       </Card>
 
       <Card className="p-5 shadow-card border-border/50">
-        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")} value={String(napsCount)} />
+        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")} value={String(napsCount)}
+          arrow={<NormArrow value={napsCount} norm={norm?.napsCount} />} />
         <SubGrid>
           <SubItem label={t("analytics.avgNap")} value={napsCount ? formatDuration(avgNap) : "—"} />
           <SubItem label={t("analytics.minNap")} value={napsCount ? formatDuration(minNap) : "—"} />
