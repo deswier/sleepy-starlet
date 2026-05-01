@@ -25,6 +25,7 @@ export type Database = {
           redeemed_at: string | null
           redeemed_by_user_id: string | null
           revoked_at: string | null
+          role: Database["public"]["Enums"]["app_role"]
         }
         Insert: {
           child_id: string
@@ -36,6 +37,7 @@ export type Database = {
           redeemed_at?: string | null
           redeemed_by_user_id?: string | null
           revoked_at?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
         }
         Update: {
           child_id?: string
@@ -47,6 +49,7 @@ export type Database = {
           redeemed_at?: string | null
           redeemed_by_user_id?: string | null
           revoked_at?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
         }
         Relationships: []
       }
@@ -409,7 +412,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      create_child_invite: { Args: { _child_id: string }; Returns: string }
+      create_child_invite:
+        | { Args: { _child_id: string }; Returns: string }
+        | {
+            Args: {
+              _child_id: string
+              _role?: Database["public"]["Enums"]["app_role"]
+            }
+            Returns: string
+          }
       create_child_with_link:
         | {
             Args: {
