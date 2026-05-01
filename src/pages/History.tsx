@@ -36,6 +36,17 @@ export default function History() {
   };
   useEffect(() => { load(); }, [activeChild]);
 
+  useEffect(() => {
+    if (!activeChild) return;
+    const ch = supabase
+      .channel(`history-${activeChild.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
+        () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [activeChild?.id]);
+
   if (!activeChild) return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
 
   const groups = groupSessions(sessions, splitByDate);
