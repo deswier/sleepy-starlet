@@ -13,15 +13,17 @@ import { formatDuration, sessionDuration, inferSleepType, SleepSession } from "@
 import SleepForm from "@/components/sleep/SleepForm";
 import DateTimeField from "@/components/DateTimeField";
 import { toast } from "sonner";
-import { format } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
+import { fmtDateTime } from "@/lib/sleep-utils";
+import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
 
 export default function CurrentSleep() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { activeChild, loading: childLoading } = useChildren();
   const { user } = useAuth();
+  const { role } = useChildRole();
   const [active, setActive] = useState<SleepSession | null>(null);
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
   const [now, setNow] = useState(new Date());
@@ -69,6 +71,21 @@ export default function CurrentSleep() {
     const i = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(i);
   }, []);
+
+  // Realtime: any change to this child's sleep sessions or interruptions reloads state.
+  useEffect(() => {
+    if (!activeChild) return;
+    const ch = supabase
+      .channel(`sleep-${activeChild.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
+        () => load())
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_interruptions" },
+        () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [activeChild?.id]);
 
   const startSleep = async () => {
     if (!activeChild || !user) return;
@@ -131,6 +148,8 @@ export default function CurrentSleep() {
 
   const beginEditStart = () => {
     if (!active) return;
+    const owns = active.created_by_user_id === user?.id;
+    if (!(canEditAnySleep(role) || (canEditOwnSleep(role) && owns))) return;
     setStartDraft(new Date(active.start_time));
     setEditingStart(true);
   };
@@ -144,6 +163,11 @@ export default function CurrentSleep() {
 
   if (!activeChild) return null;
 
+  const ownsActive = active?.created_by_user_id === user?.id;
+  const canEditActive = canEditAnySleep(role) || (canEditOwnSleep(role) && ownsActive);
+  const canEnd = canEditActive;
+  const canStart = canCreateSleep(role);
+
   return (
     <section className="px-4 max-w-md mx-auto w-full">
       {!active ? (
@@ -153,10 +177,10 @@ export default function CurrentSleep() {
           </div>
           <h2 className="font-display text-2xl font-semibold mb-2">{t("sleep.awake", { name: activeChild.name })}</h2>
           <p className="text-muted-foreground text-sm mb-6">{t("sleep.readyWhen")}</p>
-          <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep}>
+          <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep} disabled={!canStart}>
             <Moon className="w-5 h-5 mr-2" /> {t("sleep.startSleep")}
           </Button>
-          <Dialog open={showManual} onOpenChange={setShowManual}>
+          {canStart && <Dialog open={showManual} onOpenChange={setShowManual}>
             <DialogTrigger asChild>
               <Button variant="ghost" className="w-full mt-3"><Plus className="w-4 h-4 mr-1" /> {t("sleep.addManually")}</Button>
             </DialogTrigger>
@@ -164,7 +188,7 @@ export default function CurrentSleep() {
               <DialogHeader><DialogTitle>{t("sleep.addSleep")}</DialogTitle></DialogHeader>
               <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
             </DialogContent>
-          </Dialog>
+          </Dialog>}
         </Card>
       ) : (
         <Card className="p-8 text-center bg-night text-primary-foreground shadow-glow border-0 mt-4">
@@ -179,9 +203,10 @@ export default function CurrentSleep() {
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingStart(false)}><X className="w-4 h-4" /></Button>
             </div>
           ) : (
-            <button type="button" onClick={beginEditStart} className="opacity-80 text-sm mb-1 inline-flex items-center gap-1 hover:opacity-100">
-              {t("sleep.startedAt", { time: format(new Date(active.start_time), "dd.MM.yy HH:mm") })}
-              <Pencil className="w-3 h-3" />
+            <button type="button" onClick={beginEditStart} disabled={!canEditActive}
+              className="opacity-80 text-sm mb-1 inline-flex items-center gap-1 hover:opacity-100 disabled:cursor-default">
+              {t("sleep.startedAt", { time: fmtDateTime(new Date(active.start_time)) })}
+              {canEditActive && <Pencil className="w-3 h-3" />}
             </button>
           )}
           <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
@@ -191,10 +216,10 @@ export default function CurrentSleep() {
             </div>
           )}
           <div className="space-y-2">
-            <Button size="lg" variant="secondary" className="w-full h-14 text-base" onClick={wakeUp}>
+            <Button size="lg" variant="secondary" className="w-full h-14 text-base" onClick={wakeUp} disabled={!canEnd}>
               <Sun className="w-5 h-5 mr-2" /> {t("sleep.wakeUp")}
             </Button>
-            {showInterruptionFlag && (
+            {showInterruptionFlag && canEnd && (
               <Button variant="outline" className="w-full bg-white/10 border-white/30 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground" onClick={toggleInterruption}>
                 {interruption ? <><Play className="w-4 h-4 mr-2" /> {t("sleep.endInterruption")}</> : <><Pause className="w-4 h-4 mr-2" /> {t("sleep.addInterruption")}</>}
               </Button>
