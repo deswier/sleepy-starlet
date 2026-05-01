@@ -242,7 +242,10 @@ export default function CurrentSleep() {
           )}
           <div className="space-y-2">
             <Button size="lg" variant="secondary" className="w-full h-14 text-base" onClick={wakeUp} disabled={!canEnd}>
-              <Sun className="w-5 h-5 mr-2" /> {t("sleep.wakeUp")}
+              <Sun className="w-5 h-5 mr-2" /> {t("sleep.wakeUp", {
+                context: activeChild.gender === "male" ? "male"
+                  : activeChild.gender === "female" ? "female" : "other",
+              })}
             </Button>
             {showInterruptionFlag && canEnd && (
               <Button variant="outline" className="w-full bg-white/10 border-white/30 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground" onClick={toggleInterruption}>
