@@ -189,6 +189,7 @@ export type Database = {
           created_by_user_id: string | null
           end_time: string | null
           id: string
+          settling_method_id: string | null
           sleep_session_id: string
           start_time: string
         }
@@ -198,6 +199,7 @@ export type Database = {
           created_by_user_id?: string | null
           end_time?: string | null
           id?: string
+          settling_method_id?: string | null
           sleep_session_id: string
           start_time: string
         }
@@ -207,10 +209,18 @@ export type Database = {
           created_by_user_id?: string | null
           end_time?: string | null
           id?: string
+          settling_method_id?: string | null
           sleep_session_id?: string
           start_time?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "sleep_interruptions_settling_method_id_fkey"
+            columns: ["settling_method_id"]
+            isOneToOne: false
+            referencedRelation: "settling_methods"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "sleep_interruptions_sleep_session_id_fkey"
             columns: ["sleep_session_id"]
@@ -312,6 +322,50 @@ export type Database = {
             columns: ["sleep_place_id"]
             isOneToOne: false
             referencedRelation: "sleep_places"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wake_window_rules: {
+        Row: {
+          child_id: string
+          created_at: string
+          created_by_user_id: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          max_minutes: number
+          min_minutes: number
+          source: string
+        }
+        Insert: {
+          child_id: string
+          created_at?: string
+          created_by_user_id?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          max_minutes: number
+          min_minutes: number
+          source: string
+        }
+        Update: {
+          child_id?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          max_minutes?: number
+          min_minutes?: number
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wake_window_rules_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
             referencedColumns: ["id"]
           },
         ]
