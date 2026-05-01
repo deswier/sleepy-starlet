@@ -26,7 +26,7 @@ type Member = {
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { activeChild, refresh } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
