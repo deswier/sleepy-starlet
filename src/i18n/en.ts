@@ -12,6 +12,7 @@ const en = {
     pendingChanges_other: "{{count}} pending changes",
     offline: "Offline",
     online: "Online",
+    adjustPhoto: "Adjust photo",
   },
   auth: {
     signIn: "Sign in", signUp: "Sign up", email: "Email", password: "Password",
@@ -123,6 +124,8 @@ const en = {
     confirmDeleteProfile: "Delete this child profile? All data will be removed.",
     leaveChild: "Leave this child",
     confirmLeave: "Stop tracking this child? You can re-join with an invite code.",
+    removeMember: "Remove member",
+    confirmRemoveMember: "Remove this member from the family?",
   },
   defaults: {
     places: { Crib: "Crib", Bed: "Bed", Stroller: "Stroller", Car: "Car" },
