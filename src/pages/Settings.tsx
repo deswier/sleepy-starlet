@@ -41,6 +41,21 @@ export default function Settings() {
   const [newMethod, setNewMethod] = useState("");
   const [invites, setInvites] = useState<any[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onPickChildPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!activeChild || !user) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${user.id}/${activeChild.id}-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("child-photos").upload(path, file, { upsert: true });
+    if (up.error) { toast.error(up.error.message); return; }
+    const { data } = supabase.storage.from("child-photos").getPublicUrl(path);
+    const { error } = await supabase.from("children").update({ photo_url: data.publicUrl }).eq("id", activeChild.id);
+    if (error) toast.error(error.message);
+    else { toast.success(t("common.saved")); refresh(); }
+  };
 
   const load = async () => {
     if (!activeChild) return;
