@@ -210,6 +210,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          language: string | null
           updated_at: string
         }
         Insert: {
@@ -217,6 +218,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id: string
+          language?: string | null
           updated_at?: string
         }
         Update: {
@@ -224,6 +226,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          language?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -451,6 +454,15 @@ export type Database = {
           _relation?: Database["public"]["Enums"]["relation_type"]
         }
         Returns: string
+      }
+      sleep_overlaps: {
+        Args: {
+          _child_id: string
+          _end: string
+          _exclude_id?: string
+          _start: string
+        }
+        Returns: boolean
       }
       user_has_child_access: {
         Args: { _child_id: string; _user_id: string }
