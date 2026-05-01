@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatDuration, sessionDuration, formatTime, inferSleepType, SleepSession, formatDateTimeDisplay } from "@/lib/sleep-utils";
+import { formatDuration, sessionDuration, formatTime, inferSleepType, SleepSession } from "@/lib/sleep-utils";
 import SleepForm from "@/components/sleep/SleepForm";
 import { toast } from "sonner";
 import { format, parse, isValid } from "date-fns";
