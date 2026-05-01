@@ -301,18 +301,6 @@ export default function Settings() {
           }}
           onDelete={async (id) => { await supabase.from("settling_methods").delete().eq("id", id); load(); }} />
 
-        {/* 7. Language */}
-        <Card className="p-5 shadow-card mb-4 space-y-3">
-          <h3 className="font-semibold">{t("common.language")}</h3>
-          <Select value={i18n.language.startsWith("ru") ? "ru" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">{t("common.english")}</SelectItem>
-              <SelectItem value="ru">{t("common.russian")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Card>
-
         {/* 8. Delete profile */}
         {isAdmin && (
           <Card className="p-5 shadow-card mb-4">
