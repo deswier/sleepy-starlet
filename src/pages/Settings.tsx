@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, X, Copy, Trash2, Camera } from "lucide-react";
+import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus } from "lucide-react";
 import { useRef } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,6 +17,7 @@ import { ageInMonths, wakeWindowForAge, formatDuration, fmtDateTime } from "@/li
 import { useTranslation } from "react-i18next";
 import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import ImageCropDialog from "@/components/ImageCropDialog";
 
 type Member = {
   user_id: string;
@@ -34,6 +35,7 @@ export default function Settings() {
   const isViewer = role === "viewer";
 
   const [s, setS] = useState<any>(null);
+  const [childName, setChildName] = useState<string>("");
   const [birthDate, setBirthDate] = useState<string>("");
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
@@ -41,15 +43,21 @@ export default function Settings() {
   const [newMethod, setNewMethod] = useState("");
   const [invites, setInvites] = useState<any[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [inviteRole, setInviteRole] = useState<"viewer" | "user" | "admin">("user");
+  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const onPickChildPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPickChildPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) setPendingPhoto(f);
+    e.target.value = "";
+  };
+
+  const uploadChildPhoto = async (blob: Blob) => {
     if (!activeChild || !user) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `${user.id}/${activeChild.id}-${Date.now()}.${ext}`;
-    const up = await supabase.storage.from("child-photos").upload(path, file, { upsert: true });
+    setPendingPhoto(null);
+    const path = `${user.id}/${activeChild.id}-${Date.now()}.jpg`;
+    const up = await supabase.storage.from("child-photos").upload(path, blob, { upsert: true, contentType: "image/jpeg" });
     if (up.error) { toast.error(up.error.message); return; }
     const { data } = supabase.storage.from("child-photos").getPublicUrl(path);
     const { error } = await supabase.from("children").update({ photo_url: data.publicUrl }).eq("id", activeChild.id);
@@ -59,6 +67,7 @@ export default function Settings() {
 
   const load = async () => {
     if (!activeChild) return;
+    setChildName(activeChild.name ?? "");
     setBirthDate(activeChild.birth_date ?? "");
     const invitesQuery = canManageMembers(role)
       ? supabase.from("child_invites").select("*").eq("child_id", activeChild.id)
@@ -100,15 +109,17 @@ export default function Settings() {
 
   const saveChild = async () => {
     if (!activeChild || !isAdmin) return;
+    const name = (childName ?? "").trim();
+    if (!name) return;
     const { error } = await supabase.from("children").update({
-      name: activeChild.name, birth_date: birthDate || null,
+      name, birth_date: birthDate || null,
     }).eq("id", activeChild.id);
     if (error) toast.error(error.message); else { toast.success(t("common.saved")); refresh(); }
   };
 
   const generateInvite = async () => {
     if (!activeChild) return;
-    const { error } = await supabase.rpc("create_child_invite", { _child_id: activeChild.id });
+    const { error } = await supabase.rpc("create_child_invite", { _child_id: activeChild.id, _role: inviteRole } as any);
     if (error) { toast.error(error.message); return; }
     load();
   };
@@ -126,6 +137,17 @@ export default function Settings() {
     const { error } = await supabase.from("child_user_roles")
       .update({ role: newRole }).eq("child_id", activeChild.id).eq("user_id", uid);
     if (error) toast.error(error.message); else { toast.success(t("common.saved")); load(); }
+  };
+
+  const removeMember = async (uid: string) => {
+    if (!activeChild || !isAdmin) return;
+    if (!confirm(t("settings.confirmRemoveMember"))) return;
+    const { error: e1 } = await supabase.from("child_user_roles").delete()
+      .eq("child_id", activeChild.id).eq("user_id", uid);
+    const { error: e2 } = await supabase.from("child_users").delete()
+      .eq("child_id", activeChild.id).eq("user_id", uid);
+    if (e1 || e2) toast.error((e1 || e2)!.message);
+    else { toast.success(t("common.deleted")); load(); }
   };
 
   const deleteProfile = async () => {
@@ -170,10 +192,27 @@ export default function Settings() {
         {/* 1. Child */}
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">{t("settings.child")}</h3>
+          <div className="flex items-center gap-3">
+            <Avatar className="w-16 h-16">
+              {activeChild.photo_url && <AvatarImage src={activeChild.photo_url} alt="" />}
+              <AvatarFallback className="bg-primary/15 text-primary font-semibold">
+                {(activeChild.name ?? "•").trim().slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            {isAdmin && (
+              <>
+                <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+                  <Camera className="w-4 h-4 mr-1" /> {t("child.changePhoto")}
+                </Button>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickChildPhoto} />
+              </>
+            )}
+          </div>
+          <ImageCropDialog file={pendingPhoto} open={!!pendingPhoto} onClose={() => setPendingPhoto(null)} onConfirm={uploadChildPhoto} />
           <div className="space-y-1.5">
             <Label>{t("child.name")}</Label>
-            <Input value={activeChild.name} disabled={!isAdmin}
-              onChange={(e) => { activeChild.name = e.target.value; refresh(); }} onBlur={saveChild} />
+            <Input value={childName} disabled={!isAdmin}
+              onChange={(e) => setChildName(e.target.value)} onBlur={saveChild} />
           </div>
           <div className="space-y-1.5">
             <Label>{t("child.birthDate")}</Label>
@@ -203,14 +242,20 @@ export default function Settings() {
                     {mem.user_id === user?.id ? ` (${t("settings.you")})` : ""}
                   </span>
                   {isAdmin && mem.user_id !== user?.id ? (
-                    <Select value={mem.role} onValueChange={(v: any) => changeMemberRole(mem.user_id, v)}>
-                      <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="viewer">{t("settings.role_viewer")}</SelectItem>
-                        <SelectItem value="user">{t("settings.role_user")}</SelectItem>
-                        <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <>
+                      <Select value={mem.role} onValueChange={(v: any) => changeMemberRole(mem.user_id, v)}>
+                        <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="viewer">{t("settings.role_viewer")}</SelectItem>
+                          <SelectItem value="user">{t("settings.role_user")}</SelectItem>
+                          <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
+                        onClick={() => removeMember(mem.user_id)} title={t("settings.removeMember")}>
+                        <UserMinus className="w-4 h-4" />
+                      </Button>
+                    </>
                   ) : (
                     <span className="text-xs text-muted-foreground">{t(`settings.role_${mem.role}`)}</span>
                   )}
@@ -236,9 +281,19 @@ export default function Settings() {
             </div>
           ))}
           {canManageMembers(role) && (
-            <Button variant="outline" onClick={generateInvite} className="w-full">
-              <Plus className="w-4 h-4 mr-1" /> {t("settings.generateCode")}
-            </Button>
+            <div className="flex gap-2">
+              <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
+                <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="viewer">{t("settings.role_viewer")}</SelectItem>
+                  <SelectItem value="user">{t("settings.role_user")}</SelectItem>
+                  <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={generateInvite} className="flex-1">
+                <Plus className="w-4 h-4 mr-1" /> {t("settings.generateCode")}
+              </Button>
+            </div>
           )}
         </Card>
 
