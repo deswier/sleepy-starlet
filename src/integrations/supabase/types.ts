@@ -26,6 +26,7 @@ export type Database = {
           show_sleep_place: boolean
           split_night_sleep_by_date: boolean
           updated_at: string
+          use_age_default_wake_window: boolean
         }
         Insert: {
           child_id: string
@@ -38,6 +39,7 @@ export type Database = {
           show_sleep_place?: boolean
           split_night_sleep_by_date?: boolean
           updated_at?: string
+          use_age_default_wake_window?: boolean
         }
         Update: {
           child_id?: string
@@ -50,6 +52,7 @@ export type Database = {
           show_sleep_place?: boolean
           split_night_sleep_by_date?: boolean
           updated_at?: string
+          use_age_default_wake_window?: boolean
         }
         Relationships: [
           {
