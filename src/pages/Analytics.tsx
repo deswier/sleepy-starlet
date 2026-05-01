@@ -269,18 +269,21 @@ function WeekView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
-        secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined} />
+        secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
+        arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={avgNightSleep ? formatDuration(avgNightSleep) : "—"} sub={t("analytics.avgPerDay")}
-        secondary={norm && avgNightSleep ? normLabel(t, avgNightSleep, norm.nightSleep) : undefined} />
+        secondary={norm && avgNightSleep ? normLabel(t, avgNightSleep, norm.nightSleep) : undefined}
+        arrow={<NormArrow value={avgNightSleep} norm={norm?.nightSleep} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
-          value={avgWW ? formatDuration(avgWW) : "—"} />
+          value={avgWW ? formatDuration(avgWW) : "—"}
+          arrow={<NormArrow value={avgWW} norm={norm?.ww} />} />
         <SubGrid>
           <SubItem label={t("analytics.minWW")} value={allWWs.length ? formatDuration(minWW) : "—"} />
           <SubItem label={t("analytics.maxWW")} value={allWWs.length ? formatDuration(maxWW) : "—"} />
@@ -292,7 +295,8 @@ function WeekView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")}
-          value={String(avgNapsCount)} />
+          value={String(avgNapsCount)}
+          arrow={<NormArrow value={avgNapsCount} norm={norm?.napsCount} />} />
         <SubGrid>
           <SubItem label={t("analytics.minNapsCount")} value={String(minNapsCount)} />
           <SubItem label={t("analytics.maxNapsCount")} value={String(maxNapsCount)} />
