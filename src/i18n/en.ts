@@ -87,8 +87,8 @@ const en = {
     below: "{{value}} below norm",
     pickDate: "Pick date",
     weekIgnoresToday: "Today is excluded",
-    openHeatmap: "Open sleep heatmap",
-    heatmapTitle: "Sleep heatmap",
+    openHeatmap: "Open diagram",
+    heatmapTitle: "Diagram",
     heatmapHelp: "Dark blocks are sleep, light blocks are wake. Each column is a day, rows are hours of the day.",
   },
   settings: {
