@@ -134,16 +134,6 @@ export default function Settings() {
             <h3 className="font-semibold mb-1">{activeChild.name}</h3>
             <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
           </Card>
-          <Card className="p-5 shadow-card mb-4 space-y-3">
-            <h3 className="font-semibold">{t("common.language")}</h3>
-            <Select value={i18n.language.startsWith("ru") ? "ru" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">{t("common.english")}</SelectItem>
-                <SelectItem value="ru">{t("common.russian")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </Card>
         </div>
       </main>
     );
