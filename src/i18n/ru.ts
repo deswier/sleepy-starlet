@@ -32,6 +32,9 @@ const ru = {
     enterCode: "Введите код приглашения", joining: "Присоединяемся…", joined: "Готово!",
     invalidCode: "Неверный код",
     cooldown: "Слишком много попыток. Повторите через {{time}}.",
+    photo: "Фото",
+    changePhoto: "Изменить фото",
+    removePhoto: "Удалить",
   },
   sleep: {
     awake: "{{name}} не спит", sleeping: "{{name}} спит",
@@ -90,9 +93,9 @@ const ru = {
     below: "Ниже нормы на {{value}}",
     pickDate: "Выбрать дату",
     weekIgnoresToday: "Текущий день не учитывается",
-    openHeatmap: "Открыть тепловую карту",
-    heatmapTitle: "Тепловая карта сна",
-    heatmapHelp: "Тёмные участки — сон, светлые — бодрствование. Каждая колонка — день, строки — часы суток.",
+    openHeatmap: "Открыть диаграмму",
+    heatmapTitle: "Диаграмма сна",
+    heatmapHelp: "Каждая колонка — день недели, по вертикали — время суток. Прямоугольники показывают периоды сна.",
   },
   settings: {
     title: "Настройки",
@@ -135,6 +138,19 @@ const ru = {
     yourVersion: "Ваша версия", serverVersion: "Серверная версия",
     keepMine: "Оставить мою", keepTheirs: "Оставить серверную",
     resolved: "Готово",
+  },
+  profile: {
+    title: "Профиль",
+    name: "Имя",
+    email: "Email",
+    photo: "Фото",
+    changePhoto: "Изменить фото",
+    removePhoto: "Удалить",
+    password: "Пароль",
+    newPassword: "Новый пароль",
+    changePassword: "Сменить пароль",
+    passwordChanged: "Пароль обновлён",
+    open: "Профиль",
   },
 };
 export default ru;
