@@ -2,17 +2,23 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { formatDuration, formatTime, sessionDuration, SleepSession } from "@/lib/sleep-utils";
+import { formatDuration, formatTime, sessionDuration, SleepSession, fmtDate } from "@/lib/sleep-utils";
 import SleepForm from "./SleepForm";
-import { format } from "date-fns";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@/contexts/AuthContext";
+import { useChildRole, canEditAnySleep, canEditOwnSleep } from "@/hooks/useChildRole";
+import { localizePlace, localizeMethod } from "@/lib/localize-default";
 
 export default function SleepDetail({ session, onClose, onChange }: {
   session: SleepSession; onClose: () => void; onChange: () => void;
 }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const { role } = useChildRole();
+  const owns = session.created_by_user_id === user?.id;
+  const canEdit = canEditAnySleep(role) || (canEditOwnSleep(role) && owns);
   const [place, setPlace] = useState<string | null>(null);
   const [method, setMethod] = useState<string | null>(null);
   const [creator, setCreator] = useState<string | null>(null);
@@ -23,9 +29,9 @@ export default function SleepDetail({ session, onClose, onChange }: {
     (async () => {
       const tasks: any[] = [];
       if (session.sleep_place_id)
-        tasks.push(supabase.from("sleep_places").select("name").eq("id", session.sleep_place_id).single().then((r) => setPlace(r.data?.name ?? null)));
+        tasks.push(supabase.from("sleep_places").select("name").eq("id", session.sleep_place_id).single().then((r) => setPlace(r.data?.name ? localizePlace(r.data.name) : null)));
       if (session.settling_method_id)
-        tasks.push(supabase.from("settling_methods").select("name").eq("id", session.settling_method_id).single().then((r) => setMethod(r.data?.name ?? null)));
+        tasks.push(supabase.from("settling_methods").select("name").eq("id", session.settling_method_id).single().then((r) => setMethod(r.data?.name ? localizeMethod(r.data.name) : null)));
       if (session.created_by_user_id)
         tasks.push(supabase.from("profiles").select("display_name").eq("id", session.created_by_user_id).single().then((r) => setCreator(r.data?.display_name ?? null)));
       tasks.push(
@@ -38,7 +44,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
             (r.data ?? []).map((row: any) => ({
               start_time: row.start_time,
               end_time: row.end_time,
-              method_name: row.settling_method?.name ?? null,
+              method_name: row.settling_method?.name ? localizeMethod(row.settling_method.name) : null,
             })),
           ))
       );
@@ -61,7 +67,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
           <SleepForm mode="edit" sessionId={session.id} initial={session} onDone={() => { setEditing(false); onChange(); onClose(); }} />
         ) : (
           <div className="space-y-3 text-sm">
-            <Row label={t("sleep.start")} value={format(new Date(session.start_time), "dd.MM.yy")} />
+            <Row label={t("sleep.start")} value={fmtDate(session.start_time)} />
             <Row label={t("sleep.time")} value={`${formatTime(session.start_time)} – ${session.end_time ? formatTime(session.end_time) : "—"}`} />
             <Row label={t("sleep.duration")} value={formatDuration(sessionDuration(session))} />
             <Row label={t("sleep.type")} value={session.sleep_type === "night" ? t("sleep.night") : t("sleep.day")} />
@@ -82,14 +88,16 @@ export default function SleepDetail({ session, onClose, onChange }: {
             )}
             {session.comment && <Row label={t("sleep.comment")} value={session.comment} />}
             {creator && <Row label={t("sleep.createdBy")} value={creator} />}
-            <div className="flex gap-2 pt-3">
-              <Button variant="outline" className="flex-1" onClick={() => setEditing(true)}>
-                <Pencil className="w-4 h-4 mr-1" /> {t("common.edit")}
-              </Button>
-              <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={del}>
-                <Trash2 className="w-4 h-4 mr-1" /> {t("common.delete")}
-              </Button>
-            </div>
+            {canEdit && (
+              <div className="flex gap-2 pt-3">
+                <Button variant="outline" className="flex-1" onClick={() => setEditing(true)}>
+                  <Pencil className="w-4 h-4 mr-1" /> {t("common.edit")}
+                </Button>
+                <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={del}>
+                  <Trash2 className="w-4 h-4 mr-1" /> {t("common.delete")}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
