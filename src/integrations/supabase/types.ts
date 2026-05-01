@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      child_invites: {
+        Row: {
+          child_id: string
+          code: string
+          created_at: string
+          created_by_user_id: string
+          expires_at: string
+          id: string
+          redeemed_at: string | null
+          redeemed_by_user_id: string | null
+          revoked_at: string | null
+        }
+        Insert: {
+          child_id: string
+          code: string
+          created_at?: string
+          created_by_user_id: string
+          expires_at?: string
+          id?: string
+          redeemed_at?: string | null
+          redeemed_by_user_id?: string | null
+          revoked_at?: string | null
+        }
+        Update: {
+          child_id?: string
+          code?: string
+          created_at?: string
+          created_by_user_id?: string
+          expires_at?: string
+          id?: string
+          redeemed_at?: string | null
+          redeemed_by_user_id?: string | null
+          revoked_at?: string | null
+        }
+        Relationships: []
+      }
       child_settings: {
         Row: {
           child_id: string
@@ -322,6 +358,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_child_invite: { Args: { _child_id: string }; Returns: string }
       create_child_with_link:
         | {
             Args: {
@@ -342,6 +379,14 @@ export type Database = {
             }
             Returns: string
           }
+      redeem_child_invite: {
+        Args: {
+          _code: string
+          _custom_relation_name?: string
+          _relation?: Database["public"]["Enums"]["relation_type"]
+        }
+        Returns: string
+      }
       user_has_child_access: {
         Args: { _child_id: string; _user_id: string }
         Returns: boolean
