@@ -72,6 +72,7 @@ const ru = {
     totalSleep: "Всего сна", awake_label: "{{duration}}",
     noHistory: "Снов пока нет.",
     noChildSelected: "Профиль не выбран",
+    timeToSleep: "Пора спать!",
   },
   history: { title: "История" },
   analytics: {
