@@ -53,7 +53,7 @@ export const useAuth = () => useContext(Ctx);
 async function syncLanguageFromProfile(userId: string) {
   try {
     const { data } = await supabase.from("profiles").select("language").eq("id", userId).maybeSingle();
-    const lang = (data as any)?.language;
+    const lang = (data as { language?: string } | null)?.language;
     if (lang && (lang === "ru" || lang === "en") && i18n.language !== lang) {
       i18n.changeLanguage(lang);
     }
