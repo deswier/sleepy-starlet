@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
@@ -10,11 +11,12 @@ import {
   formatDuration, formatTime, sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
 } from "@/lib/sleep-utils";
-import { isToday, isYesterday, startOfDay } from "date-fns";
+import { isToday, isYesterday, startOfDay, isSameDay, addDays, subDays, format, differenceInMinutes } from "date-fns";
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import SleepForm from "@/components/sleep/SleepForm";
 import SleepDetail from "@/components/sleep/SleepDetail";
 import { Loader2 } from "lucide-react";
+import { sessionDay, type NightWindow } from "@/pages/Analytics";
 
 export default function History() {
   const { activeChild } = useChildren();
@@ -22,20 +24,28 @@ export default function History() {
   const { role } = useChildRole();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [splitByDate, setSplitByDate] = useState(false);
+  const [night, setNight] = useState<NightWindow>({ start: "19:00", end: "07:00" });
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [day, setDay] = useState<Date>(startOfDay(new Date()));
 
   const load = async () => {
     if (!activeChild) return;
     setLoading(true);
     const [s, cs] = await Promise.all([
       supabase.from("sleep_sessions").select("*").eq("child_id", activeChild.id)
-        .not("end_time", "is", null).order("start_time", { ascending: false }).limit(200),
-      supabase.from("child_settings").select("split_night_sleep_by_date").eq("child_id", activeChild.id).single(),
+        .order("start_time", { ascending: false }).limit(200),
+      supabase.from("child_settings")
+        .select("split_night_sleep_by_date,night_start_time,night_end_time")
+        .eq("child_id", activeChild.id).single(),
     ]);
     setSessions((s.data ?? []) as SleepSession[]);
     setSplitByDate(!!cs.data?.split_night_sleep_by_date);
+    if (cs.data) setNight({
+      start: (cs.data.night_start_time as string)?.slice(0, 5) ?? "19:00",
+      end: (cs.data.night_end_time as string)?.slice(0, 5) ?? "07:00",
+    });
     setLoading(false);
   };
   useEffect(() => { load(); }, [activeChild]);
@@ -53,7 +63,10 @@ export default function History() {
 
   if (!activeChild) return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
 
-  const groups = groupSessions(sessions, splitByDate);
+  const today = startOfDay(new Date());
+  const daySessions = sessions
+    .filter((s) => isSameDay(bucketDay(s, splitByDate, night), day))
+    .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 
   return (
     <section className="px-4 max-w-md mx-auto w-full pb-4">
@@ -70,50 +83,43 @@ export default function History() {
         </Dialog>}
       </div>
 
+      <div className="flex items-center gap-2 mb-4">
+        <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <Input type="date" value={format(day, "yyyy-MM-dd")} max={format(today, "yyyy-MM-dd")}
+          onChange={(e) => e.target.value && setDay(startOfDay(new Date(e.target.value)))}
+          className="text-center" />
+        <Button variant="ghost" size="icon"
+          disabled={isSameDay(day, today)}
+          onClick={() => setDay(addDays(day, 1))}>
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
+
       {loading && (
         <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
         </Card>
       )}
 
-      {!loading && groups.length === 0 && (
+      {!loading && daySessions.length === 0 && (
         <Card className="p-8 text-center text-muted-foreground shadow-card">{t("sleep.noHistory")}</Card>
       )}
 
-      {!loading && <div className="space-y-6">
-        {groups.map((g) => (
-          <DayGroup key={g.date.toISOString()} date={g.date} sessions={g.sessions}
-            birthDate={activeChild.birth_date} onOpen={setOpen} />
-        ))}
-      </div>}
+      {!loading && daySessions.length > 0 && (
+        <DayGroup date={day} sessions={daySessions}
+          birthDate={activeChild.birth_date} onOpen={setOpen} />
+      )}
 
       {open && <SleepDetail session={open} onClose={() => setOpen(null)} onChange={load} />}
     </section>
   );
 }
 
-interface DayBucket { date: Date; sessions: SleepSession[] }
-
-function groupSessions(sessions: SleepSession[], splitByDate: boolean): DayBucket[] {
-  // sessions are desc; for each session, decide its bucket date.
-  const buckets = new Map<string, DayBucket>();
-  for (const s of sessions) {
-    let d = startOfDay(new Date(s.start_time));
-    if (!splitByDate && s.sleep_type === "night") {
-      // Night sleeps that begin in the evening (e.g. 19:50) and end the next
-      // morning are attributed to the END day, so a sleep 01.02 19:50 → 02.02
-      // 09:50 is shown under 02.02. Sleeps that begin after midnight stay on
-      // their start date (also the end date in normal cases).
-      const startedHour = new Date(s.start_time).getHours();
-      if (startedHour >= 12 && s.end_time) {
-        d = startOfDay(new Date(s.end_time));
-      }
-    }
-    const key = d.toISOString();
-    if (!buckets.has(key)) buckets.set(key, { date: d, sessions: [] });
-    buckets.get(key)!.sessions.push(s);
-  }
-  return Array.from(buckets.values()).sort((a, b) => b.date.getTime() - a.date.getTime());
+function bucketDay(s: SleepSession, splitByDate: boolean, night: NightWindow): Date {
+  if (splitByDate) return startOfDay(new Date(s.start_time));
+  return sessionDay(s, night);
 }
 
 function dayLabel(d: Date, t: (k: string) => string) {
@@ -128,21 +134,50 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
   onOpen: (s: SleepSession) => void;
 }) {
   const { t } = useTranslation();
+  const now = new Date();
   // Sessions arrive in DESC order (latest first) — display them that way.
   const ordered = sessions;
-  const totalMin = ordered.reduce((acc, s) => acc + sessionDuration(s), 0);
+  const totalMin = ordered.reduce((acc, s) => acc + sessionDuration(s, now), 0);
+  const dayNapsCount = ordered.filter((s) => s.sleep_type === "day").length;
+
+  // Projected wake window for an ongoing wake period (latest completed sleep
+  // is at index 0 in DESC order).
+  const latestCompleted = ordered.find((s) => s.end_time);
+  const isCurrentDay = isToday(date);
+  const hasOngoing = ordered.some((s) => !s.end_time);
+  const projectedWW = (isCurrentDay && !hasOngoing && latestCompleted)
+    ? Math.max(0, differenceInMinutes(now, new Date(latestCompleted.end_time!)))
+    : null;
+  const projectedTh = projectedWW !== null
+    ? wwThresholdsAt(now, birthDate)
+    : null;
+  const projectedOver = projectedTh && projectedWW !== null && projectedWW > projectedTh.max;
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-3">
+      <div className="mb-3">
         <h3 className="font-display text-lg font-semibold">{dayLabel(date, t)}</h3>
-        <span className="text-xs text-muted-foreground">{t("sleep.sleepsCount", { count: ordered.length })}</span>
       </div>
 
       <Card className="p-5 shadow-card border-border/50">
+        {projectedWW !== null && (
+          <div className="pb-2">
+            {projectedOver && (
+              <div className="text-xs font-medium text-[hsl(var(--ww-warn))] pl-2 mb-1">
+                {t("sleep.timeToSleep")}
+              </div>
+            )}
+            <div className="flex items-center gap-3 py-2 pl-2">
+              <div className={`w-0.5 h-8 rounded-full ${projectedOver ? "bg-ww-warn" : "bg-ww-good"}`} />
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${projectedOver ? "bg-ww-warn-soft text-[hsl(var(--ww-warn))]" : "bg-ww-good-soft text-[hsl(var(--ww-good))]"}`}>
+                {t("sleep.awake_label", { duration: formatDuration(projectedWW) })}
+              </span>
+            </div>
+          </div>
+        )}
         {ordered.map((s, i) => {
           // Chronologically earlier sleep is the next row in DESC display.
-          const earlier = i + 1 < ordered.length ? ordered[i + 1] : null;
+          const earlier = ordered.slice(i + 1).find((x) => x.end_time) ?? null;
           const ww = earlier ? wakeWindowMinutes(earlier, s) : null;
           let status: "good" | "warn" | null = null;
           if (ww !== null) {
@@ -155,8 +190,13 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
                 <div className="flex items-center gap-3">
                   <span className={`w-2 h-2 rounded-full ${s.sleep_type === "night" ? "bg-primary" : "bg-accent"}`} />
                   <span className="font-medium">{formatTime(s.start_time)}</span>
+                  {!s.end_time && (
+                    <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                      {t("sleep.ongoing")}
+                    </span>
+                  )}
                 </div>
-                <span className="text-muted-foreground text-sm">{formatDuration(sessionDuration(s))}</span>
+                <span className="text-muted-foreground text-sm">{formatDuration(sessionDuration(s, now))}</span>
               </button>
               {earlier && ww !== null && ww >= 0 && (
                 <div className="flex items-center gap-3 py-2 pl-2">
@@ -170,9 +210,15 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
           );
         })}
 
-        <div className="border-t border-border mt-3 pt-3 flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">{t("sleep.totalSleep")}</span>
-          <span className="font-display text-lg font-semibold">{formatDuration(totalMin)}</span>
+        <div className="border-t border-border mt-3 pt-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{t("sleep.totalSleep")}</span>
+            <span className="font-display text-lg font-semibold">{formatDuration(totalMin)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{t("analytics.naps")}</span>
+            <span className="text-sm font-semibold">{dayNapsCount}</span>
+          </div>
         </div>
       </Card>
     </div>
