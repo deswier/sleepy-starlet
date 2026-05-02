@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { fmtDateTime, formatTime } from "@/lib/sleep-utils";
 import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
 import { localizeMethod } from "@/lib/localize-default";
+import { MethodOptionLabel } from "@/lib/method-icons";
 
 export default function CurrentSleep() {
   const navigate = useNavigate();
