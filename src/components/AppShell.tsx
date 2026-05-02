@@ -45,7 +45,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/child/new")}>
+            <DropdownMenuItem onClick={() => navigate("/child/new", { state: { allowChildForm: true } })}>
               <Plus className="w-4 h-4 mr-2" /> {t("child.addChild")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("/profile")}>
