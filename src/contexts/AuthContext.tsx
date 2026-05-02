@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
@@ -17,20 +17,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const lastSeenUserId = useRef<string | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       // If the user identity changed (logout, or login as different account),
       // wipe the persisted last route so we don't restore another user's screen.
-      setUser((prev) => {
-        if (prev?.id !== (s?.user?.id ?? null)) clearLastRoute();
-        return s?.user ?? null;
-      });
+      const nextUserId = s?.user?.id ?? null;
+      if (lastSeenUserId.current && nextUserId && lastSeenUserId.current !== nextUserId) clearLastRoute();
+      lastSeenUserId.current = nextUserId;
+      setUser(s?.user ?? null);
       setSession(s);
       setLoading(false);
       if (s?.user) syncLanguageFromProfile(s.user.id);
     });
     supabase.auth.getSession().then(({ data: { session: s } }) => {
+      lastSeenUserId.current = s?.user?.id ?? null;
       setSession(s);
       setUser(s?.user ?? null);
       setLoading(false);
