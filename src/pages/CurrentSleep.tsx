@@ -36,6 +36,10 @@ export default function CurrentSleep() {
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   const [askMethod, setAskMethod] = useState(false);
   const [pendingMethodId, setPendingMethodId] = useState<string>("");
+  // Wake-up confirmation modal (replaces silent save).
+  const [confirmWake, setConfirmWake] = useState<SleepSession | null>(null);
+  // Edit-interruption-start modal (after starting a pause).
+  const [editIntrStart, setEditIntrStart] = useState<{ id: string; start: Date } | null>(null);
 
   useEffect(() => {
     if (!childLoading && !activeChild) navigate("/child/new");
@@ -111,24 +115,17 @@ export default function CurrentSleep() {
     if (error) toast.error(error.message); else load();
   };
 
+  // Wake Up: instead of silently saving, open a confirmation modal where the user
+  // can edit start, end, interruptions, place, settling, and comment.
   const wakeUp = async () => {
     if (!active) return;
+    // Auto-close any open interruption at "now" so it's editable in the modal.
     if (interruption) {
-      await supabase.from("sleep_interruptions").update({ end_time: new Date().toISOString() }).eq("id", interruption.id);
+      await supabase.from("sleep_interruptions")
+        .update({ end_time: new Date().toISOString() }).eq("id", interruption.id);
     }
-    const endIso = new Date().toISOString();
-    if (!navigator.onLine) {
-      await enqueue({
-        table: "sleep_sessions", op: "update",
-        payload: { end_time: endIso },
-        match: { id: active.id },
-        baseUpdatedAt: (active as any).updated_at ?? null,
-      });
-      load();
-      return;
-    }
-    const { error } = await supabase.from("sleep_sessions").update({ end_time: endIso }).eq("id", active.id);
-    if (error) toast.error(error.message); else load();
+    // Pre-fill end_time = now and open the edit modal.
+    setConfirmWake({ ...active, end_time: new Date().toISOString() });
   };
 
   // Pause: just start the interruption immediately. No method modal here.
@@ -147,12 +144,30 @@ export default function CurrentSleep() {
         load();
       }
     } else {
-      // Pause flow — start an interruption right away, no modal.
-      await supabase.from("sleep_interruptions").insert({
-        sleep_session_id: active.id, start_time: new Date().toISOString(), created_by_user_id: user.id,
-      });
+      // Pause flow — start an interruption right away, then offer to adjust the start time.
+      const startIso = new Date().toISOString();
+      const { data, error } = await supabase.from("sleep_interruptions").insert({
+        sleep_session_id: active.id, start_time: startIso, created_by_user_id: user.id,
+      }).select("id").single();
+      if (error) { toast.error(error.message); return; }
+      if (data?.id) setEditIntrStart({ id: data.id, start: new Date(startIso) });
       load();
     }
+  };
+
+  const saveIntrStart = async () => {
+    if (!editIntrStart || !active) return;
+    if (editIntrStart.start < new Date(active.start_time)) {
+      toast.error(t("sleep.interruptionOutsideSleep")); return;
+    }
+    if (editIntrStart.start > new Date()) {
+      toast.error(t("sleep.startNotFuture")); return;
+    }
+    const { error } = await supabase.from("sleep_interruptions")
+      .update({ start_time: editIntrStart.start.toISOString() })
+      .eq("id", editIntrStart.id);
+    if (error) toast.error(error.message);
+    else { setEditIntrStart(null); load(); }
   };
 
   // Confirm resume: end the open interruption and persist the chosen settling method.
@@ -270,6 +285,48 @@ export default function CurrentSleep() {
             </Select>
           </div>
           <Button onClick={confirmInterruption} className="w-full">{t("sleep.endInterruption")}</Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Wake Up confirmation modal — full edit before saving. */}
+      <Dialog open={!!confirmWake} onOpenChange={(o) => !o && setConfirmWake(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t("sleep.wakeUp", {
+              context: activeChild?.gender === "male" ? "male"
+                : activeChild?.gender === "female" ? "female" : "other",
+            })}</DialogTitle>
+          </DialogHeader>
+          {confirmWake && (
+            <SleepForm
+              mode="edit"
+              sessionId={confirmWake.id}
+              initial={confirmWake}
+              onDone={() => { setConfirmWake(null); load(); }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Adjust interruption start time after pause. */}
+      <Dialog open={!!editIntrStart} onOpenChange={(o) => !o && setEditIntrStart(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{t("sleep.addInterruption")}</DialogTitle></DialogHeader>
+          {editIntrStart && (
+            <div className="space-y-3">
+              <DateTimeField
+                label={t("sleep.start")}
+                value={editIntrStart.start}
+                onChange={(d) => setEditIntrStart({ ...editIntrStart, start: d })}
+              />
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setEditIntrStart(null)}>
+                  {t("common.cancel")}
+                </Button>
+                <Button className="flex-1" onClick={saveIntrStart}>{t("common.save")}</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </section>
