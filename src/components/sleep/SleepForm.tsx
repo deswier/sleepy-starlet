@@ -14,12 +14,14 @@ import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import InterruptionsEditor, { DraftInterruption, validateInterruptions } from "./InterruptionsEditor";
 
 interface Settings {
   night_start_time: string;
   night_end_time: string;
   show_sleep_place?: boolean;
   show_falling_asleep_method?: boolean;
+  show_interruptions?: boolean;
 }
 
 interface Props {
@@ -46,6 +48,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
   const [comment, setComment] = useState(initial?.comment ?? "");
   const [busy, setBusy] = useState(false);
   const [typeManuallySet, setTypeManuallySet] = useState(mode === "edit");
+  const [interruptions, setInterruptions] = useState<DraftInterruption[]>([]);
 
   useEffect(() => {
     if (!activeChild) return;
@@ -53,13 +56,31 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
       const [p, m, s] = await Promise.all([
         supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
         supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("child_settings").select("night_start_time,night_end_time,show_sleep_place,show_falling_asleep_method").eq("child_id", activeChild.id).single(),
+        supabase.from("child_settings").select("night_start_time,night_end_time,show_sleep_place,show_falling_asleep_method,show_interruptions").eq("child_id", activeChild.id).single(),
       ]);
       setPlaces(p.data ?? []);
       setMethods(m.data ?? []);
       if (s.data) setSettings(s.data);
     })();
   }, [activeChild]);
+
+  // Load existing interruptions when editing.
+  useEffect(() => {
+    if (mode !== "edit" || !sessionId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("sleep_interruptions")
+        .select("id,start_time,end_time,settling_method_id")
+        .eq("sleep_session_id", sessionId)
+        .order("start_time");
+      setInterruptions((data ?? []).map((r: any) => ({
+        id: r.id,
+        start_time: new Date(r.start_time),
+        end_time: r.end_time ? new Date(r.end_time) : null,
+        settling_method_id: r.settling_method_id,
+      })));
+    })();
+  }, [mode, sessionId]);
 
   useEffect(() => {
     if (!typeManuallySet && settings) {
@@ -71,6 +92,8 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
     e.preventDefault();
     if (!activeChild || !user) return;
     if (end <= start) { toast.error(t("sleep.endAfterStart")); return; }
+    const intrErr = validateInterruptions(interruptions, start, end);
+    if (intrErr) { toast.error(t("sleep.interruptionOutsideSleep")); return; }
     // Overlap check (skip when offline — enforced server-side too could be added later)
     if (navigator.onLine) {
       const { data: overlap } = await supabase.rpc("sleep_overlaps", {
@@ -112,12 +135,43 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
       return;
     }
 
-    const { error } = mode === "edit" && sessionId
-      ? await supabase.from("sleep_sessions").update(payload).eq("id", sessionId)
-      : await supabase.from("sleep_sessions").insert({ ...payload, created_by_user_id: user.id });
+    let savedId = sessionId ?? null;
+    if (mode === "edit" && sessionId) {
+      const { error } = await supabase.from("sleep_sessions").update(payload).eq("id", sessionId);
+      if (error) { setBusy(false); toast.error(error.message); return; }
+    } else {
+      const { data, error } = await supabase.from("sleep_sessions")
+        .insert({ ...payload, created_by_user_id: user.id }).select("id").single();
+      if (error) { setBusy(false); toast.error(error.message); return; }
+      savedId = data?.id ?? null;
+    }
+
+    // Sync interruptions
+    if (savedId) {
+      const { data: existing } = await supabase
+        .from("sleep_interruptions").select("id").eq("sleep_session_id", savedId);
+      const keepIds = new Set(interruptions.filter((i) => i.id).map((i) => i.id!));
+      const toDelete = (existing ?? []).map((r: any) => r.id).filter((id: string) => !keepIds.has(id));
+      if (toDelete.length) {
+        await supabase.from("sleep_interruptions").delete().in("id", toDelete);
+      }
+      for (const it of interruptions) {
+        const row = {
+          sleep_session_id: savedId,
+          start_time: it.start_time.toISOString(),
+          end_time: it.end_time ? it.end_time.toISOString() : null,
+          settling_method_id: it.settling_method_id,
+        };
+        if (it.id) {
+          await supabase.from("sleep_interruptions").update(row).eq("id", it.id);
+        } else {
+          await supabase.from("sleep_interruptions").insert({ ...row, created_by_user_id: user.id });
+        }
+      }
+    }
     setBusy(false);
-    if (error) toast.error(error.message);
-    else { toast.success(mode === "edit" ? t("sleep.updated") : t("sleep.sleepAdded")); onDone(); }
+    toast.success(mode === "edit" ? t("sleep.updated") : t("sleep.sleepAdded"));
+    onDone();
   };
 
   return (
@@ -126,6 +180,17 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
         <DateTimeField label={t("sleep.start")} value={start} onChange={setStart} />
         <DateTimeField label={t("sleep.end")} value={end} onChange={setEnd} />
       </div>
+
+      {settings?.show_interruptions !== false && (
+        <InterruptionsEditor
+          value={interruptions}
+          onChange={setInterruptions}
+          methods={methods}
+          showMethod={settings?.show_falling_asleep_method !== false}
+          sleepStart={start}
+          sleepEnd={end}
+        />
+      )}
 
       <Collapsible>
         <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground py-2">
