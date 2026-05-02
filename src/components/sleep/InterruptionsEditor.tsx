@@ -6,6 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { localizeMethod } from "@/lib/localize-default";
+import { formatDuration } from "@/lib/sleep-utils";
+import { differenceInMinutes } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export interface DraftInterruption {
   id?: string; // existing DB id
@@ -30,20 +33,49 @@ export default function InterruptionsEditor({
 }: Props) {
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
+  const [invalidIdx, setInvalidIdx] = useState<Set<number>>(new Set());
 
-  const validate = (list: DraftInterruption[]): string | null => {
-    for (const i of list) {
-      if (i.start_time < sleepStart) return t("sleep.interruptionOutsideSleep");
-      if (sleepEnd && i.start_time > sleepEnd) return t("sleep.interruptionOutsideSleep");
-      if (i.end_time) {
-        if (i.end_time < i.start_time) return t("sleep.endAfterStart");
-        if (sleepEnd && i.end_time > sleepEnd) return t("sleep.interruptionOutsideSleep");
+  const validateAll = (list: DraftInterruption[]): { msg: string | null; bad: Set<number> } => {
+    const bad = new Set<number>();
+    let msg: string | null = null;
+    list.forEach((i, idx) => {
+      const endT = i.end_time ?? i.start_time;
+      if (i.start_time < sleepStart || (sleepEnd && i.start_time > sleepEnd)) {
+        bad.add(idx); msg = msg ?? t("sleep.interruptionOutsideSleep");
       }
-    }
-    return null;
+      if (i.end_time && i.end_time < i.start_time) {
+        bad.add(idx); msg = msg ?? t("sleep.endAfterStart");
+      }
+      if (i.end_time && sleepEnd && i.end_time > sleepEnd) {
+        bad.add(idx); msg = msg ?? t("sleep.interruptionOutsideSleep");
+      }
+      // Overlap with other interruptions.
+      list.forEach((j, jdx) => {
+        if (jdx <= idx) return;
+        const aS = i.start_time.getTime();
+        const aE = (i.end_time ?? i.start_time).getTime();
+        const bS = j.start_time.getTime();
+        const bE = (j.end_time ?? j.start_time).getTime();
+        const aZero = aS === aE;
+        const bZero = bS === bE;
+        let conflict = false;
+        if (aZero && bZero) conflict = aS === bS;
+        else if (aZero) conflict = aS >= bS && aS <= bE;
+        else if (bZero) conflict = bS >= aS && bS <= aE;
+        else conflict = aS < bE && bS < aE;
+        if (conflict) {
+          bad.add(idx); bad.add(jdx);
+          msg = msg ?? t("sleep.interruptionOverlap");
+        }
+      });
+    });
+    return { msg, bad };
   };
 
-  useEffect(() => { setError(validate(value)); }, [value, sleepStart, sleepEnd?.getTime()]);
+  useEffect(() => {
+    const r = validateAll(value);
+    setError(r.msg); setInvalidIdx(r.bad);
+  }, [value, sleepStart, sleepEnd?.getTime()]);
 
   const update = (idx: number, patch: Partial<DraftInterruption>) => {
     const next = value.map((it, i) => (i === idx ? { ...it, ...patch } : it));
@@ -55,6 +87,12 @@ export default function InterruptionsEditor({
     onChange([...value, { start_time: start, end_time: end, settling_method_id: null }]);
   };
   const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
+
+  const durationLabel = (it: DraftInterruption): string => {
+    if (!it.end_time) return t("sleep.active");
+    const m = Math.max(0, differenceInMinutes(it.end_time, it.start_time));
+    return m === 0 ? "0m" : formatDuration(m);
+  };
 
   return (
     <div className="space-y-3">
@@ -68,10 +106,15 @@ export default function InterruptionsEditor({
         <p className="text-xs text-muted-foreground">{t("sleep.noInterruptions")}</p>
       )}
       {value.map((it, idx) => (
-        <div key={idx} className="rounded-lg border border-border/60 p-3 space-y-2 bg-muted/30">
+        <div key={idx} className={cn(
+          "rounded-lg border p-3 space-y-2",
+          invalidIdx.has(idx)
+            ? "border-destructive/50 bg-destructive/10"
+            : "border-border/60 bg-muted/30",
+        )}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">
-              {t("sleep.interruptions")} #{idx + 1}
+              {t("sleep.interruptions")} #{idx + 1} · {durationLabel(it)}
             </span>
             <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive"
               onClick={() => remove(idx)} aria-label={t("common.delete")}>
@@ -107,12 +150,28 @@ export default function InterruptionsEditor({
 export function validateInterruptions(
   list: DraftInterruption[], sleepStart: Date, sleepEnd: Date | null,
 ): string | null {
-  for (const i of list) {
+  for (let idx = 0; idx < list.length; idx++) {
+    const i = list[idx];
     if (i.start_time < sleepStart) return "outside";
     if (sleepEnd && i.start_time > sleepEnd) return "outside";
     if (i.end_time) {
       if (i.end_time < i.start_time) return "endBeforeStart";
       if (sleepEnd && i.end_time > sleepEnd) return "outside";
+    }
+    for (let jdx = idx + 1; jdx < list.length; jdx++) {
+      const j = list[jdx];
+      const aS = i.start_time.getTime();
+      const aE = (i.end_time ?? i.start_time).getTime();
+      const bS = j.start_time.getTime();
+      const bE = (j.end_time ?? j.start_time).getTime();
+      const aZero = aS === aE;
+      const bZero = bS === bE;
+      let conflict = false;
+      if (aZero && bZero) conflict = aS === bS;
+      else if (aZero) conflict = aS >= bS && aS <= bE;
+      else if (bZero) conflict = bS >= aS && bS <= aE;
+      else conflict = aS < bE && bS < aE;
+      if (conflict) return "overlap";
     }
   }
   return null;

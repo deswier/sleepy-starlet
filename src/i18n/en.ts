@@ -54,6 +54,8 @@ const en = {
     place_label: "Place", settling_label: "Settling", createdBy: "Created by",
     interruptions: "Interruptions", ongoing: "ongoing",
     interruptionOutsideSleep: "Interruption must be within sleep time",
+    interruptionOverlap: "Interruptions must not overlap",
+    active: "active",
     noInterruptions: "No interruptions yet.",
     startedAt_male: "Started at {{time}}",
     startedAt_female: "Started at {{time}}",
