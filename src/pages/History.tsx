@@ -90,9 +90,14 @@ function groupSessions(sessions: SleepSession[], splitByDate: boolean): DayBucke
   for (const s of sessions) {
     let d = startOfDay(new Date(s.start_time));
     if (!splitByDate && s.sleep_type === "night") {
-      // Night sleeps that begin after midnight (e.g. 01:00) are attached to the prior day
+      // Night sleeps that begin in the evening (e.g. 19:50) and end the next
+      // morning are attributed to the END day, so a sleep 01.02 19:50 → 02.02
+      // 09:50 is shown under 02.02. Sleeps that begin after midnight stay on
+      // their start date (also the end date in normal cases).
       const startedHour = new Date(s.start_time).getHours();
-      if (startedHour < 12) d = startOfDay(subDays(d, 1));
+      if (startedHour >= 12 && s.end_time) {
+        d = startOfDay(new Date(s.end_time));
+      }
     }
     const key = d.toISOString();
     if (!buckets.has(key)) buckets.set(key, { date: d, sessions: [] });
