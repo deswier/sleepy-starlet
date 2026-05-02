@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
+import { clearLastRoute } from "@/lib/last-route";
 
 interface AuthCtx {
   user: User | null;
@@ -19,8 +20,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      // If the user identity changed (logout, or login as different account),
+      // wipe the persisted last route so we don't restore another user's screen.
+      setUser((prev) => {
+        if (prev?.id !== (s?.user?.id ?? null)) clearLastRoute();
+        return s?.user ?? null;
+      });
       setSession(s);
-      setUser(s?.user ?? null);
       setLoading(false);
       if (s?.user) syncLanguageFromProfile(s.user.id);
     });
@@ -34,7 +40,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <Ctx.Provider value={{ user, session, loading, signOut: async () => { await supabase.auth.signOut(); } }}>
+    <Ctx.Provider value={{ user, session, loading, signOut: async () => { clearLastRoute(); await supabase.auth.signOut(); } }}>
       {children}
     </Ctx.Provider>
   );
