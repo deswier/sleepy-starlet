@@ -34,12 +34,15 @@ export default function CurrentSleep() {
   const [showInterruptionFlag, setShowInterruptionFlag] = useState(true);
   const [showMethodFlag, setShowMethodFlag] = useState(true);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
-  const [askMethod, setAskMethod] = useState(false);
-  const [pendingMethodId, setPendingMethodId] = useState<string>("");
-  // Wake-up confirmation modal (replaces silent save).
+  // Wake-up confirmation modal (draft, replaces silent save).
   const [confirmWake, setConfirmWake] = useState<SleepSession | null>(null);
-  // Edit-interruption-start modal (after starting a pause).
-  const [editIntrStart, setEditIntrStart] = useState<{ id: string; start: Date } | null>(null);
+  // Inline edit of active interruption start.
+  const [editingIntrStart, setEditingIntrStart] = useState(false);
+  const [intrStartDraft, setIntrStartDraft] = useState<Date>(new Date());
+  // Stop-interruption modal (draft).
+  const [stopIntrDraft, setStopIntrDraft] = useState<{
+    id: string; start: Date; end: Date; methodId: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!childLoading && !activeChild) navigate("/child/new");
@@ -119,67 +122,90 @@ export default function CurrentSleep() {
   // can edit start, end, interruptions, place, settling, and comment.
   const wakeUp = async () => {
     if (!active) return;
-    // Auto-close any open interruption at "now" so it's editable in the modal.
+    const endIso = new Date().toISOString();
+    // Auto-close any open interruption at sleepEndTime (acts as draft persisted in DB so the
+    // edit modal can load it). On cancel we restore it back to "active".
     if (interruption) {
       await supabase.from("sleep_interruptions")
-        .update({ end_time: new Date().toISOString() }).eq("id", interruption.id);
+        .update({ end_time: endIso }).eq("id", interruption.id);
     }
-    // Pre-fill end_time = now and open the edit modal.
-    setConfirmWake({ ...active, end_time: new Date().toISOString() });
+    setConfirmWake({ ...active, end_time: endIso });
   };
 
-  // Pause: just start the interruption immediately. No method modal here.
-  // Resume: end the interruption, and ONLY then ask for the settling method
-  // that was used to put the child back to sleep.
+  // FSM transitions for the pause/resume button.
   const toggleInterruption = async () => {
     if (!active || !user) return;
     if (interruption) {
-      // Resume flow — show method picker first if applicable.
-      if (showMethodFlag && methods.length > 0) {
-        setPendingMethodId(""); setAskMethod(true);
-      } else {
-        await supabase.from("sleep_interruptions")
-          .update({ end_time: new Date().toISOString() })
-          .eq("id", interruption.id);
-        load();
-      }
+      // Resume flow — open draft modal: edit start, end (default = now), settling method.
+      setStopIntrDraft({
+        id: interruption.id,
+        start: new Date(interruption.start_time),
+        end: new Date(),
+        methodId: "",
+      });
     } else {
-      // Pause flow — start an interruption right away, then offer to adjust the start time.
+      // Pause flow — start interruption immediately. Editable via pencil icon.
       const startIso = new Date().toISOString();
-      const { data, error } = await supabase.from("sleep_interruptions").insert({
+      const { error } = await supabase.from("sleep_interruptions").insert({
         sleep_session_id: active.id, start_time: startIso, created_by_user_id: user.id,
       }).select("id").single();
       if (error) { toast.error(error.message); return; }
-      if (data?.id) setEditIntrStart({ id: data.id, start: new Date(startIso) });
       load();
     }
   };
 
-  const saveIntrStart = async () => {
-    if (!editIntrStart || !active) return;
-    if (editIntrStart.start < new Date(active.start_time)) {
+  // Inline edit of the active interruption's start time.
+  const beginEditIntrStart = () => {
+    if (!interruption || !canEditActive) return;
+    setIntrStartDraft(new Date(interruption.start_time));
+    setEditingIntrStart(true);
+  };
+  const saveIntrStartInline = async () => {
+    if (!interruption || !active) return;
+    if (intrStartDraft < new Date(active.start_time)) {
       toast.error(t("sleep.interruptionOutsideSleep")); return;
     }
-    if (editIntrStart.start > new Date()) {
+    if (intrStartDraft > new Date()) {
       toast.error(t("sleep.startNotFuture")); return;
     }
     const { error } = await supabase.from("sleep_interruptions")
-      .update({ start_time: editIntrStart.start.toISOString() })
-      .eq("id", editIntrStart.id);
+      .update({ start_time: intrStartDraft.toISOString() })
+      .eq("id", interruption.id);
     if (error) toast.error(error.message);
-    else { setEditIntrStart(null); load(); }
+    else { setEditingIntrStart(false); load(); }
   };
 
-  // Confirm resume: end the open interruption and persist the chosen settling method.
-  const confirmInterruption = async () => {
-    if (!active || !user || !interruption) { setAskMethod(false); return; }
-    await supabase.from("sleep_interruptions")
+  // Save stop-interruption draft: validate & write atomically.
+  const saveStopIntr = async () => {
+    if (!stopIntrDraft || !active) return;
+    if (stopIntrDraft.start < new Date(active.start_time)) {
+      toast.error(t("sleep.interruptionOutsideSleep")); return;
+    }
+    if (stopIntrDraft.end < stopIntrDraft.start) {
+      toast.error(t("sleep.endAfterStart")); return;
+    }
+    if (stopIntrDraft.end > new Date(Date.now() + 60_000)) {
+      toast.error(t("sleep.startNotFuture")); return;
+    }
+    const { error } = await supabase.from("sleep_interruptions")
       .update({
-        end_time: new Date().toISOString(),
-        settling_method_id: pendingMethodId || null,
+        start_time: stopIntrDraft.start.toISOString(),
+        end_time: stopIntrDraft.end.toISOString(),
+        settling_method_id: stopIntrDraft.methodId || null,
       })
-      .eq("id", interruption.id);
-    setAskMethod(false); load();
+      .eq("id", stopIntrDraft.id);
+    if (error) toast.error(error.message);
+    else { setStopIntrDraft(null); load(); }
+  };
+
+  // If user cancels wake-up, restore the auto-closed interruption.
+  const cancelWake = async () => {
+    if (interruption?.id) {
+      await supabase.from("sleep_interruptions")
+        .update({ end_time: null }).eq("id", interruption.id);
+    }
+    setConfirmWake(null);
+    load();
   };
 
   const beginEditStart = () => {
@@ -252,7 +278,19 @@ export default function CurrentSleep() {
           <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
           {interruption && (
             <div className="bg-white/10 rounded-xl px-4 py-2 mb-4 text-sm">
-              {t("sleep.interruptionSince", { time: formatTime(interruption.start_time) })}
+              {editingIntrStart ? (
+                <div className="flex items-center gap-2 justify-center text-foreground bg-background/95 rounded-lg p-2">
+                  <DateTimeField value={intrStartDraft} onChange={setIntrStartDraft} />
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={saveIntrStartInline}><Check className="w-4 h-4" /></Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingIntrStart(false)}><X className="w-4 h-4" /></Button>
+                </div>
+              ) : (
+                <button type="button" onClick={beginEditIntrStart} disabled={!canEditActive}
+                  className="inline-flex items-center gap-1 hover:opacity-100 disabled:cursor-default">
+                  {t("sleep.interruptionSince", { time: formatTime(interruption.start_time) })}
+                  {canEditActive && <Pencil className="w-3 h-3" />}
+                </button>
+              )}
             </div>
           )}
           <div className="space-y-2">
@@ -270,26 +308,42 @@ export default function CurrentSleep() {
           </div>
         </Card>
       )}
-      <Dialog open={askMethod} onOpenChange={setAskMethod}>
-        <DialogContent>
+      {/* Stop-interruption modal — draft-based. */}
+      <Dialog open={!!stopIntrDraft} onOpenChange={(o) => !o && setStopIntrDraft(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("sleep.endInterruption")}</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground">{t("sleep.interruptionHelp")}</p>
-          <div className="space-y-1.5">
-            <Label>{t("sleep.settling")}</Label>
-            <Select value={pendingMethodId || "none"} onValueChange={(v) => setPendingMethodId(v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t("common.none")}</SelectItem>
-                {methods.map((m) => <SelectItem key={m.id} value={m.id}>{localizeMethod(m.name)}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button onClick={confirmInterruption} className="w-full">{t("sleep.endInterruption")}</Button>
+          {stopIntrDraft && (
+            <div className="space-y-3">
+              <DateTimeField label={t("sleep.start")} value={stopIntrDraft.start}
+                onChange={(d) => setStopIntrDraft({ ...stopIntrDraft, start: d })} />
+              <DateTimeField label={t("sleep.end")} value={stopIntrDraft.end}
+                onChange={(d) => setStopIntrDraft({ ...stopIntrDraft, end: d })} />
+              {showMethodFlag && methods.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>{t("sleep.settling")}</Label>
+                  <Select value={stopIntrDraft.methodId || "none"}
+                    onValueChange={(v) => setStopIntrDraft({ ...stopIntrDraft, methodId: v === "none" ? "" : v })}>
+                    <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("common.none")}</SelectItem>
+                      {methods.map((m) => <SelectItem key={m.id} value={m.id}>{localizeMethod(m.name)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setStopIntrDraft(null)}>
+                  {t("common.cancel")}
+                </Button>
+                <Button className="flex-1" onClick={saveStopIntr}>{t("common.save")}</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
       {/* Wake Up confirmation modal — full edit before saving. */}
-      <Dialog open={!!confirmWake} onOpenChange={(o) => !o && setConfirmWake(null)}>
+      <Dialog open={!!confirmWake} onOpenChange={(o) => { if (!o) cancelWake(); }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t("sleep.wakeUp", {
@@ -304,28 +358,6 @@ export default function CurrentSleep() {
               initial={confirmWake}
               onDone={() => { setConfirmWake(null); load(); }}
             />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Adjust interruption start time after pause. */}
-      <Dialog open={!!editIntrStart} onOpenChange={(o) => !o && setEditIntrStart(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{t("sleep.addInterruption")}</DialogTitle></DialogHeader>
-          {editIntrStart && (
-            <div className="space-y-3">
-              <DateTimeField
-                label={t("sleep.start")}
-                value={editIntrStart.start}
-                onChange={(d) => setEditIntrStart({ ...editIntrStart, start: d })}
-              />
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setEditIntrStart(null)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button className="flex-1" onClick={saveIntrStart}>{t("common.save")}</Button>
-              </div>
-            </div>
           )}
         </DialogContent>
       </Dialog>
