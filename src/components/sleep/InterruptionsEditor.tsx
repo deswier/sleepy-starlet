@@ -85,8 +85,14 @@ export default function InterruptionsEditor({
     onChange(next);
   };
   const add = () => {
-    const start = new Date(Math.max(sleepStart.getTime(), Date.now() - 60_000));
-    const end = sleepEnd ? new Date(Math.min(sleepEnd.getTime(), start.getTime() + 5 * 60_000)) : new Date(start.getTime() + 5 * 60_000);
+    // Default the interruption to the day the sleep started — pick the
+    // midpoint between sleep start and end so it always lands inside the
+    // sleep window, regardless of which day "now" is.
+    const endRef = sleepEnd ? sleepEnd.getTime() : sleepStart.getTime() + 30 * 60_000;
+    const mid = Math.round((sleepStart.getTime() + endRef) / 2);
+    const start = new Date(Math.max(sleepStart.getTime(), mid));
+    const endCap = sleepEnd ? sleepEnd.getTime() : start.getTime() + 5 * 60_000;
+    const end = new Date(Math.min(endCap, start.getTime() + 5 * 60_000));
     onChange([...value, { start_time: start, end_time: end, settling_method_id: null }]);
   };
   const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
