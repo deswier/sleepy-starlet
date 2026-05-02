@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
@@ -34,8 +34,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
+  const signOut = useCallback(async () => { clearLastRoute(); await supabase.auth.signOut(); }, []);
+
   return (
-    <Ctx.Provider value={{ user, session, loading, signOut: async () => { clearLastRoute(); await supabase.auth.signOut(); } }}>
+    <Ctx.Provider value={{ user, session, loading, signOut }}>
       {children}
     </Ctx.Provider>
   );

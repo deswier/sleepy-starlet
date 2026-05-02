@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -119,8 +119,14 @@ export default function History() {
       </div>
 
       {loading && (
-        <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" />
+        <Card className="p-5 shadow-card border-border/50 space-y-3">
+          <div className="h-11 bg-muted animate-pulse rounded-xl" />
+          <div className="h-11 bg-muted animate-pulse rounded-xl" />
+          <div className="h-11 bg-muted animate-pulse rounded-xl w-2/3" />
+          <div className="border-t border-border pt-3 flex justify-between">
+            <div className="h-4 bg-muted animate-pulse rounded w-20" />
+            <div className="h-4 bg-muted animate-pulse rounded w-12" />
+          </div>
         </Card>
       )}
 
@@ -150,7 +156,7 @@ function dayLabel(d: Date, t: (k: string) => string) {
   return fmtWeekday(d);
 }
 
-function DayGroup({ date, sessions, birthDate, onOpen, fallbackLatestCompleted }: {
+const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fallbackLatestCompleted }: {
   date: Date; sessions: SleepSession[];
   birthDate: string | null;
   onOpen: (s: SleepSession) => void;
@@ -246,4 +252,4 @@ function DayGroup({ date, sessions, birthDate, onOpen, fallbackLatestCompleted }
       </Card>
     </div>
   );
-}
+});

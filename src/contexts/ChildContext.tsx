@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
 
@@ -28,6 +28,10 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
 
+  // Ref so refresh always reads the latest activeId without becoming a dep.
+  const activeIdRef = useRef(activeId);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
   const refresh = useCallback(async () => {
     if (!user) {
       setList([]);
@@ -45,13 +49,13 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean)
       .sort((a: Child, b: Child) => (a.name || "").localeCompare(b.name || "") || a.id.localeCompare(b.id)) as Child[];
     setList(kids);
-    if (kids.length && (!activeId || !kids.find((k) => k.id === activeId))) {
+    if (kids.length && (!activeIdRef.current || !kids.find((k) => k.id === activeIdRef.current))) {
       setActiveId(kids[0].id);
       localStorage.setItem(STORAGE_KEY, kids[0].id);
     }
     setLoadedUserId(user.id);
     setLoading(false);
-  }, [user, activeId]);
+  }, [user]);
 
   useEffect(() => { refresh(); }, [user]); // eslint-disable-line
 

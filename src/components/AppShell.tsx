@@ -1,4 +1,4 @@
-import { memo, ReactNode } from "react";
+import { memo, ReactNode, useMemo } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Moon, History, BarChart3, Settings, LogOut, ChevronDown, Plus, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,7 +18,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
-  const initials = (activeChild?.name ?? "").trim().split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "•";
+  const initials = useMemo(() =>
+    (activeChild?.name ?? "").trim().split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "•",
+    [activeChild?.name]);
 
   return (
     <div className="min-h-screen bg-hero flex flex-col pb-20">
