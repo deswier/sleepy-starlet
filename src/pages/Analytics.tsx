@@ -180,11 +180,14 @@ function DayView({ childId, birthDate, night }: { childId: string; birthDate: st
         if (s.sleep_type === "night" && s.end_time) {
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
         }
-        // Physical overlap only for sessions attributed to today — keeps totalWake consistent
-        const ovStart = Math.max(startMs, dayStartMs);
-        const ovEnd = Math.min(endMs, dayEndMs);
-        if (ovEnd > ovStart) sleepWithinDay += Math.round((ovEnd - ovStart) / 60000);
       }
+
+      // Physical overlap with today's window for ALL sessions — regardless of attribution.
+      // A night sleep starting at 20:00 today belongs to tomorrow (totalSleep),
+      // but the baby IS physically asleep those hours, so wake time must reflect that.
+      const ovStart = Math.max(startMs, dayStartMs);
+      const ovEnd = Math.min(endMs, dayEndMs);
+      if (ovEnd > ovStart) sleepWithinDay += Math.round((ovEnd - ovStart) / 60000);
     }
 
     return { totalSleep, sleepWithinDay, nightSleep };
