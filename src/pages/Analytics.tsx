@@ -17,41 +17,59 @@ import {
   isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
 } from "date-fns";
 
-// Minutes a sleep session contributes to a specific calendar day [d, d+1).
-function sleepMinutesOnDay(s: SleepSession, day: Date, now: Date): number {
-  const start = new Date(s.start_time);
-  const end = s.end_time ? new Date(s.end_time) : now;
-  const dayStart = startOfDay(day).getTime();
-  const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-  const lo = Math.max(start.getTime(), dayStart);
-  const hi = Math.min(end.getTime(), dayEnd);
-  return Math.max(0, Math.round((hi - lo) / 60000));
+export type NightWindow = { start: string; end: string };
+const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
+
+function parseHM(hm: string): { h: number; m: number } {
+  const [h, m] = hm.split(":").map(Number);
+  return { h: h || 0, m: m || 0 };
 }
 
 // The calendar day a session belongs to in lists/aggregations.
-// Night sleeps that begin in the evening (>= 12:00) and end the next day are
-// attributed to the END day; otherwise to the start date.
-function sessionDay(s: SleepSession): Date {
+// Night sleeps that start within the night window of the previous evening
+// (i.e. before midnight) are attributed to the END day; otherwise to the
+// start date.
+export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT): Date {
   const start = new Date(s.start_time);
-  if (s.sleep_type === "night" && s.end_time && start.getHours() >= 12) {
-    return startOfDay(new Date(s.end_time));
+  if (s.sleep_type !== "night") return startOfDay(start);
+  const { h: nsH, m: nsM } = parseHM(night.start);
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const nsMin = nsH * 60 + nsM;
+  // If session started in the evening (>= night start, before midnight) and
+  // it actually ends past midnight (or is still ongoing), bucket to end day.
+  if (startMin >= nsMin && startMin >= 12 * 60) {
+    const end = s.end_time ? new Date(s.end_time) : new Date();
+    if (!isSameDay(start, end)) return startOfDay(end);
   }
   return startOfDay(start);
 }
 
-// Continuous night-sleep duration for a date: pick the night session whose
-// sleep_type === 'night' and that is anchored around this date's night,
-// and return its full duration (NOT split by date).
-function nightSleepForDate(sessions: SleepSession[], day: Date): number {
-  // Look for the longest 'night' session that overlaps the window [18:00 day, 12:00 day+1).
-  const winStart = new Date(day); winStart.setHours(18, 0, 0, 0);
-  const winEnd = addDays(new Date(day), 1); winEnd.setHours(12, 0, 0, 0);
+// Minutes a sleep session contributes to its bucketed day (full duration).
+function sleepMinutesOnDay(
+  s: SleepSession,
+  day: Date,
+  now: Date,
+  night: NightWindow = DEFAULT_NIGHT,
+): number {
+  if (!isSameDay(sessionDay(s, night), day)) return 0;
+  const start = new Date(s.start_time);
+  const end = s.end_time ? new Date(s.end_time) : now;
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+}
+
+// Continuous night-sleep duration for a date: longest night session that
+// belongs to this date (per sessionDay rules above).
+function nightSleepForDate(
+  sessions: SleepSession[],
+  day: Date,
+  night: NightWindow = DEFAULT_NIGHT,
+): number {
   let best = 0;
   for (const s of sessions) {
     if (s.sleep_type !== "night" || !s.end_time) continue;
+    if (!isSameDay(sessionDay(s, night), day)) continue;
     const ss = new Date(s.start_time).getTime();
     const ee = new Date(s.end_time).getTime();
-    if (ee <= winStart.getTime() || ss >= winEnd.getTime()) continue;
     best = Math.max(best, Math.round((ee - ss) / 60000));
   }
   return best;
@@ -62,6 +80,7 @@ export default function Analytics() {
   const { activeChild } = useChildren();
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [night, setNight] = useState<NightWindow>(DEFAULT_NIGHT);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -69,11 +88,19 @@ export default function Analytics() {
     setLoading(true);
     (async () => {
       const since = subDays(new Date(), 60).toISOString();
-      const { data } = await supabase
-        .from("sleep_sessions").select("*")
-        .eq("child_id", activeChild.id).gte("start_time", since)
-        .order("start_time");
+      const [{ data }, { data: cs }] = await Promise.all([
+        supabase.from("sleep_sessions").select("*")
+          .eq("child_id", activeChild.id).gte("start_time", since)
+          .order("start_time"),
+        supabase.from("child_settings")
+          .select("night_start_time,night_end_time")
+          .eq("child_id", activeChild.id).single(),
+      ]);
       setSessions((data ?? []) as SleepSession[]);
+      if (cs) setNight({
+        start: (cs.night_start_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.start,
+        end: (cs.night_end_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.end,
+      });
       setLoading(false);
     })();
   }, [activeChild]);
@@ -100,8 +127,8 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView sessions={sessions} birthDate={activeChild.birth_date} /></TabsContent>
-        <TabsContent value="week"><WeekView sessions={sessions} birthDate={activeChild.birth_date} /></TabsContent>
+        <TabsContent value="day"><DayView sessions={sessions} birthDate={activeChild.birth_date} night={night} /></TabsContent>
+        <TabsContent value="week"><WeekView sessions={sessions} birthDate={activeChild.birth_date} night={night} /></TabsContent>
       </Tabs>
       )}
     </section>
@@ -109,7 +136,7 @@ export default function Analytics() {
 }
 
 // ---------- DAY ----------
-function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate: string | null }) {
+function DayView({ sessions, birthDate, night }: { sessions: SleepSession[]; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
   const now = new Date();
@@ -122,15 +149,15 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
 
   // Sleeps whose start_time is on the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
-    () => sessions.filter((s) => isSameDay(sessionDay(s), day)).sort(
+    () => sessions.filter((s) => isSameDay(sessionDay(s, night), day)).sort(
       (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
     ),
-    [sessions, day]
+    [sessions, day, night]
   );
 
-  const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now), 0);
+  const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now, night), 0);
   const totalWake = Math.max(0, dayElapsedMin - totalSleep);
-  const nightSleep = nightSleepForDate(sessions, day);
+  const nightSleep = nightSleepForDate(sessions, day, night);
 
   const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
   const napDurations = naps.map((s) => sessionDuration(s, now));
@@ -238,7 +265,7 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate: string | null }) {
+function WeekView({ sessions, birthDate, night }: { sessions: SleepSession[]; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
   const now = new Date();
   const today = startOfDay(now);
@@ -251,11 +278,11 @@ function WeekView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate
   }, [today.getTime()]);
 
   const perDay = days.map((d) => {
-    const startedThat = sessions.filter((s) => isSameDay(sessionDay(s), d) && s.end_time)
+    const startedThat = sessions.filter((s) => isSameDay(sessionDay(s, night), d) && s.end_time)
       .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, d, now), 0);
+    const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, d, now, night), 0);
     const totalWake = Math.max(0, 24 * 60 - totalSleep);
-    const nightSleep = nightSleepForDate(sessions, d);
+    const nightSleep = nightSleepForDate(sessions, d, night);
     const naps = startedThat.filter((s) => s.sleep_type === "day");
     const napDurations = naps.map((s) => sessionDuration(s, now));
     const wws: number[] = [];
