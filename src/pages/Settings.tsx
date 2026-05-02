@@ -201,6 +201,16 @@ export default function Settings() {
             <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
           </Button>
           <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
+          <Card className="p-5 shadow-card mb-4 space-y-3">
+            <h3 className="font-semibold">{t("common.language")}</h3>
+            <Select value={language} onValueChange={(v: "en" | "ru") => changeLanguage(v)}>
+              <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="ru">Русский</SelectItem>
+              </SelectContent>
+            </Select>
+          </Card>
           <Card className="p-5 shadow-card mb-4">
             <h3 className="font-semibold mb-1">{activeChild.name}</h3>
             <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
