@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
@@ -61,9 +62,11 @@ export default function Analytics() {
   const { activeChild } = useChildren();
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!activeChild) return;
+    setLoading(true);
     (async () => {
       const since = subDays(new Date(), 60).toISOString();
       const { data } = await supabase
@@ -71,6 +74,7 @@ export default function Analytics() {
         .eq("child_id", activeChild.id).gte("start_time", since)
         .order("start_time");
       setSessions((data ?? []) as SleepSession[]);
+      setLoading(false);
     })();
   }, [activeChild]);
 
@@ -86,6 +90,11 @@ export default function Analytics() {
           <Grid3x3 className="w-4 h-4 mr-1" /> {t("analytics.openHeatmap")}
         </Button>
       </div>
+      {loading ? (
+        <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+        </Card>
+      ) : (
       <Tabs defaultValue="day">
         <TabsList className="grid grid-cols-2 w-full mb-4">
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
@@ -94,6 +103,7 @@ export default function Analytics() {
         <TabsContent value="day"><DayView sessions={sessions} birthDate={activeChild.birth_date} /></TabsContent>
         <TabsContent value="week"><WeekView sessions={sessions} birthDate={activeChild.birth_date} /></TabsContent>
       </Tabs>
+      )}
     </section>
   );
 }
