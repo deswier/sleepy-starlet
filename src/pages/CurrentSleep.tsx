@@ -220,7 +220,7 @@ export default function CurrentSleep() {
             <DialogTrigger asChild>
               <Button variant="ghost" className="w-full mt-3"><Plus className="w-4 h-4 mr-1" /> {t("sleep.addManually")}</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{t("sleep.addSleep")}</DialogTitle></DialogHeader>
               <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
             </DialogContent>
