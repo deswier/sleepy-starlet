@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { localizeMethod } from "@/lib/localize-default";
+import { MethodOptionLabel } from "@/lib/method-icons";
 import { formatDuration } from "@/lib/sleep-utils";
 import { differenceInMinutes } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -136,7 +137,9 @@ export default function InterruptionsEditor({
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
                   {methods.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{localizeMethod(m.name)}</SelectItem>
+                    <SelectItem key={m.id} value={m.id}>
+                      <MethodOptionLabel name={m.name} label={localizeMethod(m.name)} />
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
