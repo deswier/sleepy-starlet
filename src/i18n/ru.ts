@@ -55,6 +55,8 @@ const ru = {
     start: "Начало", end: "Конец", time: "Время", duration: "Длительность",
     place_label: "Место", settling_label: "Укладывание", createdBy: "Добавил",
     interruptions: "Пробуждения", ongoing: "продолжается",
+    interruptionOutsideSleep: "Пробуждение должно быть в пределах сна",
+    noInterruptions: "Пробуждений пока нет.",
     startedAt_male: "Уснул в {{time}}",
     startedAt_female: "Уснула в {{time}}",
     startedAt_other: "Уснул(а) в {{time}}",
@@ -127,6 +129,8 @@ const ru = {
     confirmDeleteProfile: "Удалить профиль ребёнка? Все данные будут удалены.",
     leaveChild: "Покинуть профиль",
     confirmLeave: "Перестать отслеживать этого ребёнка? Вы сможете вернуться по коду.",
+    removeMember: "Удалить участника",
+    confirmRemoveMember: "Удалить участника из семьи?",
   },
   defaults: {
     places: { Crib: "Кроватка", Bed: "Кровать", Stroller: "Коляска", Car: "Машина" },
