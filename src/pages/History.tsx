@@ -132,10 +132,11 @@ function dayLabel(d: Date, t: (k: string) => string) {
   return fmtWeekday(d);
 }
 
-function DayGroup({ date, sessions, birthDate, onOpen }: {
+function DayGroup({ date, sessions, birthDate, onOpen, fallbackLatestCompleted }: {
   date: Date; sessions: SleepSession[];
   birthDate: string | null;
   onOpen: (s: SleepSession) => void;
+  fallbackLatestCompleted?: SleepSession | null;
 }) {
   const { t } = useTranslation();
   const now = new Date();
@@ -146,7 +147,7 @@ function DayGroup({ date, sessions, birthDate, onOpen }: {
 
   // Projected wake window for an ongoing wake period (latest completed sleep
   // is at index 0 in DESC order).
-  const latestCompleted = ordered.find((s) => s.end_time);
+  const latestCompleted = ordered.find((s) => s.end_time) ?? fallbackLatestCompleted ?? null;
   const isCurrentDay = isToday(date);
   const hasOngoing = ordered.some((s) => !s.end_time);
   const projectedWW = (isCurrentDay && !hasOngoing && latestCompleted)
