@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,21 @@ export default function Settings() {
   const [inviteRole, setInviteRole] = useState<"viewer" | "user" | "admin">("user");
   const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const tt = t;
+  const formatRemaining = (expiresAtIso: string) => {
+    const ms = new Date(expiresAtIso).getTime() - now;
+    if (ms <= 0) return tt("settings.expired");
+    const totalMin = Math.floor(ms / 60_000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    if (h <= 0) return `${m}m`;
+    return `${h}h ${m}m`;
+  };
 
   const onPickChildPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -293,7 +308,7 @@ export default function Settings() {
                   </SelectContent>
                 </Select>
                 <span className="text-xs text-muted-foreground">
-                  {t("settings.expiresIn", { time: formatRemaining(inv.expires_at, t) })}
+                  {t("settings.expiresIn", { time: formatRemaining(inv.expires_at) })}
                 </span>
               </div>
             </div>
