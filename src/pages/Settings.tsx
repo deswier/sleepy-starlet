@@ -267,7 +267,10 @@ export default function Settings() {
           {canManageMembers(role) && invites.map((inv) => (
             <div key={inv.id} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
               <span className="font-mono font-semibold tracking-widest text-lg">{inv.code}</span>
-              <span className="text-xs text-muted-foreground ml-2">{t("settings.expires24h")}</span>
+              <span className="text-[10px] uppercase tracking-wide bg-primary/15 text-primary rounded px-1.5 py-0.5">
+                {t(`settings.role_${inv.role}`)}
+              </span>
+              <span className="text-xs text-muted-foreground ml-1">{t("settings.expires24h")}</span>
               <div className="ml-auto flex gap-1">
                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyCode(inv.code)}>
                   <Copy className="w-3.5 h-3.5" />
@@ -281,18 +284,21 @@ export default function Settings() {
             </div>
           ))}
           {canManageMembers(role) && (
-            <div className="flex gap-2">
-              <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
-                <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="viewer">{t("settings.role_viewer")}</SelectItem>
-                  <SelectItem value="user">{t("settings.role_user")}</SelectItem>
-                  <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" onClick={generateInvite} className="flex-1">
-                <Plus className="w-4 h-4 mr-1" /> {t("settings.generateCode")}
-              </Button>
+            <div className="space-y-2">
+              <Label className="text-xs">{t("settings.inviteRole")}</Label>
+              <div className="flex gap-2">
+                <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
+                  <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="viewer">{t("settings.role_viewer")}</SelectItem>
+                    <SelectItem value="user">{t("settings.role_user")}</SelectItem>
+                    <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={generateInvite} className="flex-1">
+                  <Plus className="w-4 h-4 mr-1" /> {t("settings.generateCode")}
+                </Button>
+              </div>
             </div>
           )}
         </Card>
