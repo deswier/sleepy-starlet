@@ -14,6 +14,7 @@ import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import { MethodOptionLabel } from "@/lib/method-icons";
 import InterruptionsEditor, { DraftInterruption, validateInterruptions } from "./InterruptionsEditor";
 
 interface Settings {
