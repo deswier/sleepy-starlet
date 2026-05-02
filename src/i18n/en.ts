@@ -71,6 +71,7 @@ const en = {
     totalSleep: "Total sleep", awake_label: "{{duration}}",
     noHistory: "No sleep recorded yet.",
     noChildSelected: "No child selected",
+    timeToSleep: "Time to sleep!",
   },
   history: { title: "History" },
   analytics: {
