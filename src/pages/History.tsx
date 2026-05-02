@@ -14,6 +14,7 @@ import { isToday, isYesterday, startOfDay } from "date-fns";
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import SleepForm from "@/components/sleep/SleepForm";
 import SleepDetail from "@/components/sleep/SleepDetail";
+import { Loader2 } from "lucide-react";
 
 export default function History() {
   const { activeChild } = useChildren();
@@ -23,9 +24,11 @@ export default function History() {
   const [splitByDate, setSplitByDate] = useState(false);
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = async () => {
     if (!activeChild) return;
+    setLoading(true);
     const [s, cs] = await Promise.all([
       supabase.from("sleep_sessions").select("*").eq("child_id", activeChild.id)
         .not("end_time", "is", null).order("start_time", { ascending: false }).limit(200),
@@ -33,6 +36,7 @@ export default function History() {
     ]);
     setSessions((s.data ?? []) as SleepSession[]);
     setSplitByDate(!!cs.data?.split_night_sleep_by_date);
+    setLoading(false);
   };
   useEffect(() => { load(); }, [activeChild]);
 
@@ -66,16 +70,22 @@ export default function History() {
         </Dialog>}
       </div>
 
-      {groups.length === 0 && (
+      {loading && (
+        <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+        </Card>
+      )}
+
+      {!loading && groups.length === 0 && (
         <Card className="p-8 text-center text-muted-foreground shadow-card">{t("sleep.noHistory")}</Card>
       )}
 
-      <div className="space-y-6">
+      {!loading && <div className="space-y-6">
         {groups.map((g) => (
           <DayGroup key={g.date.toISOString()} date={g.date} sessions={g.sessions}
             birthDate={activeChild.birth_date} onOpen={setOpen} />
         ))}
-      </div>
+      </div>}
 
       {open && <SleepDetail session={open} onClose={() => setOpen(null)} onChange={load} />}
     </section>

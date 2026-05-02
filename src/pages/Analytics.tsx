@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
@@ -61,9 +62,11 @@ export default function Analytics() {
   const { activeChild } = useChildren();
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!activeChild) return;
+    setLoading(true);
     (async () => {
       const since = subDays(new Date(), 60).toISOString();
       const { data } = await supabase
@@ -71,6 +74,7 @@ export default function Analytics() {
         .eq("child_id", activeChild.id).gte("start_time", since)
         .order("start_time");
       setSessions((data ?? []) as SleepSession[]);
+      setLoading(false);
     })();
   }, [activeChild]);
 
@@ -86,6 +90,11 @@ export default function Analytics() {
           <Grid3x3 className="w-4 h-4 mr-1" /> {t("analytics.openHeatmap")}
         </Button>
       </div>
+      {loading ? (
+        <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+        </Card>
+      ) : (
       <Tabs defaultValue="day">
         <TabsList className="grid grid-cols-2 w-full mb-4">
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
@@ -94,6 +103,7 @@ export default function Analytics() {
         <TabsContent value="day"><DayView sessions={sessions} birthDate={activeChild.birth_date} /></TabsContent>
         <TabsContent value="week"><WeekView sessions={sessions} birthDate={activeChild.birth_date} /></TabsContent>
       </Tabs>
+      )}
     </section>
   );
 }
@@ -103,6 +113,12 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
   const { t } = useTranslation();
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
   const now = new Date();
+  const isCurrentDay = isSameDay(day, startOfDay(now));
+  // For today, only count time that has already elapsed (cap at "now").
+  // For past days, use the full 24h.
+  const dayElapsedMin = isCurrentDay
+    ? Math.max(0, Math.round((now.getTime() - startOfDay(day).getTime()) / 60000))
+    : 24 * 60;
 
   // Sleeps whose start_time is on the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
@@ -113,7 +129,7 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
   );
 
   const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now), 0);
-  const totalWake = Math.max(0, 24 * 60 - totalSleep);
+  const totalWake = Math.max(0, dayElapsedMin - totalSleep);
   const nightSleep = nightSleepForDate(sessions, day);
 
   const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
@@ -130,6 +146,15 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
     if (!prev.end_time) continue;
     const d = differenceInMinutes(new Date(startedToday[i].start_time), new Date(prev.end_time));
     if (d >= 0 && d < 12 * 60) wws.push(d);
+  }
+  // Today only: include the in-progress wake window (since the last
+  // completed sleep ended) up to "now". Future WW time is never counted.
+  if (isCurrentDay && startedToday.length > 0) {
+    const last = startedToday[startedToday.length - 1];
+    if (last.end_time) {
+      const elapsed = differenceInMinutes(now, new Date(last.end_time));
+      if (elapsed > 0 && elapsed < 12 * 60) wws.push(elapsed);
+    }
   }
   const avgWW = wws.length ? Math.round(wws.reduce((a, b) => a + b, 0) / wws.length) : 0;
   const minWW = wws.length ? Math.min(...wws) : 0;

@@ -10,16 +10,28 @@ import { SleepSession } from "@/lib/sleep-utils";
 import { startOfDay, addDays, subDays, format, startOfWeek } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
+import { iconForMethod } from "@/lib/method-icons";
+import SleepDetail from "@/components/sleep/SleepDetail";
 
 const HOURS = 24;
 const ROW_PX = 22; // height per hour
 const GRID_HEIGHT = HOURS * ROW_PX;
+// Minimum vertical gap (in % of day) before two icons are considered overlapping
+// and grouped into a cluster. ~14 minutes works well at ROW_PX=22.
+const ICON_OVERLAP_PCT = 1.0;
+
+type InterruptionLite = {
+  id: string; sleep_session_id: string; start_time: string;
+  settling_method_id: string | null; settling_method_name: string | null;
+};
 
 export default function Heatmap() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { activeChild } = useChildren();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [interruptions, setInterruptions] = useState<InterruptionLite[]>([]);
+  const [openSession, setOpenSession] = useState<SleepSession | null>(null);
   // Anchor = a date inside the displayed week.
   const [anchor, setAnchor] = useState<Date>(startOfDay(new Date()));
 
@@ -44,7 +56,25 @@ export default function Heatmap() {
         .gte("start_time", since)
         .lt("start_time", until)
         .order("start_time");
-      setSessions((data ?? []) as SleepSession[]);
+      const sess = (data ?? []) as SleepSession[];
+      setSessions(sess);
+      // Load interruptions only for the visible sleep sessions, joined with method name.
+      if (sess.length > 0) {
+        const ids = sess.map((s) => s.id);
+        const { data: ints } = await supabase
+          .from("sleep_interruptions")
+          .select("id, sleep_session_id, start_time, settling_method_id, settling_methods(name)")
+          .in("sleep_session_id", ids);
+        setInterruptions(((ints ?? []) as any[]).map((r) => ({
+          id: r.id,
+          sleep_session_id: r.sleep_session_id,
+          start_time: r.start_time,
+          settling_method_id: r.settling_method_id,
+          settling_method_name: r.settling_methods?.name ?? null,
+        })));
+      } else {
+        setInterruptions([]);
+      }
     })();
   }, [activeChild, weekStart.getTime()]);
 
@@ -55,7 +85,7 @@ export default function Heatmap() {
     return days.map((day) => {
       const dayStart = startOfDay(day).getTime();
       const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-      const out: { topPct: number; heightPct: number; type: "day" | "night" }[] = [];
+      const out: { topPct: number; heightPct: number; type: "day" | "night"; sessionId: string }[] = [];
       for (const s of sessions) {
         const start = new Date(s.start_time).getTime();
         const end = (s.end_time ? new Date(s.end_time) : now).getTime();
@@ -64,11 +94,54 @@ export default function Heatmap() {
         if (hi <= lo) continue;
         const topPct = ((lo - dayStart) / (24 * 60 * 60 * 1000)) * 100;
         const heightPct = ((hi - lo) / (24 * 60 * 60 * 1000)) * 100;
-        out.push({ topPct, heightPct, type: s.sleep_type });
+        out.push({ topPct, heightPct, type: s.sleep_type, sessionId: s.id });
       }
       return out;
     });
   }, [sessions, days]);
+
+  // Group interruptions per visible day; only those with a settling method are drawn.
+  // Icons whose vertical positions are within ICON_OVERLAP_PCT of each other are clustered.
+  const interruptionsPerDay = useMemo(() => {
+    return days.map((day) => {
+      const dayStart = startOfDay(day).getTime();
+      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      const items = interruptions
+        .filter((i) => i.settling_method_id) // skip if no method
+        .map((i) => {
+          const t = new Date(i.start_time).getTime();
+          if (t < dayStart || t >= dayEnd) return null;
+          // The session this interruption belongs to (so taps open it).
+          const session = sessions.find((s) => s.id === i.sleep_session_id);
+          if (!session) return null;
+          // Skip if the corresponding sleep block on this day doesn't include this point.
+          const sStart = new Date(session.start_time).getTime();
+          const sEnd = (session.end_time ? new Date(session.end_time).getTime() : Date.now());
+          if (t < sStart || t > sEnd) return null;
+          return {
+            id: i.id,
+            topPct: ((t - dayStart) / (24 * 60 * 60 * 1000)) * 100,
+            name: i.settling_method_name,
+            session,
+          };
+        })
+        .filter(Boolean) as { id: string; topPct: number; name: string | null; session: SleepSession }[];
+
+      items.sort((a, b) => a.topPct - b.topPct);
+
+      // Cluster items whose vertical positions are within ICON_OVERLAP_PCT.
+      const clusters: { topPct: number; items: typeof items; session: SleepSession }[] = [];
+      for (const it of items) {
+        const last = clusters[clusters.length - 1];
+        if (last && it.topPct - last.topPct < ICON_OVERLAP_PCT) {
+          last.items.push(it);
+        } else {
+          clusters.push({ topPct: it.topPct, items: [it], session: it.session });
+        }
+      }
+      return clusters;
+    });
+  }, [interruptions, sessions, days]);
 
   // Time axis labels at 00:00, 06:00, 12:00, 18:00, 24:00.
   const timeMarks = [0, 6, 12, 18, 24];
@@ -155,14 +228,49 @@ export default function Heatmap() {
                             ? "hsl(var(--primary) / 0.85)"
                             : "hsl(var(--primary) / 0.55)",
                         }}
+                        onClick={() => {
+                          const sess = sessions.find((s) => s.id === b.sessionId);
+                          if (sess) setOpenSession(sess);
+                        }}
+                        role="button"
                       />
                     ))}
+                    {/* Settling-method icons at interruption points */}
+                    {interruptionsPerDay[di].map((cl, ci) => {
+                      const visible = cl.items.slice(0, 2);
+                      const extra = cl.items.length - visible.length;
+                      return (
+                        <button
+                          key={ci}
+                          type="button"
+                          aria-label="open sleep"
+                          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background"
+                          style={{ top: `${cl.topPct}%`, transform: "translate(-50%, -50%)" }}
+                          onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
+                        >
+                          {visible.map((it) => {
+                            const Icon = iconForMethod(it.name);
+                            return <Icon key={it.id} className="w-2.5 h-2.5 text-muted-foreground" strokeWidth={2} />;
+                          })}
+                          {extra > 0 && (
+                            <span className="text-[8px] leading-none text-muted-foreground font-medium pl-0.5">+{extra}</span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
             </div>
           </div>
         </Card>
+        {openSession && (
+          <SleepDetail
+            session={openSession}
+            onClose={() => setOpenSession(null)}
+            onChange={() => { /* re-fetch on close not necessary; week effect handles changes */ }}
+          />
+        )}
       </div>
     </main>
   );
