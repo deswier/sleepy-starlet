@@ -415,6 +415,10 @@ export default function Settings() {
 
         {/* 6. Settling methods */}
         <ListEditor title={t("settings.settlingMethods")} items={methods.map((m) => ({ ...m, label: localizeMethod(m.name) }))}
+          renderIcon={(item: any) => {
+            const Icon = iconForMethod(item.name);
+            return <Icon className="w-4 h-4 text-muted-foreground shrink-0" />;
+          }}
           newValue={newMethod} setNewValue={setNewMethod} placeholder={t("settings.addNew")}
           onAdd={async () => {
             if (!newMethod.trim()) return;
@@ -436,14 +440,17 @@ export default function Settings() {
   );
 }
 
-function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, placeholder }: any) {
+function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, placeholder, renderIcon }: any) {
   return (
     <Card className="p-5 shadow-card mb-4 space-y-3">
       <h3 className="font-semibold">{title}</h3>
       <ul className="space-y-1">
         {items.map((i: any) => (
           <li key={i.id} className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2">
-            <span>{i.label ?? i.name}</span>
+            <span className="flex items-center gap-2 min-w-0">
+              {renderIcon ? renderIcon(i) : null}
+              <span className="truncate">{i.label ?? i.name}</span>
+            </span>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(i.id)}>
               <X className="w-4 h-4" />
             </Button>
