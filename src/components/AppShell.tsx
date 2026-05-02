@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { memo, ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Moon, History, BarChart3, Settings, LogOut, ChevronDown, Plus, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -79,7 +79,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function NavTab({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+const NavTab = memo(function NavTab({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
   return (
     <NavLink
       to={to}
@@ -94,4 +94,4 @@ function NavTab({ to, icon, label }: { to: string; icon: ReactNode; label: strin
       {label}
     </NavLink>
   );
-}
+});

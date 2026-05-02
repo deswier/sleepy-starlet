@@ -186,11 +186,54 @@ function DayView({ childId, birthDate, night }: { childId: string; birthDate: st
     [sessions, day, night]
   );
 
-  const { totalSleep, sleepWithinDay, nightSleep } = useMemo(() => ({
-    totalSleep: sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now, night), 0),
-    sleepWithinDay: sleepMinutesIntersectingDay(sessions, day, isCurrentDay ? now : addDays(startOfDay(day), 1)),
-    nightSleep: nightSleepForDate(sessions, day, night),
-  }), [sessions, day, night, isCurrentDay]);
+  const { totalSleep, sleepWithinDay, nightSleep } = useMemo(() => {
+    // Parse night-window string once; compute all three metrics in a single pass.
+    const { h: nsH, m: nsM } = parseHM(night.start);
+    const nsMin = nsH * 60 + nsM;
+    const dayMs = day.getTime();
+    const dayStartMs = startOfDay(day).getTime();
+    const dayEndMs = isCurrentDay ? now.getTime() : dayStartMs + 24 * 60 * 60 * 1000;
+    const nowMs = now.getTime();
+
+    let totalSleep = 0;
+    let sleepWithinDay = 0;
+    let nightSleep = 0;
+
+    for (const s of sessions) {
+      const startMs = new Date(s.start_time).getTime();
+      const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
+
+      // Bucketed day (inline sessionDay with pre-parsed nsMin)
+      let sDayMs: number;
+      if (s.sleep_type !== "night") {
+        sDayMs = startOfDay(new Date(startMs)).getTime();
+      } else {
+        const start = new Date(startMs);
+        const startMin = start.getHours() * 60 + start.getMinutes();
+        if (startMin >= nsMin && startMin >= 12 * 60) {
+          const sd = startOfDay(start).getTime();
+          const ed = startOfDay(new Date(endMs)).getTime();
+          sDayMs = ed !== sd ? ed : sd;
+        } else {
+          sDayMs = startOfDay(new Date(startMs)).getTime();
+        }
+      }
+
+      if (sDayMs === dayMs) {
+        totalSleep += Math.max(0, Math.round((endMs - startMs) / 60000));
+        if (s.sleep_type === "night" && s.end_time) {
+          nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
+        }
+      }
+
+      // Physical overlap for wake-time calculation
+      const ovStart = Math.max(startMs, dayStartMs);
+      const ovEnd = Math.min(endMs, dayEndMs);
+      if (ovEnd > ovStart) sleepWithinDay += Math.round((ovEnd - ovStart) / 60000);
+    }
+
+    return { totalSleep, sleepWithinDay, nightSleep };
+  }, [sessions, day, night, isCurrentDay]);
 
   const totalWake = Math.max(0, dayElapsedMin - sleepWithinDay);
 
@@ -348,23 +391,70 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
     return arr.reverse();
   }, [today.getTime()]);
 
-  const perDay = useMemo(() => days.map((d) => {
-    const startedThat = sessions.filter((s) => isSameDay(sessionDay(s, night), d) && s.end_time)
-      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, d, now, night), 0);
-    const totalWake = Math.max(0, 24 * 60 - totalSleep);
-    const nightSleep = nightSleepForDate(sessions, d, night);
-    const naps = startedThat.filter((s) => s.sleep_type === "day");
-    const napDurations = naps.map((s) => sessionDuration(s, now));
-    const wws: number[] = [];
-    for (let i = 1; i < startedThat.length; i++) {
-      const prev = startedThat[i - 1];
-      if (!prev.end_time) continue;
-      const diff = differenceInMinutes(new Date(startedThat[i].start_time), new Date(prev.end_time));
-      if (diff >= 0 && diff < 12 * 60) wws.push(diff);
+  const perDay = useMemo(() => {
+    // Parse night-window string once instead of once per session per day.
+    const { h: nsH, m: nsM } = parseHM(night.start);
+    const nsMin = nsH * 60 + nsM;
+    const nowMs = now.getTime();
+
+    // Single pre-computation pass: resolve timestamps + bucketed day for every session.
+    const ext = sessions.map((s) => {
+      const startMs = new Date(s.start_time).getTime();
+      const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
+      let dayMs: number;
+      if (s.sleep_type !== "night") {
+        dayMs = startOfDay(new Date(startMs)).getTime();
+      } else {
+        const start = new Date(startMs);
+        const startMin = start.getHours() * 60 + start.getMinutes();
+        if (startMin >= nsMin && startMin >= 12 * 60) {
+          const startDay = startOfDay(start).getTime();
+          const endDay = startOfDay(new Date(endMs)).getTime();
+          dayMs = endDay !== startDay ? endDay : startDay;
+        } else {
+          dayMs = startOfDay(new Date(startMs)).getTime();
+        }
+      }
+      return { s, startMs, endMs, dayMs };
+    });
+
+    // Group by day for O(1) per-day lookup instead of O(n) filter per day.
+    const byDay = new Map<number, typeof ext>();
+    for (const e of ext) {
+      const bucket = byDay.get(e.dayMs);
+      if (bucket) bucket.push(e);
+      else byDay.set(e.dayMs, [e]);
     }
-    return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
-  }), [sessions, days, night]);
+
+    return days.map((d) => {
+      const dMs = d.getTime();
+      const forDay = byDay.get(dMs) ?? [];
+      const completed = forDay.filter((e) => e.s.end_time)
+        .sort((a, b) => a.startMs - b.startMs);
+
+      const totalSleep = forDay.reduce((acc, e) =>
+        acc + Math.max(0, Math.round((e.endMs - e.startMs) / 60000)), 0);
+      const totalWake = Math.max(0, 24 * 60 - totalSleep);
+
+      let nightSleep = 0;
+      for (const e of forDay) {
+        if (e.s.sleep_type === "night" && e.s.end_time) {
+          nightSleep = Math.max(nightSleep, Math.round((e.endMs - e.startMs) / 60000));
+        }
+      }
+
+      const naps = completed.filter((e) => e.s.sleep_type === "day");
+      const napDurations = naps.map((e) => Math.round((e.endMs - e.startMs) / 60000));
+
+      const wws: number[] = [];
+      for (let i = 1; i < completed.length; i++) {
+        const diff = Math.round((completed[i].startMs - completed[i - 1].endMs) / 60000);
+        if (diff >= 0 && diff < 12 * 60) wws.push(diff);
+      }
+
+      return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
+    });
+  }, [sessions, days, night]);
 
   if (loadingWeek) {
     return (
