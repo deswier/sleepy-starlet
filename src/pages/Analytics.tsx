@@ -149,9 +149,27 @@ export default function Analytics() {
 }
 
 // ---------- DAY ----------
-function DayView({ sessions, birthDate, night }: { sessions: SleepSession[]; birthDate: string | null; night: NightWindow }) {
+function DayView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
+  const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loadingDay, setLoadingDay] = useState(true);
+
+  useEffect(() => {
+    setLoadingDay(true);
+    const since = subDays(startOfDay(day), 1).toISOString();
+    const until = addDays(startOfDay(day), 1).toISOString();
+    supabase.from("sleep_sessions").select("*")
+      .eq("child_id", childId)
+      .gte("start_time", since)
+      .lt("start_time", until)
+      .order("start_time")
+      .then(({ data }) => {
+        setSessions((data ?? []) as SleepSession[]);
+        setLoadingDay(false);
+      });
+  }, [childId, day]);
+
   const now = new Date();
   const isCurrentDay = isSameDay(day, startOfDay(now));
   // For today, only count time that has already elapsed (cap at "now").
@@ -203,6 +221,17 @@ function DayView({ sessions, birthDate, night }: { sessions: SleepSession[]; bir
   const maxWW = wws.length ? Math.max(...wws) : 0;
 
   const norm = ageNorm(birthDate, day);
+
+  if (loadingDay) {
+    return (
+      <>
+        <DayPicker day={day} setDay={setDay} />
+        <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+        </Card>
+      </>
+    );
+  }
 
   if (totalSleep === 0 && napsCount === 0) {
     return (
@@ -280,10 +309,27 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ sessions, birthDate, night }: { sessions: SleepSession[]; birthDate: string | null; night: NightWindow }) {
+function WeekView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
+  const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loadingWeek, setLoadingWeek] = useState(true);
   const now = new Date();
   const today = startOfDay(now);
+
+  useEffect(() => {
+    setLoadingWeek(true);
+    // 9 days back: 7 days of stats + 2-day buffer for night sessions
+    // attributed to the next calendar day via sessionDay().
+    const since = subDays(today, 9).toISOString();
+    supabase.from("sleep_sessions").select("*")
+      .eq("child_id", childId)
+      .gte("start_time", since)
+      .order("start_time")
+      .then(({ data }) => {
+        setSessions((data ?? []) as SleepSession[]);
+        setLoadingWeek(false);
+      });
+  }, [childId]);
 
   // Last 7 fully-completed days: yesterday .. yesterday-6. Today excluded.
   const days = useMemo(() => {
@@ -309,6 +355,14 @@ function WeekView({ sessions, birthDate, night }: { sessions: SleepSession[]; bi
     }
     return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
   });
+
+  if (loadingWeek) {
+    return (
+      <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" />
+      </Card>
+    );
+  }
 
   const withData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
   if (withData.length === 0) {
