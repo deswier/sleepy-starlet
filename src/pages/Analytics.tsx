@@ -44,57 +44,6 @@ export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT):
   return startOfDay(start);
 }
 
-// Minutes a sleep session contributes to its bucketed day (full duration).
-function sleepMinutesOnDay(
-  s: SleepSession,
-  day: Date,
-  now: Date,
-  night: NightWindow = DEFAULT_NIGHT,
-): number {
-  if (!isSameDay(sessionDay(s, night), day)) return 0;
-  const start = new Date(s.start_time);
-  const end = s.end_time ? new Date(s.end_time) : now;
-  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-}
-
-// Minutes of any sleep session that overlap the [day 00:00, dayEnd] window.
-// Used for "total wake" so we never subtract more sleep than what physically
-// elapsed since 00:00 of the chosen day.
-function sleepMinutesIntersectingDay(
-  sessions: SleepSession[],
-  day: Date,
-  dayEnd: Date,
-): number {
-  const dayStart = startOfDay(day).getTime();
-  const dayEndMs = dayEnd.getTime();
-  let total = 0;
-  for (const s of sessions) {
-    const start = new Date(s.start_time).getTime();
-    const end = s.end_time ? new Date(s.end_time).getTime() : dayEndMs;
-    const ovStart = Math.max(start, dayStart);
-    const ovEnd = Math.min(end, dayEndMs);
-    if (ovEnd > ovStart) total += Math.round((ovEnd - ovStart) / 60000);
-  }
-  return total;
-}
-
-// Continuous night-sleep duration for a date: longest night session that
-// belongs to this date (per sessionDay rules above).
-function nightSleepForDate(
-  sessions: SleepSession[],
-  day: Date,
-  night: NightWindow = DEFAULT_NIGHT,
-): number {
-  let best = 0;
-  for (const s of sessions) {
-    if (s.sleep_type !== "night" || !s.end_time) continue;
-    if (!isSameDay(sessionDay(s, night), day)) continue;
-    const ss = new Date(s.start_time).getTime();
-    const ee = new Date(s.end_time).getTime();
-    best = Math.max(best, Math.round((ee - ss) / 60000));
-  }
-  return best;
-}
 
 export default function Analytics() {
   const navigate = useNavigate();

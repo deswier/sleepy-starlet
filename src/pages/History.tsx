@@ -99,7 +99,7 @@ export default function History() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>{t("sleep.addPast")}</DialogTitle></DialogHeader>
-            <SleepForm mode="manual" defaultDate={day} onDone={() => { setShowAdd(false); load(); }} />
+            <SleepForm mode="manual" defaultDate={day} onDone={() => { setShowAdd(false); loadSessions(); }} />
           </DialogContent>
         </Dialog>}
       </div>
@@ -134,7 +134,7 @@ export default function History() {
           fallbackLatestCompleted={latestCompletedAny} />
       )}
 
-      {open && <SleepDetail session={open} onClose={() => setOpen(null)} onChange={load} />}
+      {open && <SleepDetail session={open} onClose={() => setOpen(null)} onChange={loadSessions} />}
     </section>
   );
 }

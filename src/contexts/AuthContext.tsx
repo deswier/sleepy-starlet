@@ -31,13 +31,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
       if (s?.user) syncLanguageFromProfile(s.user.id);
     });
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      lastSeenUserId.current = s?.user?.id ?? null;
-      setSession(s);
-      setUser(s?.user ?? null);
-      setLoading(false);
-      if (s?.user) syncLanguageFromProfile(s.user.id);
-    });
     return () => subscription.unsubscribe();
   }, []);
 
