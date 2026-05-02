@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
-
 @layer base {
   :root {
     /* Soft warm cream */
@@ -26,7 +24,7 @@
     --secondary: 140 28% 88%;
     --secondary-foreground: 150 30% 25%;
 
-    --muted: 36 30% 93%;
+    --muted: 258 30% 95%;
     --muted-foreground: 260 12% 45%;
 
     --accent: 28 60% 88%;
