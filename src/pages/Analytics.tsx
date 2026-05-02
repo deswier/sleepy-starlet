@@ -113,6 +113,12 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
   const { t } = useTranslation();
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
   const now = new Date();
+  const isCurrentDay = isSameDay(day, startOfDay(now));
+  // For today, only count time that has already elapsed (cap at "now").
+  // For past days, use the full 24h.
+  const dayElapsedMin = isCurrentDay
+    ? Math.max(0, Math.round((now.getTime() - startOfDay(day).getTime()) / 60000))
+    : 24 * 60;
 
   // Sleeps whose start_time is on the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
@@ -123,7 +129,7 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
   );
 
   const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now), 0);
-  const totalWake = Math.max(0, 24 * 60 - totalSleep);
+  const totalWake = Math.max(0, dayElapsedMin - totalSleep);
   const nightSleep = nightSleepForDate(sessions, day);
 
   const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
@@ -140,6 +146,15 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
     if (!prev.end_time) continue;
     const d = differenceInMinutes(new Date(startedToday[i].start_time), new Date(prev.end_time));
     if (d >= 0 && d < 12 * 60) wws.push(d);
+  }
+  // Today only: include the in-progress wake window (since the last
+  // completed sleep ended) up to "now". Future WW time is never counted.
+  if (isCurrentDay && startedToday.length > 0) {
+    const last = startedToday[startedToday.length - 1];
+    if (last.end_time) {
+      const elapsed = differenceInMinutes(now, new Date(last.end_time));
+      if (elapsed > 0 && elapsed < 12 * 60) wws.push(elapsed);
+    }
   }
   const avgWW = wws.length ? Math.round(wws.reduce((a, b) => a + b, 0) / wws.length) : 0;
   const minWW = wws.length ? Math.min(...wws) : 0;
