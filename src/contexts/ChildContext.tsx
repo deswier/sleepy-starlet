@@ -26,9 +26,15 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   const [list, setList] = useState<Child[]>([]);
   const [activeId, setActiveId] = useState<string | null>(localStorage.getItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!user) { setList([]); setLoading(false); return; }
+    if (!user) {
+      setList([]);
+      setLoadedUserId(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data } = await supabase
       .from("child_users")
@@ -43,6 +49,7 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       setActiveId(kids[0].id);
       localStorage.setItem(STORAGE_KEY, kids[0].id);
     }
+    setLoadedUserId(user.id);
     setLoading(false);
   }, [user, activeId]);
 
@@ -55,8 +62,10 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
 
   const activeChild = list.find((c) => c.id === activeId) ?? null;
 
+  const effectiveLoading = loading || (!!user && loadedUserId !== user.id);
+
   return (
-    <Ctx.Provider value={{ children: list, activeChild, setActiveChildId, refresh, loading }}>
+    <Ctx.Provider value={{ children: list, activeChild, setActiveChildId, refresh, loading: effectiveLoading }}>
       {children}
     </Ctx.Provider>
   );
