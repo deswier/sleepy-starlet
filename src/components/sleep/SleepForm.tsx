@@ -93,7 +93,14 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
     if (!activeChild || !user) return;
     if (end <= start) { toast.error(t("sleep.endAfterStart")); return; }
     const intrErr = validateInterruptions(interruptions, start, end);
-    if (intrErr) { toast.error(t("sleep.interruptionOutsideSleep")); return; }
+    if (intrErr) {
+      toast.error(
+        intrErr === "overlap" ? t("sleep.interruptionOverlap")
+          : intrErr === "endBeforeStart" ? t("sleep.endAfterStart")
+          : t("sleep.interruptionOutsideSleep"),
+      );
+      return;
+    }
     // Overlap check (skip when offline — enforced server-side too could be added later)
     if (navigator.onLine) {
       const { data: overlap } = await supabase.rpc("sleep_overlaps", {
