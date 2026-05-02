@@ -56,6 +56,8 @@ const ru = {
     place_label: "Место", settling_label: "Укладывание", createdBy: "Добавил",
     interruptions: "Пробуждения", ongoing: "продолжается",
     interruptionOutsideSleep: "Пробуждение должно быть в пределах сна",
+    interruptionOverlap: "Пробуждения не должны пересекаться",
+    active: "активно",
     noInterruptions: "Пробуждений пока нет.",
     startedAt_male: "Уснул в {{time}}",
     startedAt_female: "Уснула в {{time}}",
