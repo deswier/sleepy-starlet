@@ -30,9 +30,11 @@ interface Props {
   sessionId?: string;
   initial?: any;
   onDone: () => void;
+  /** Default calendar day for a new manual entry (time defaults preserved). */
+  defaultDate?: Date;
 }
 
-export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
+export default function SleepForm({ mode, sessionId, initial, onDone, defaultDate }: Props) {
   const { t } = useTranslation();
   const { activeChild } = useChildren();
   const { user } = useAuth();
@@ -41,8 +43,25 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
 
   const now = new Date();
-  const [start, setStart] = useState<Date>(initial?.start_time ? new Date(initial.start_time) : new Date(now.getTime() - 60 * 60 * 1000));
-  const [end, setEnd] = useState<Date>(initial?.end_time ? new Date(initial.end_time) : now);
+  const computeDefaults = () => {
+    if (initial?.start_time) {
+      return {
+        s: new Date(initial.start_time),
+        e: initial.end_time ? new Date(initial.end_time) : now,
+      };
+    }
+    if (defaultDate) {
+      // Use the chosen day with a sensible default time (13:00 → 14:00).
+      const s = new Date(defaultDate);
+      s.setHours(13, 0, 0, 0);
+      const e = new Date(s.getTime() + 60 * 60 * 1000);
+      return { s, e };
+    }
+    return { s: new Date(now.getTime() - 60 * 60 * 1000), e: now };
+  };
+  const def = computeDefaults();
+  const [start, setStart] = useState<Date>(def.s);
+  const [end, setEnd] = useState<Date>(def.e);
   const [sleepType, setSleepType] = useState<"day" | "night">(initial?.sleep_type ?? "day");
   const [placeId, setPlaceId] = useState<string>(initial?.sleep_place_id ?? "");
   const [methodId, setMethodId] = useState<string>(initial?.settling_method_id ?? "");
