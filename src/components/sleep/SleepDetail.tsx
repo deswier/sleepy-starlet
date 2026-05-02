@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDuration, formatTime, sessionDuration, SleepSession, fmtDate } from "@/lib/sleep-utils";
+import { differenceInMinutes } from "date-fns";
 import SleepForm from "./SleepForm";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -78,9 +79,21 @@ export default function SleepDetail({ session, onClose, onChange }: {
                 <div className="text-muted-foreground text-xs uppercase tracking-wide mb-1">{t("sleep.interruptions")}</div>
                 <ul className="space-y-1">
                   {interruptions.map((i, idx) => (
-                    <li key={idx} className="bg-muted/60 rounded-lg px-3 py-1.5 flex justify-between gap-2">
-                      <span>{formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : t("sleep.ongoing")}</span>
-                      {i.method_name && <span className="text-muted-foreground text-xs">{i.method_name}</span>}
+                    <li key={idx} className="bg-muted/60 rounded-lg px-3 py-1.5 flex justify-between gap-2 items-center">
+                      <span>
+                        {formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : t("sleep.ongoing")}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {i.method_name && <span className="text-muted-foreground text-xs">{i.method_name}</span>}
+                        <span className="text-xs font-medium tabular-nums">
+                          {i.end_time
+                            ? (() => {
+                                const m = Math.max(0, differenceInMinutes(new Date(i.end_time), new Date(i.start_time)));
+                                return m === 0 ? "0m" : formatDuration(m);
+                              })()
+                            : t("sleep.active")}
+                        </span>
+                      </span>
                     </li>
                   ))}
                 </ul>
