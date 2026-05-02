@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/contexts/AuthContext";
@@ -26,13 +27,20 @@ async function routePostAuth(navigate: (to: string, opts?: any) => void) {
 }
 
 export default function Auth() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  // Default to device locale on first render; user can change before completing signup.
+  const [language, setLanguage] = useState<"en" | "ru">(() => {
+    const stored = typeof localStorage !== "undefined" ? localStorage.getItem("i18nextLng") : null;
+    const lang = stored || (typeof navigator !== "undefined" ? navigator.language : "en");
+    return lang.toLowerCase().startsWith("ru") ? "ru" : "en";
+  });
+  useEffect(() => { if (i18n.language !== language) i18n.changeLanguage(language); }, [language]); // eslint-disable-line
 
   useEffect(() => { if (!loading && user) routePostAuth(navigate); }, [user, loading, navigate]);
 
@@ -48,9 +56,14 @@ export default function Auth() {
       email, password,
       options: { emailRedirectTo: window.location.origin, data: { display_name: name } },
     });
+    if (error) { setBusy(false); toast.error(error.message); return; }
+    // Persist chosen language to the profile so it follows the user across devices.
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (u) await supabase.from("profiles").update({ language }).eq("id", u.id);
+    } catch { /* ignore */ }
     setBusy(false);
-    if (error) toast.error(error.message);
-    else { toast.success(t("auth.welcome")); routePostAuth(navigate); }
+    toast.success(t("auth.welcome")); routePostAuth(navigate);
   };
   const handleGoogle = async () => {
     setBusy(true);
@@ -71,6 +84,15 @@ export default function Auth() {
           <p className="text-muted-foreground mt-2">{t("app.tagline")}</p>
         </div>
         <Card className="p-6 shadow-soft border-border/50">
+          <div className="flex justify-end mb-3">
+            <Select value={language} onValueChange={(v: "en" | "ru") => setLanguage(v)}>
+              <SelectTrigger className="h-9 w-[140px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">{t("common.english")}</SelectItem>
+                <SelectItem value="ru">{t("common.russian")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Tabs defaultValue="signin">
             <TabsList className="grid grid-cols-2 w-full mb-6">
               <TabsTrigger value="signin">{t("auth.signIn")}</TabsTrigger>
