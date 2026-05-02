@@ -61,7 +61,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{editing ? t("sleep.editSleep") : t("sleep.details")}</DialogTitle></DialogHeader>
         {editing ? (
           <SleepForm mode="edit" sessionId={session.id} initial={session} onDone={() => { setEditing(false); onChange(); onClose(); }} />
