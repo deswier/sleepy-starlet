@@ -27,6 +27,17 @@ function sleepMinutesOnDay(s: SleepSession, day: Date, now: Date): number {
   return Math.max(0, Math.round((hi - lo) / 60000));
 }
 
+// The calendar day a session belongs to in lists/aggregations.
+// Night sleeps that begin in the evening (>= 12:00) and end the next day are
+// attributed to the END day; otherwise to the start date.
+function sessionDay(s: SleepSession): Date {
+  const start = new Date(s.start_time);
+  if (s.sleep_type === "night" && s.end_time && start.getHours() >= 12) {
+    return startOfDay(new Date(s.end_time));
+  }
+  return startOfDay(start);
+}
+
 // Continuous night-sleep duration for a date: pick the night session whose
 // sleep_type === 'night' and that is anchored around this date's night,
 // and return its full duration (NOT split by date).
@@ -95,7 +106,7 @@ function DayView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate:
 
   // Sleeps whose start_time is on the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
-    () => sessions.filter((s) => isSameDay(new Date(s.start_time), day)).sort(
+    () => sessions.filter((s) => isSameDay(sessionDay(s), day)).sort(
       (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
     ),
     [sessions, day]
@@ -215,7 +226,7 @@ function WeekView({ sessions, birthDate }: { sessions: SleepSession[]; birthDate
   }, [today.getTime()]);
 
   const perDay = days.map((d) => {
-    const startedThat = sessions.filter((s) => isSameDay(new Date(s.start_time), d) && s.end_time)
+    const startedThat = sessions.filter((s) => isSameDay(sessionDay(s), d) && s.end_time)
       .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
     const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, d, now), 0);
     const totalWake = Math.max(0, 24 * 60 - totalSleep);
