@@ -11,13 +11,18 @@ import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { readLastRoute } from "@/lib/last-route";
 
 async function routePostAuth(navigate: (to: string, opts?: any) => void) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) { navigate("/auth", { replace: true }); return; }
   const { data } = await supabase.from("child_users").select("child_id").eq("user_id", user.id).limit(1);
-  if (data && data.length > 0) navigate("/", { replace: true });
-  else navigate("/child/new", { replace: true });
+  if (data && data.length > 0) {
+    const last = readLastRoute(user.id);
+    navigate(last?.path || "/", { replace: true });
+  } else {
+    navigate("/child/new", { replace: true });
+  }
 }
 
 export default function Auth() {
