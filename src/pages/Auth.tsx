@@ -88,8 +88,8 @@ export default function Auth() {
             <Select value={language} onValueChange={(v: "en" | "ru") => setLanguage(v)}>
               <SelectTrigger className="h-9 w-[140px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="en">{t("common.english")}</SelectItem>
-                <SelectItem value="ru">{t("common.russian")}</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="ru">Русский</SelectItem>
               </SelectContent>
             </Select>
           </div>
