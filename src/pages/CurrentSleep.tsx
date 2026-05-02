@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
+import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -27,6 +27,7 @@ export default function CurrentSleep() {
   const { role } = useChildRole();
   const [active, setActive] = useState<SleepSession | null>(null);
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
+  const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
@@ -50,6 +51,7 @@ export default function CurrentSleep() {
 
   const load = async () => {
     if (!activeChild) return;
+    setLoading(true);
     const { data: cs } = await supabase
       .from("child_settings")
       .select("show_interruptions,show_falling_asleep_method")
@@ -72,6 +74,7 @@ export default function CurrentSleep() {
         .eq("sleep_session_id", data.id).is("end_time", null).maybeSingle();
       setInterruption(open ?? null);
     } else setInterruption(null);
+    setLoading(false);
   };
 
   useEffect(() => { load(); }, [activeChild]);
@@ -232,7 +235,11 @@ export default function CurrentSleep() {
 
   return (
     <section className="px-4 max-w-md mx-auto w-full">
-      {!active ? (
+      {loading ? (
+        <Card className="p-8 text-center shadow-card border-border/50 mt-4 flex items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+        </Card>
+      ) : !active ? (
         <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
           <div className="inline-flex w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-4">
             <Sun className="w-10 h-10 text-primary" strokeWidth={1.5} />
