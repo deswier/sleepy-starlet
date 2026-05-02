@@ -14,6 +14,7 @@ import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import { MethodOptionLabel } from "@/lib/method-icons";
 import InterruptionsEditor, { DraftInterruption, validateInterruptions } from "./InterruptionsEditor";
 
 interface Settings {
@@ -233,7 +234,11 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
-                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{localizeMethod(m.name)}</SelectItem>)}
+                  {methods.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <MethodOptionLabel name={m.name} label={localizeMethod(m.name)} />
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
