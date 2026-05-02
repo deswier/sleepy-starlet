@@ -39,7 +39,6 @@ export default function InterruptionsEditor({
     const bad = new Set<number>();
     let msg: string | null = null;
     list.forEach((i, idx) => {
-      const endT = i.end_time ?? i.start_time;
       if (i.start_time < sleepStart || (sleepEnd && i.start_time > sleepEnd)) {
         bad.add(idx); msg = msg ?? t("sleep.interruptionOutsideSleep");
       }
@@ -49,26 +48,29 @@ export default function InterruptionsEditor({
       if (i.end_time && sleepEnd && i.end_time > sleepEnd) {
         bad.add(idx); msg = msg ?? t("sleep.interruptionOutsideSleep");
       }
-      // Overlap with other interruptions.
-      list.forEach((j, jdx) => {
-        if (jdx <= idx) return;
-        const aS = i.start_time.getTime();
-        const aE = (i.end_time ?? i.start_time).getTime();
-        const bS = j.start_time.getTime();
-        const bE = (j.end_time ?? j.start_time).getTime();
-        const aZero = aS === aE;
-        const bZero = bS === bE;
-        let conflict = false;
-        if (aZero && bZero) conflict = aS === bS;
-        else if (aZero) conflict = aS >= bS && aS <= bE;
-        else if (bZero) conflict = bS >= aS && bS <= aE;
-        else conflict = aS < bE && bS < aE;
-        if (conflict) {
-          bad.add(idx); bad.add(jdx);
-          msg = msg ?? t("sleep.interruptionOverlap");
-        }
-      });
     });
+    // Overlap detection: highlight only the later (offending) interruption,
+    // sorted by start_time, so a previously valid entry stays unmarked.
+    const order = list
+      .map((it, idx) => ({ idx, s: it.start_time.getTime(), e: (it.end_time ?? it.start_time).getTime() }))
+      .sort((a, b) => a.s - b.s);
+    for (let p = 0; p < order.length; p++) {
+      for (let q = 0; q < p; q++) {
+        const a = order[q]; const b = order[p];
+        const aZero = a.s === a.e;
+        const bZero = b.s === b.e;
+        let conflict = false;
+        if (aZero && bZero) conflict = a.s === b.s;
+        else if (aZero) conflict = a.s >= b.s && a.s <= b.e;
+        else if (bZero) conflict = b.s >= a.s && b.s <= a.e;
+        else conflict = a.s < b.e && b.s < a.e;
+        if (conflict) {
+          bad.add(b.idx);
+          msg = msg ?? t("sleep.interruptionOverlap");
+          break;
+        }
+      }
+    }
     return { msg, bad };
   };
 
