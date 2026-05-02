@@ -15,17 +15,18 @@ interface Props {
 }
 
 export default function DateTimeField({ label, value, onChange, className }: Props) {
-  const timeStr = format(value, "HH:mm");
+  const safeValue = value instanceof Date && !isNaN(value.getTime()) ? value : new Date();
+  const timeStr = format(safeValue, "HH:mm");
   const handleDate = (d: Date | undefined) => {
     if (!d) return;
-    const next = new Date(value);
+    const next = new Date(safeValue);
     next.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
     onChange(next);
   };
   const handleTime = (e: React.ChangeEvent<HTMLInputElement>) => {
     const [h, m] = e.target.value.split(":").map(Number);
     if (Number.isNaN(h) || Number.isNaN(m)) return;
-    const next = new Date(value);
+    const next = new Date(safeValue);
     next.setHours(h, m, 0, 0);
     onChange(next);
   };
@@ -37,13 +38,13 @@ export default function DateTimeField({ label, value, onChange, className }: Pro
           <PopoverTrigger asChild>
             <Button type="button" variant="outline" className="flex-1 justify-start text-left font-normal">
               <CalendarIcon className="w-4 h-4 mr-2 opacity-70" />
-              {format(value, "dd.MM.yy")}
+              {format(safeValue, "dd.MM.yy")}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start">
             <Calendar
               mode="single"
-              selected={value}
+              selected={safeValue}
               onSelect={handleDate}
               initialFocus
               className={cn("p-3 pointer-events-auto")}
