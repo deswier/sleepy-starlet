@@ -69,10 +69,13 @@ export default function Settings() {
     if (!activeChild) return;
     setChildName(activeChild.name ?? "");
     setBirthDate(activeChild.birth_date ?? "");
-    const invitesQuery = canManageMembers(role)
-      ? supabase.from("child_invites").select("*").eq("child_id", activeChild.id)
-          .is("redeemed_at", null).is("revoked_at", null).order("created_at", { ascending: false })
-      : Promise.resolve({ data: [] as any[] } as any);
+    // Always load invites — RLS already restricts visibility to linked users,
+    // and we render the section based on `canManageMembers(role)` which may
+    // resolve after the first load() call.
+    const invitesQuery = supabase.from("child_invites").select("*")
+      .eq("child_id", activeChild.id)
+      .is("redeemed_at", null).is("revoked_at", null)
+      .order("created_at", { ascending: false });
     const [se, p, m, inv, links, roles, profs] = await Promise.all([
       supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
       supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
@@ -126,6 +129,11 @@ export default function Settings() {
   const revokeInvite = async (id: string) => {
     await supabase.from("child_invites").update({ revoked_at: new Date().toISOString() }).eq("id", id);
     load();
+  };
+  const changeInviteRole = async (id: string, newRole: "viewer" | "user" | "admin") => {
+    const { error } = await supabase.from("child_invites").update({ role: newRole }).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    setInvites((prev) => prev.map((i) => (i.id === id ? { ...i, role: newRole } : i)));
   };
   const copyCode = async (code: string) => {
     await navigator.clipboard.writeText(code);
@@ -265,21 +273,28 @@ export default function Settings() {
           )}
 
           {canManageMembers(role) && invites.map((inv) => (
-            <div key={inv.id} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
-              <span className="font-mono font-semibold tracking-widest text-lg">{inv.code}</span>
-              <span className="text-[10px] uppercase tracking-wide bg-primary/15 text-primary rounded px-1.5 py-0.5">
-                {t(`settings.role_${inv.role}`)}
-              </span>
-              <span className="text-xs text-muted-foreground ml-1">{t("settings.expires24h")}</span>
-              <div className="ml-auto flex gap-1">
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyCode(inv.code)}>
+            <div key={inv.id} className="bg-muted/50 rounded-lg px-3 py-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold tracking-widest text-lg">{inv.code}</span>
+                <Button size="icon" variant="ghost" className="h-7 w-7 ml-auto" onClick={() => copyCode(inv.code)}>
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
-                {canManageMembers(role) && (
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => revokeInvite(inv.id)}>
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
-                )}
+                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => revokeInvite(inv.id)}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={inv.role} onValueChange={(v: "viewer" | "user" | "admin") => changeInviteRole(inv.id, v)}>
+                  <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="viewer">{t("settings.role_viewer")}</SelectItem>
+                    <SelectItem value="user">{t("settings.role_user")}</SelectItem>
+                    <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground">
+                  {t("settings.expiresIn", { time: formatRemaining(inv.expires_at, t) })}
+                </span>
               </div>
             </div>
           ))}
