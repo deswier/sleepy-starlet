@@ -100,30 +100,22 @@ export default function Analytics() {
   const navigate = useNavigate();
   const { activeChild } = useChildren();
   const { t } = useTranslation();
-  const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [night, setNight] = useState<NightWindow>(DEFAULT_NIGHT);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!activeChild) return;
     setLoading(true);
-    (async () => {
-      const since = subDays(new Date(), 60).toISOString();
-      const [{ data }, { data: cs }] = await Promise.all([
-        supabase.from("sleep_sessions").select("*")
-          .eq("child_id", activeChild.id).gte("start_time", since)
-          .order("start_time"),
-        supabase.from("child_settings")
-          .select("night_start_time,night_end_time")
-          .eq("child_id", activeChild.id).single(),
-      ]);
-      setSessions((data ?? []) as SleepSession[]);
-      if (cs) setNight({
-        start: (cs.night_start_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.start,
-        end: (cs.night_end_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.end,
+    supabase.from("child_settings")
+      .select("night_start_time,night_end_time")
+      .eq("child_id", activeChild.id).single()
+      .then(({ data: cs }) => {
+        if (cs) setNight({
+          start: (cs.night_start_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.start,
+          end: (cs.night_end_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.end,
+        });
+        setLoading(false);
       });
-      setLoading(false);
-    })();
   }, [activeChild]);
 
   if (!activeChild) {
@@ -148,8 +140,8 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView sessions={sessions} birthDate={activeChild.birth_date} night={night} /></TabsContent>
-        <TabsContent value="week"><WeekView sessions={sessions} birthDate={activeChild.birth_date} night={night} /></TabsContent>
+        <TabsContent value="day"><DayView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
       </Tabs>
       )}
     </section>
