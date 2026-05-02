@@ -19,3 +19,17 @@ export function iconForMethod(name: string | null | undefined): LucideIcon {
   if (n.includes("walk") || n.includes("stroll") || n.includes("прогул") || n.includes("ходьб") || n.includes("коляск")) return Footprints;
   return Circle;
 }
+
+/**
+ * Row used inside SelectItem: name on the left, method icon on the right.
+ * Keeps spacing consistent across all settling-method dropdowns.
+ */
+export function MethodOptionLabel({ name, label }: { name: string; label?: string }) {
+  const Icon = iconForMethod(name);
+  return (
+    <span className="flex w-full items-center justify-between gap-3">
+      <span className="truncate">{label ?? name}</span>
+      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+    </span>
+  );
+}
