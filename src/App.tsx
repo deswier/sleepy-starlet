@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChildProvider } from "@/contexts/ChildContext";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
+import RouteTracker from "@/components/RouteTracker";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NewChild from "./pages/NewChild";
@@ -28,6 +29,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <ChildProvider>
+            <RouteTracker />
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/child/new" element={<RequireAuth><NewChild /></RequireAuth>} />
