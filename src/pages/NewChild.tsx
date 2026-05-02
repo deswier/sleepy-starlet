@@ -13,12 +13,13 @@ import { toast } from "sonner";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getDeviceId } from "@/lib/device-id";
+import { readLastRoute } from "@/lib/last-route";
 
 export default function NewChild() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { refresh, setActiveChildId, children: kids } = useChildren();
+  const { refresh, setActiveChildId, children: kids, loading: childrenLoading } = useChildren();
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState<"male" | "female" | "">("");
@@ -81,11 +82,24 @@ export default function NewChild() {
     return `${seconds} s`;
   }
 
+  const goBack = () => {
+    const last = user ? readLastRoute(user.id)?.path : null;
+    navigate(last && last !== "/child/new" ? last : "/", { replace: true });
+  };
+
+  if (childrenLoading) {
+    return <div className="min-h-screen bg-hero" />;
+  }
+
+  if (kids.length > 0) {
+    return null;
+  }
+
   return (
     <main className="min-h-screen bg-hero p-4 flex items-start sm:items-center justify-center">
       <div className="w-full max-w-md py-8">
         {kids.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+          <Button variant="ghost" size="sm" onClick={goBack} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
           </Button>
         )}
