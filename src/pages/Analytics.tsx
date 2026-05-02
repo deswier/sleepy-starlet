@@ -186,39 +186,49 @@ function DayView({ childId, birthDate, night }: { childId: string; birthDate: st
     [sessions, day, night]
   );
 
-  const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now, night), 0);
-  const dayEnd = isCurrentDay ? now : addDays(startOfDay(day), 1);
-  const sleepWithinDay = sleepMinutesIntersectingDay(sessions, day, dayEnd);
+  const { totalSleep, sleepWithinDay, nightSleep } = useMemo(() => ({
+    totalSleep: sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now, night), 0),
+    sleepWithinDay: sleepMinutesIntersectingDay(sessions, day, isCurrentDay ? now : addDays(startOfDay(day), 1)),
+    nightSleep: nightSleepForDate(sessions, day, night),
+  }), [sessions, day, night, isCurrentDay]);
+
   const totalWake = Math.max(0, dayElapsedMin - sleepWithinDay);
-  const nightSleep = nightSleepForDate(sessions, day, night);
 
-  const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
-  const napDurations = naps.map((s) => sessionDuration(s, now));
-  const napsCount = naps.length;
-  const avgNap = napsCount ? Math.round(napDurations.reduce((a, b) => a + b, 0) / napsCount) : 0;
-  const minNap = napsCount ? Math.min(...napDurations) : 0;
-  const maxNap = napsCount ? Math.max(...napDurations) : 0;
+  const { napsCount, avgNap, minNap, maxNap } = useMemo(() => {
+    const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
+    const durations = naps.map((s) => sessionDuration(s, now));
+    const count = naps.length;
+    return {
+      napsCount: count,
+      avgNap: count ? Math.round(durations.reduce((a, b) => a + b, 0) / count) : 0,
+      minNap: count ? Math.min(...durations) : 0,
+      maxNap: count ? Math.max(...durations) : 0,
+    };
+  }, [startedToday]);
 
-  // Wake windows between consecutive sleeps that started today.
-  const wws: number[] = [];
-  for (let i = 1; i < startedToday.length; i++) {
-    const prev = startedToday[i - 1];
-    if (!prev.end_time) continue;
-    const d = differenceInMinutes(new Date(startedToday[i].start_time), new Date(prev.end_time));
-    if (d >= 0 && d < 12 * 60) wws.push(d);
-  }
-  // Today only: include the in-progress wake window (since the last
-  // completed sleep ended) up to "now". Future WW time is never counted.
-  if (isCurrentDay && startedToday.length > 0) {
-    const last = startedToday[startedToday.length - 1];
-    if (last.end_time) {
-      const elapsed = differenceInMinutes(now, new Date(last.end_time));
-      if (elapsed > 0 && elapsed < 12 * 60) wws.push(elapsed);
+  const { wws, avgWW, minWW, maxWW } = useMemo(() => {
+    const windows: number[] = [];
+    for (let i = 1; i < startedToday.length; i++) {
+      const prev = startedToday[i - 1];
+      if (!prev.end_time) continue;
+      const d = differenceInMinutes(new Date(startedToday[i].start_time), new Date(prev.end_time));
+      if (d >= 0 && d < 12 * 60) windows.push(d);
     }
-  }
-  const avgWW = wws.length ? Math.round(wws.reduce((a, b) => a + b, 0) / wws.length) : 0;
-  const minWW = wws.length ? Math.min(...wws) : 0;
-  const maxWW = wws.length ? Math.max(...wws) : 0;
+    // Today only: include the in-progress wake window up to "now".
+    if (isCurrentDay && startedToday.length > 0) {
+      const last = startedToday[startedToday.length - 1];
+      if (last.end_time) {
+        const elapsed = differenceInMinutes(now, new Date(last.end_time));
+        if (elapsed > 0 && elapsed < 12 * 60) windows.push(elapsed);
+      }
+    }
+    return {
+      wws: windows,
+      avgWW: windows.length ? Math.round(windows.reduce((a, b) => a + b, 0) / windows.length) : 0,
+      minWW: windows.length ? Math.min(...windows) : 0,
+      maxWW: windows.length ? Math.max(...windows) : 0,
+    };
+  }, [startedToday, isCurrentDay]);
 
   const norm = ageNorm(birthDate, day);
 
@@ -338,7 +348,7 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
     return arr.reverse();
   }, [today.getTime()]);
 
-  const perDay = days.map((d) => {
+  const perDay = useMemo(() => days.map((d) => {
     const startedThat = sessions.filter((s) => isSameDay(sessionDay(s, night), d) && s.end_time)
       .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
     const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, d, now, night), 0);
@@ -354,7 +364,7 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
       if (diff >= 0 && diff < 12 * 60) wws.push(diff);
     }
     return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
-  });
+  }), [sessions, days, night]);
 
   if (loadingWeek) {
     return (

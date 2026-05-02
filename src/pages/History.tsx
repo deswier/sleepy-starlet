@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -30,25 +30,43 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
 
-  const load = async () => {
+  // Settings only change when the child changes — fetch once, separately.
+  useEffect(() => {
+    if (!activeChild) return;
+    supabase.from("child_settings")
+      .select("split_night_sleep_by_date,night_start_time,night_end_time")
+      .eq("child_id", activeChild.id).single()
+      .then(({ data: cs }) => {
+        if (!cs) return;
+        setSplitByDate(!!cs.split_night_sleep_by_date);
+        setNight({
+          start: (cs.night_start_time as string)?.slice(0, 5) ?? "19:00",
+          end: (cs.night_end_time as string)?.slice(0, 5) ?? "07:00",
+        });
+      });
+  }, [activeChild?.id]);
+
+  // Sessions scoped to the selected day's window — refetch when day or child changes.
+  const loadSessions = useCallback(async () => {
     if (!activeChild) return;
     setLoading(true);
-    const [s, cs] = await Promise.all([
-      supabase.from("sleep_sessions").select("*").eq("child_id", activeChild.id)
-        .order("start_time", { ascending: false }).limit(200),
-      supabase.from("child_settings")
-        .select("split_night_sleep_by_date,night_start_time,night_end_time")
-        .eq("child_id", activeChild.id).single(),
-    ]);
-    setSessions((s.data ?? []) as SleepSession[]);
-    setSplitByDate(!!cs.data?.split_night_sleep_by_date);
-    if (cs.data) setNight({
-      start: (cs.data.night_start_time as string)?.slice(0, 5) ?? "19:00",
-      end: (cs.data.night_end_time as string)?.slice(0, 5) ?? "07:00",
-    });
+    const since = subDays(startOfDay(day), 1).toISOString();
+    const until = addDays(startOfDay(day), 1).toISOString();
+    const { data } = await supabase.from("sleep_sessions").select("*")
+      .eq("child_id", activeChild.id)
+      .gte("start_time", since)
+      .lt("start_time", until)
+      .order("start_time", { ascending: false });
+    setSessions((data ?? []) as SleepSession[]);
     setLoading(false);
-  };
-  useEffect(() => { load(); }, [activeChild]);
+  }, [activeChild?.id, day]);
+
+  useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  // Keep ref so the realtime handler always calls the latest loadSessions
+  // without re-subscribing the channel on every day change.
+  const loadSessionsRef = useRef(loadSessions);
+  useEffect(() => { loadSessionsRef.current = loadSessions; }, [loadSessions]);
 
   useEffect(() => {
     if (!activeChild) return;
@@ -56,7 +74,7 @@ export default function History() {
       .channel(`history-${activeChild.id}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
-        () => load())
+        () => loadSessionsRef.current())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [activeChild?.id]);
