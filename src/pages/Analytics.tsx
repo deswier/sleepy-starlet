@@ -35,10 +35,12 @@ export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT):
   const { h: nsH, m: nsM } = parseHM(night.start);
   const startMin = start.getHours() * 60 + start.getMinutes();
   const nsMin = nsH * 60 + nsM;
-  // If session started in the evening (>= night start, before midnight) and
-  // it actually ends past midnight (or is still ongoing), bucket to end day.
+  // Evening night sleep (started after night_start, before midnight):
+  // - ongoing → pre-attribute to next day (it will end there)
+  // - completed and crossed midnight → attribute to end day
   if (startMin >= nsMin && startMin >= 12 * 60) {
-    const end = s.end_time ? new Date(s.end_time) : new Date();
+    if (!s.end_time) return startOfDay(addDays(start, 1));
+    const end = new Date(s.end_time);
     if (!isSameDay(start, end)) return startOfDay(end);
   }
   return startOfDay(start);
@@ -160,9 +162,14 @@ function DayView({ childId, birthDate, night }: { childId: string; birthDate: st
         const start = new Date(startMs);
         const startMin = start.getHours() * 60 + start.getMinutes();
         if (startMin >= nsMin && startMin >= 12 * 60) {
-          const sd = startOfDay(start).getTime();
-          const ed = startOfDay(new Date(endMs)).getTime();
-          sDayMs = ed !== sd ? ed : sd;
+          if (!s.end_time) {
+            // Ongoing evening sleep → next day
+            sDayMs = startOfDay(start).getTime() + 24 * 60 * 60 * 1000;
+          } else {
+            const sd = startOfDay(start).getTime();
+            const ed = startOfDay(new Date(endMs)).getTime();
+            sDayMs = ed !== sd ? ed : sd;
+          }
         } else {
           sDayMs = startOfDay(new Date(startMs)).getTime();
         }
@@ -173,12 +180,11 @@ function DayView({ childId, birthDate, night }: { childId: string; birthDate: st
         if (s.sleep_type === "night" && s.end_time) {
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
         }
+        // Physical overlap only for sessions attributed to today — keeps totalWake consistent
+        const ovStart = Math.max(startMs, dayStartMs);
+        const ovEnd = Math.min(endMs, dayEndMs);
+        if (ovEnd > ovStart) sleepWithinDay += Math.round((ovEnd - ovStart) / 60000);
       }
-
-      // Physical overlap for wake-time calculation
-      const ovStart = Math.max(startMs, dayStartMs);
-      const ovEnd = Math.min(endMs, dayEndMs);
-      if (ovEnd > ovStart) sleepWithinDay += Math.round((ovEnd - ovStart) / 60000);
     }
 
     return { totalSleep, sleepWithinDay, nightSleep };
@@ -357,9 +363,13 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
         const start = new Date(startMs);
         const startMin = start.getHours() * 60 + start.getMinutes();
         if (startMin >= nsMin && startMin >= 12 * 60) {
-          const startDay = startOfDay(start).getTime();
-          const endDay = startOfDay(new Date(endMs)).getTime();
-          dayMs = endDay !== startDay ? endDay : startDay;
+          if (!s.end_time) {
+            dayMs = startOfDay(start).getTime() + 24 * 60 * 60 * 1000;
+          } else {
+            const startDay = startOfDay(start).getTime();
+            const endDay = startOfDay(new Date(endMs)).getTime();
+            dayMs = endDay !== startDay ? endDay : startDay;
+          }
         } else {
           dayMs = startOfDay(new Date(startMs)).getTime();
         }
