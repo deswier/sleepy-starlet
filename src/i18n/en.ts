@@ -21,7 +21,8 @@ const en = {
     signOut: "Sign out",
   },
   child: {
-    addChild: "Add", noChild: "No child",
+    addChild: "Add child", noChild: "No child",
+    addTab: "Add", joinTab: "Join",
     title: "Add a child", subtitle: "A few details to get started",
     name: "Name", birthDate: "Birth date",
     gender: "Gender", boy: "Boy", girl: "Girl",
