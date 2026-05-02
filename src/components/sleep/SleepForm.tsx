@@ -233,7 +233,11 @@ export default function SleepForm({ mode, sessionId, initial, onDone }: Props) {
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
-                  {methods.map((m) => <SelectItem key={m.id} value={m.id}>{localizeMethod(m.name)}</SelectItem>)}
+                  {methods.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <MethodOptionLabel name={m.name} label={localizeMethod(m.name)} />
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
