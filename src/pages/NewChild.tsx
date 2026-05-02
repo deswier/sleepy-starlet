@@ -15,6 +15,10 @@ import { useTranslation } from "react-i18next";
 import { getDeviceId } from "@/lib/device-id";
 import { readLastRoute } from "@/lib/last-route";
 
+type Relation = "mother" | "father" | "other";
+type Gender = "male" | "female" | "";
+type LocationState = { allowChildForm?: boolean } | null;
+
 export default function NewChild() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -23,13 +27,13 @@ export default function NewChild() {
   const { refresh, setActiveChildId, children: kids, loading: childrenLoading } = useChildren();
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [gender, setGender] = useState<"male" | "female" | "">("");
-  const [relation, setRelation] = useState<"mother" | "father" | "other">("mother");
+  const [gender, setGender] = useState<Gender>("");
+  const [relation, setRelation] = useState<Relation>("mother");
   const [customRelation, setCustomRelation] = useState("");
   const [busy, setBusy] = useState(false);
 
   const [code, setCode] = useState("");
-  const [joinRelation, setJoinRelation] = useState<"mother" | "father" | "other">("other");
+  const [joinRelation, setJoinRelation] = useState<Relation>("other");
   const [joinCustom, setJoinCustom] = useState("");
   const [joining, setJoining] = useState(false);
 
@@ -40,7 +44,7 @@ export default function NewChild() {
     const { data: childId, error } = await supabase.rpc("create_child_with_link", {
       _name: name,
       _birth_date: birthDate || null,
-      _gender: (gender || null) as any,
+      _gender: gender || null,
       _relation: relation,
       _custom_relation_name: relation === "other" ? (customRelation.trim() || null) : null,
     });
@@ -92,7 +96,7 @@ export default function NewChild() {
     return <div className="min-h-screen bg-hero" />;
   }
 
-  const allowChildForm = kids.length === 0 || (location.state as any)?.allowChildForm === true;
+  const allowChildForm = kids.length === 0 || (location.state as LocationState)?.allowChildForm === true;
   if (!allowChildForm) {
     const last = user ? readLastRoute(user.id)?.path : null;
     return <Navigate to={last && last !== "/child/new" ? last : "/"} replace />;
@@ -127,7 +131,7 @@ export default function NewChild() {
                   <Input id="b" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="block w-full" /></div>
                 <div>
                   <Label>{t("child.gender")}</Label>
-                  <Select value={gender} onValueChange={(v: any) => setGender(v)}>
+                  <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
                     <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="female">{t("child.girl")}</SelectItem>
@@ -137,7 +141,7 @@ export default function NewChild() {
                 </div>
                 <div>
                   <Label>{t("child.relation")}</Label>
-                  <Select value={relation} onValueChange={(v: any) => setRelation(v)}>
+                  <Select value={relation} onValueChange={(v) => setRelation(v as Relation)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="mother">{t("child.mother")}</SelectItem>
@@ -164,7 +168,7 @@ export default function NewChild() {
                 </div>
                 <div>
                   <Label>{t("child.relation")}</Label>
-                  <Select value={joinRelation} onValueChange={(v: any) => setJoinRelation(v)}>
+                  <Select value={joinRelation} onValueChange={(v) => setJoinRelation(v as Relation)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="mother">{t("child.mother")}</SelectItem>
