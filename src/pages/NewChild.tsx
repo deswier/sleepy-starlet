@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { readLastRoute } from "@/lib/last-route";
 export default function NewChild() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { refresh, setActiveChildId, children: kids, loading: childrenLoading } = useChildren();
   const [name, setName] = useState("");
@@ -91,8 +92,10 @@ export default function NewChild() {
     return <div className="min-h-screen bg-hero" />;
   }
 
-  if (kids.length > 0) {
-    return null;
+  const allowChildForm = kids.length === 0 || (location.state as any)?.allowChildForm === true;
+  if (!allowChildForm) {
+    const last = user ? readLastRoute(user.id)?.path : null;
+    return <Navigate to={last && last !== "/child/new" ? last : "/"} replace />;
   }
 
   return (
