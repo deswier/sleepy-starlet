@@ -57,6 +57,27 @@ function sleepMinutesOnDay(
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
 }
 
+// Minutes of any sleep session that overlap the [day 00:00, dayEnd] window.
+// Used for "total wake" so we never subtract more sleep than what physically
+// elapsed since 00:00 of the chosen day.
+function sleepMinutesIntersectingDay(
+  sessions: SleepSession[],
+  day: Date,
+  dayEnd: Date,
+): number {
+  const dayStart = startOfDay(day).getTime();
+  const dayEndMs = dayEnd.getTime();
+  let total = 0;
+  for (const s of sessions) {
+    const start = new Date(s.start_time).getTime();
+    const end = s.end_time ? new Date(s.end_time).getTime() : dayEndMs;
+    const ovStart = Math.max(start, dayStart);
+    const ovEnd = Math.min(end, dayEndMs);
+    if (ovEnd > ovStart) total += Math.round((ovEnd - ovStart) / 60000);
+  }
+  return total;
+}
+
 // Continuous night-sleep duration for a date: longest night session that
 // belongs to this date (per sessionDay rules above).
 function nightSleepForDate(
@@ -156,7 +177,9 @@ function DayView({ sessions, birthDate, night }: { sessions: SleepSession[]; bir
   );
 
   const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now, night), 0);
-  const totalWake = Math.max(0, dayElapsedMin - totalSleep);
+  const dayEnd = isCurrentDay ? now : addDays(startOfDay(day), 1);
+  const sleepWithinDay = sleepMinutesIntersectingDay(sessions, day, dayEnd);
+  const totalWake = Math.max(0, dayElapsedMin - sleepWithinDay);
   const nightSleep = nightSleepForDate(sessions, day, night);
 
   const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
