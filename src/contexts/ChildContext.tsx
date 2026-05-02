@@ -34,7 +34,10 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       .from("child_users")
       .select("child:children(id, name, birth_date, photo_url, gender)")
       .eq("user_id", user.id);
-    const kids = (data ?? []).map((r: any) => r.child).filter(Boolean) as Child[];
+    const kids = (data ?? [])
+      .map((r: any) => r.child)
+      .filter(Boolean)
+      .sort((a: Child, b: Child) => (a.name || "").localeCompare(b.name || "") || a.id.localeCompare(b.id)) as Child[];
     setList(kids);
     if (kids.length && (!activeId || !kids.find((k) => k.id === activeId))) {
       setActiveId(kids[0].id);
