@@ -17,6 +17,7 @@ import { ageInMonths, wakeWindowForAge, formatDuration, fmtDateTime } from "@/li
 import { useTranslation } from "react-i18next";
 import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
 import i18n from "@/i18n";
 
