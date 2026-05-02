@@ -10,7 +10,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useChildren } from "@/contexts/ChildContext";
 import { toast } from "sonner";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { ArrowLeft, Sparkles, User, LogOut } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
 import { getDeviceId } from "@/lib/device-id";
 import { readLastRoute } from "@/lib/last-route";
@@ -20,10 +24,10 @@ type Gender = "male" | "female" | "";
 type LocationState = { allowChildForm?: boolean } | null;
 
 export default function NewChild() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { refresh, setActiveChildId, children: kids, loading: childrenLoading } = useChildren();
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -105,11 +109,38 @@ export default function NewChild() {
   return (
     <main className="min-h-screen bg-hero p-4 flex items-start sm:items-center justify-center">
       <div className="w-full max-w-md py-8">
-        {kids.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={goBack} className="mb-4">
-            <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
-          </Button>
-        )}
+        <div className="flex items-center justify-between mb-4">
+          {kids.length > 0 ? (
+            <Button variant="ghost" size="sm" onClick={goBack}>
+              <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
+            </Button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <Select value={i18n.language?.startsWith("ru") ? "ru" : "en"} onValueChange={(v) => i18n.changeLanguage(v)}>
+              <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">{t("common.english")}</SelectItem>
+                <SelectItem value="ru">{t("common.russian")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={t("profile.open")}>
+                  <User className="w-5 h-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => navigate("/profile")}>
+                  <User className="w-4 h-4 mr-2" /> {t("profile.open")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut} className="text-destructive">
+                  <LogOut className="w-4 h-4 mr-2" /> {t("auth.signOut")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
         <div className="text-center mb-6">
           <div className="inline-flex w-14 h-14 rounded-full bg-primary/10 items-center justify-center mb-3">
             <Sparkles className="w-7 h-7 text-primary" strokeWidth={1.5} />
