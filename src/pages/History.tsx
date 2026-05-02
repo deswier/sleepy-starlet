@@ -67,6 +67,9 @@ export default function History() {
   const daySessions = sessions
     .filter((s) => isSameDay(bucketDay(s, splitByDate, night), day))
     .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+  const isCurrentDay = isSameDay(day, today);
+  // Latest completed sleep across all sessions (sessions are DESC by start_time).
+  const latestCompletedAny = sessions.find((s) => s.end_time) ?? null;
 
   return (
     <section className="px-4 max-w-md mx-auto w-full pb-4">
@@ -103,13 +106,14 @@ export default function History() {
         </Card>
       )}
 
-      {!loading && daySessions.length === 0 && (
+      {!loading && daySessions.length === 0 && !isCurrentDay && (
         <Card className="p-8 text-center text-muted-foreground shadow-card">{t("sleep.noHistory")}</Card>
       )}
 
-      {!loading && daySessions.length > 0 && (
+      {!loading && (daySessions.length > 0 || isCurrentDay) && (
         <DayGroup date={day} sessions={daySessions}
-          birthDate={activeChild.birth_date} onOpen={setOpen} />
+          birthDate={activeChild.birth_date} onOpen={setOpen}
+          fallbackLatestCompleted={latestCompletedAny} />
       )}
 
       {open && <SleepDetail session={open} onClose={() => setOpen(null)} onChange={load} />}
