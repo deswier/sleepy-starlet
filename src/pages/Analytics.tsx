@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   formatDuration, sessionDuration, SleepSession,
   ageInMonthsAt, wakeWindowForAge,
@@ -72,10 +73,15 @@ export default function Analytics() {
       .eq("child_id", activeChild.id)
       .gte("start_time", subDays(today, 9).toISOString())
       .order("start_time")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) throw error;
         setWeekSessions((data ?? []) as SleepSession[]);
-        setWeekLoading(false);
-      });
+      })
+      .catch((e) => {
+        console.error("[Analytics] week load failed", e);
+        toast.error(t("common.loadFailed"));
+      })
+      .finally(() => setWeekLoading(false));
 
     // Today's sessions — spinner only until this finishes.
     supabase.from("sleep_sessions").select("*")
@@ -83,10 +89,15 @@ export default function Analytics() {
       .gte("start_time", subDays(today, 1).toISOString())
       .lt("start_time", addDays(today, 1).toISOString())
       .order("start_time")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) throw error;
         setInitialDaySessions((data ?? []) as SleepSession[]);
-        setLoading(false);
-      });
+      })
+      .catch((e) => {
+        console.error("[Analytics] day load failed", e);
+        toast.error(t("common.loadFailed"));
+      })
+      .finally(() => setLoading(false));
   }, [activeChild?.id]);
 
   if (!activeChild) {
@@ -132,6 +143,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
       isInitialRender.current = false;
       return;
     }
+    let cancelled = false;
     setLoadingDay(true);
     const since = subDays(startOfDay(day), 1).toISOString();
     const until = addDays(startOfDay(day), 1).toISOString();
@@ -140,10 +152,13 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
       .gte("start_time", since)
       .lt("start_time", until)
       .order("start_time")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("[DayView] load failed", error); return; }
         setSessions((data ?? []) as SleepSession[]);
-        setLoadingDay(false);
-      });
+      })
+      .finally(() => { if (!cancelled) setLoadingDay(false); });
+    return () => { cancelled = true; };
   }, [childId, day]);
 
   const now = new Date();

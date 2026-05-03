@@ -12,6 +12,7 @@ import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
 import { iconForMethod } from "@/lib/method-icons";
 import SleepDetail from "@/components/sleep/SleepDetail";
+import { toast } from "sonner";
 
 const HOURS = 24;
 const ROW_PX = 22; // height per hour
@@ -61,17 +62,22 @@ export default function Heatmap() {
         .select("id, sleep_session_id, start_time, settling_method_id, settling_methods(name)")
         .gte("start_time", since)
         .lt("start_time", until),
-    ]).then(([{ data: sessData }, { data: intData }]) => {
-      setSessions((sessData ?? []) as SleepSession[]);
-      setInterruptions(((intData ?? []) as any[]).map((r) => ({
-        id: r.id,
-        sleep_session_id: r.sleep_session_id,
-        start_time: r.start_time,
-        settling_method_id: r.settling_method_id,
-        settling_method_name: r.settling_methods?.name ?? null,
-      })));
-      setLoading(false);
-    });
+    ])
+      .then(([{ data: sessData }, { data: intData }]) => {
+        setSessions((sessData ?? []) as SleepSession[]);
+        setInterruptions(((intData ?? []) as any[]).map((r) => ({
+          id: r.id,
+          sleep_session_id: r.sleep_session_id,
+          start_time: r.start_time,
+          settling_method_id: r.settling_method_id,
+          settling_method_name: r.settling_methods?.name ?? null,
+        })));
+      })
+      .catch((e) => {
+        console.error("[Heatmap] load failed", e);
+        toast.error(t("common.loadFailed"));
+      })
+      .finally(() => setLoading(false));
   }, [activeChild?.id, weekStart.getTime()]);
 
   // For each visible day, compute the sleep blocks clipped to that calendar day.

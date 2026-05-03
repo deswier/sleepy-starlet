@@ -13,6 +13,7 @@ const en = {
     offline: "Offline",
     online: "Online",
     adjustPhoto: "Adjust photo",
+    loadFailed: "Failed to load data. Check your connection.",
   },
   auth: {
     signIn: "Sign in", signUp: "Sign up", email: "Email", password: "Password",

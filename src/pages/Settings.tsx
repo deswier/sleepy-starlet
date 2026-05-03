@@ -101,24 +101,29 @@ export default function Settings() {
       .eq("child_id", activeChild.id)
       .is("redeemed_at", null).is("revoked_at", null)
       .order("created_at", { ascending: false });
-    const [se, p, m, inv, links, roles, profs] = await Promise.all([
-      supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
-      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-      invitesQuery,
-      supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
-      supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
-      supabase.from("profiles").select("id,display_name"),
-    ]);
-    setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
-    setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
-    const roleMap = new Map((roles.data ?? []).map((r: any) => [r.user_id, r.role]));
-    const profMap = new Map((profs.data ?? []).map((p: any) => [p.id, p.display_name]));
-    setMembers((links.data ?? []).map((l: any) => ({
-      user_id: l.user_id,
-      display_name: profMap.get(l.user_id) ?? null,
-      role: roleMap.get(l.user_id) ?? "user",
-    })));
+    try {
+      const [se, p, m, inv, links, roles, profs] = await Promise.all([
+        supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
+        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
+        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+        invitesQuery,
+        supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
+        supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
+        supabase.from("profiles").select("id,display_name"),
+      ]);
+      setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
+      setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
+      const roleMap = new Map((roles.data ?? []).map((r: any) => [r.user_id, r.role]));
+      const profMap = new Map((profs.data ?? []).map((p: any) => [p.id, p.display_name]));
+      setMembers((links.data ?? []).map((l: any) => ({
+        user_id: l.user_id,
+        display_name: profMap.get(l.user_id) ?? null,
+        role: roleMap.get(l.user_id) ?? "user",
+      })));
+    } catch (e) {
+      console.error("[Settings] load failed", e);
+      toast.error(t("common.loadFailed"));
+    }
   };
   useEffect(() => { load(); }, [activeChild]);
 

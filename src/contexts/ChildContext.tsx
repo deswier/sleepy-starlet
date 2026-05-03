@@ -55,12 +55,16 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   // Fetch settings whenever active child changes.
   // activeId is available from localStorage on first render, so this fires immediately —
   // no need to wait for the children list to load first.
+  // Cancel-ref guards against a stale response from a previous activeId
+  // overwriting the new one when the user switches children mid-fetch.
   useEffect(() => {
     if (!activeId) { setSettings(null); return; }
+    let cancelled = false;
     supabase.from("child_settings")
       .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
       .eq("child_id", activeId).single()
-      .then(({ data }) => setSettings(data as ChildSettings | null));
+      .then(({ data }) => { if (!cancelled) setSettings(data as ChildSettings | null); });
+    return () => { cancelled = true; };
   }, [activeId]);
 
   const refreshSettings = useCallback(() => {
@@ -89,24 +93,32 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       setLoading(true);
     }
 
-    // Always fetch fresh data in background to keep cache up to date.
-    const { data } = await supabase
-      .from("child_users")
-      .select("child:children(id, name, birth_date, photo_url, gender)")
-      .eq("user_id", user.id);
-    const kids = (data ?? [])
-      .map((r: any) => r.child)
-      .filter(Boolean)
-      .sort((a: Child, b: Child) => (a.name || "").localeCompare(b.name || "") || a.id.localeCompare(b.id)) as Child[];
-    setList(kids);
-    const cacheData: ChildrenCache = { userId: user.id, children: kids };
-    localStorage.setItem(CHILDREN_CACHE_KEY, JSON.stringify(cacheData));
-    if (kids.length && (!activeIdRef.current || !kids.find((k) => k.id === activeIdRef.current))) {
-      setActiveId(kids[0].id);
-      localStorage.setItem(STORAGE_KEY, kids[0].id);
+    // Always fetch fresh data in background. try/finally guarantees we exit
+    // the loading state even if the network call throws — otherwise the app
+    // would be stuck on the splash screen forever after a transient failure.
+    try {
+      const { data, error } = await supabase
+        .from("child_users")
+        .select("child:children(id, name, birth_date, photo_url, gender)")
+        .eq("user_id", user.id);
+      if (error) throw error;
+      const kids = (data ?? [])
+        .map((r: any) => r.child)
+        .filter(Boolean)
+        .sort((a: Child, b: Child) => (a.name || "").localeCompare(b.name || "") || a.id.localeCompare(b.id)) as Child[];
+      setList(kids);
+      const cacheData: ChildrenCache = { userId: user.id, children: kids };
+      localStorage.setItem(CHILDREN_CACHE_KEY, JSON.stringify(cacheData));
+      if (kids.length && (!activeIdRef.current || !kids.find((k) => k.id === activeIdRef.current))) {
+        setActiveId(kids[0].id);
+        localStorage.setItem(STORAGE_KEY, kids[0].id);
+      }
+    } catch (e) {
+      console.error("[ChildContext] refresh failed", e);
+    } finally {
+      setLoadedUserId(user.id);
+      setLoading(false);
     }
-    setLoadedUserId(user.id);
-    setLoading(false);
   }, [user]);
 
   useEffect(() => { refresh(); }, [user]); // eslint-disable-line

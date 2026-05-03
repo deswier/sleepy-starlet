@@ -12,6 +12,7 @@ const ru = {
     pendingChanges_other: "{{count}} изменений ожидают синхронизации",
     offline: "Нет сети",
     online: "Онлайн",
+    loadFailed: "Не удалось загрузить данные. Проверьте соединение.",
   },
   auth: {
     signIn: "Войти", signUp: "Регистрация", email: "Email", password: "Пароль",

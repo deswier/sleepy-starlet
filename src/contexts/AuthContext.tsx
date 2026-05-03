@@ -34,7 +34,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signOut = useCallback(async () => { clearLastRoute(); await supabase.auth.signOut(); }, []);
+  const signOut = useCallback(async () => {
+    clearLastRoute();
+    // Clear app-managed caches so the next account on a shared device sees a clean slate.
+    // (Supabase handles its own auth tokens via auth.signOut.)
+    try {
+      localStorage.removeItem("children_cache_v1");
+      localStorage.removeItem("active_child_id");
+    } catch { /* ignore quota / private-mode errors */ }
+    await supabase.auth.signOut();
+  }, []);
 
   return (
     <Ctx.Provider value={{ user, session, loading, signOut }}>
