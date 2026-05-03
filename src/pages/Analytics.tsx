@@ -192,63 +192,52 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
     [sessions, day, night]
   );
 
-  const { totalSleep, sleepWithinDay, nightSleep } = useMemo(() => {
+  const { totalSleep, nightSleep } = useMemo(() => {
     // Parse night-window string once; compute all three metrics in a single pass.
     const { h: nsH, m: nsM } = parseHM(night.start);
     const nsMin = nsH * 60 + nsM;
-    const dayMs = day.getTime();
+    const dayMs = startOfDay(day).getTime();
     const dayStartMs = startOfDay(day).getTime();
     const dayEndMs = isCurrentDay ? now.getTime() : dayStartMs + 24 * 60 * 60 * 1000;
     const nowMs = now.getTime();
 
+    // Physical overlap with today's calendar window — same metric the Week
+    // view uses per-day, so a single date shows identical totals in both tabs.
     let totalSleep = 0;
-    let sleepWithinDay = 0;
     let nightSleep = 0;
 
     for (const s of sessions) {
       const startMs = new Date(s.start_time).getTime();
       const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
 
-      // Bucketed day (inline sessionDay with pre-parsed nsMin)
-      let sDayMs: number;
-      if (s.sleep_type !== "night") {
-        sDayMs = startOfDay(new Date(startMs)).getTime();
-      } else {
+      // Physical overlap with the selected calendar day.
+      const ovStart = Math.max(startMs, dayStartMs);
+      const ovEnd = Math.min(endMs, dayEndMs);
+      if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
+
+      // "Night sleep" still uses bucketed attribution (longest night session
+      // belonging to this day per night-window rules) — Week view does same.
+      if (s.sleep_type === "night" && s.end_time) {
         const start = new Date(startMs);
         const startMin = start.getHours() * 60 + start.getMinutes();
+        let sDayMs: number;
         if (startMin >= nsMin && startMin >= 12 * 60) {
-          if (!s.end_time) {
-            // Ongoing evening sleep → next day
-            sDayMs = startOfDay(start).getTime() + 24 * 60 * 60 * 1000;
-          } else {
-            const sd = startOfDay(start).getTime();
-            const ed = startOfDay(new Date(endMs)).getTime();
-            sDayMs = ed !== sd ? ed : sd;
-          }
+          const sd = startOfDay(start).getTime();
+          const ed = startOfDay(new Date(endMs)).getTime();
+          sDayMs = ed !== sd ? ed : sd;
         } else {
-          sDayMs = startOfDay(new Date(startMs)).getTime();
+          sDayMs = startOfDay(start).getTime();
         }
-      }
-
-      if (sDayMs === dayMs) {
-        totalSleep += Math.max(0, Math.round((endMs - startMs) / 60000));
-        if (s.sleep_type === "night" && s.end_time) {
+        if (sDayMs === dayMs) {
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
         }
       }
-
-      // Physical overlap with today's window for ALL sessions — regardless of attribution.
-      // A night sleep starting at 20:00 today belongs to tomorrow (totalSleep),
-      // but the baby IS physically asleep those hours, so wake time must reflect that.
-      const ovStart = Math.max(startMs, dayStartMs);
-      const ovEnd = Math.min(endMs, dayEndMs);
-      if (ovEnd > ovStart) sleepWithinDay += Math.round((ovEnd - ovStart) / 60000);
     }
 
-    return { totalSleep, sleepWithinDay, nightSleep };
+    return { totalSleep, nightSleep };
   }, [sessions, day, night, isCurrentDay]);
 
-  const totalWake = Math.max(0, dayElapsedMin - sleepWithinDay);
+  const totalWake = Math.max(0, dayElapsedMin - totalSleep);
 
   const { napsCount, avgNap, minNap, maxNap } = useMemo(() => {
     const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
