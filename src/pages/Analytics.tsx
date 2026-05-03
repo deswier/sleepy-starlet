@@ -127,7 +127,21 @@ export default function Analytics() {
 // ---------- DAY ----------
 function DayView({ childId, birthDate, night, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; initialSessions: SleepSession[] }) {
   const { t } = useTranslation();
-  const [day, setDay] = useState<Date>(startOfDay(new Date()));
+  const dayKey = `analytics.day.${childId}`;
+  const [day, setDay] = useState<Date>(() => {
+    try {
+      const v = localStorage.getItem(dayKey);
+      if (v) {
+        const d = startOfDay(new Date(v));
+        const today = startOfDay(new Date());
+        if (!isNaN(d.getTime()) && d.getTime() <= today.getTime()) return d;
+      }
+    } catch {}
+    return startOfDay(new Date());
+  });
+  useEffect(() => {
+    try { localStorage.setItem(dayKey, format(day, "yyyy-MM-dd")); } catch {}
+  }, [day, dayKey]);
   const [sessions, setSessions] = useState<SleepSession[]>(initialSessions);
   const [loadingDay, setLoadingDay] = useState(false);
   const isInitialRender = useRef(true);
@@ -365,15 +379,43 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
   const today = startOfDay(now);
 
   // weekOffset: 0 = last 7 completed days (yesterday..-6), 1 = the 7 before that, etc.
-  const [weekOffset, setWeekOffset] = useState(0);
+  const offsetKey = `analytics.weekOffset.${childId}`;
+  const excludedKey = `analytics.weekExcluded.${childId}`;
+  const [weekOffset, setWeekOffset] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem(offsetKey);
+      const n = v ? parseInt(v, 10) : 0;
+      return Number.isFinite(n) && n >= 0 && n < 52 ? n : 0;
+    } catch { return 0; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(offsetKey, String(weekOffset)); } catch {}
+  }, [weekOffset, offsetKey]);
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [loadingWeek, setLoadingWeek] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   // Days the user has manually excluded from the average (by date key yyyy-MM-dd).
-  const [excludedKeys, setExcludedKeys] = useState<Set<string>>(new Set());
-
-  // Reset manual exclusions when navigating to a different week.
-  useEffect(() => { setExcludedKeys(new Set()); }, [weekOffset]);
+  const [excludedMap, setExcludedMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const v = localStorage.getItem(excludedKey);
+      return v ? JSON.parse(v) : {};
+    } catch { return {}; }
+  });
+  const weekKey = String(weekOffset);
+  const excludedKeys = useMemo(
+    () => new Set(excludedMap[weekKey] ?? []),
+    [excludedMap, weekKey]
+  );
+  const setExcludedKeys = (updater: (prev: Set<string>) => Set<string>) => {
+    setExcludedMap((prev) => {
+      const next = { ...prev };
+      const set = updater(new Set(next[weekKey] ?? []));
+      if (set.size === 0) delete next[weekKey];
+      else next[weekKey] = Array.from(set);
+      try { localStorage.setItem(excludedKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
 
   const days = useMemo(() => {
     const arr: Date[] = [];
