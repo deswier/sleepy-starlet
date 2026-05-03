@@ -10,10 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "cap:sync": "bun run build && cap sync",
-    "cap:ios": "bun run build && cap sync ios && cap open ios",
-    "cap:android": "bun run build && cap sync android && cap open android"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

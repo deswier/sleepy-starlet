@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
-import { isNative, signInWithGoogleNative } from "@/lib/capacitor-oauth";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -74,14 +73,6 @@ export default function Auth() {
   };
   const handleGoogle = async () => {
     setBusy(true);
-    if (isNative()) {
-      // Native: open OAuth in SFSafariViewController / Chrome Custom Tab.
-      // Session delivery is async via deep link → onAuthStateChange → useEffect above.
-      const { error } = await signInWithGoogleNative();
-      if (error) { toast.error(t("auth.googleFailed")); setBusy(false); }
-      // Keep busy=true; the deep-link callback resolves auth, then useEffect routes.
-      return;
-    }
     const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
     if (result.error) { toast.error(t("auth.googleFailed")); setBusy(false); return; }
     if (result.redirected) return; // browser will reload → useEffect handles routing
