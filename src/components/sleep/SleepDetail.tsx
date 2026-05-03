@@ -31,34 +31,41 @@ export default function SleepDetail({ session, onClose, onChange }: {
   // session quickly.
   useEffect(() => {
     let cancelled = false;
-    supabase
-      .from("sleep_sessions")
-      .select(`
-        sleep_place:sleep_places(name),
-        settling_method:settling_methods(name),
-        creator:profiles!sleep_sessions_created_by_user_id_fkey(display_name),
-        interruptions:sleep_interruptions(start_time,end_time,method:settling_methods(name))
-      `)
-      .eq("id", session.id)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled || error || !data) return;
-        const d = data as any;
-        setPlace(d.sleep_place?.name ? localizePlace(d.sleep_place.name) : null);
-        setMethod(d.settling_method?.name ? localizeMethod(d.settling_method.name) : null);
-        setCreator(d.creator?.display_name ?? null);
-        const intrs = (d.interruptions ?? []) as any[];
-        setInterruptions(
-          intrs
-            .slice()
-            .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
-            .map((row) => ({
-              start_time: row.start_time,
-              end_time: row.end_time,
-              method_name: row.method?.name ? localizeMethod(row.method.name) : null,
-            })),
-        );
-      });
+    // Run the session join (place + method + interruptions) and the creator
+    // profile lookup separately because the FK on sleep_sessions.created_by_user_id
+    // points to auth.users, not profiles, so PostgREST can't auto-resolve a
+    // creator embed in the same query.
+    Promise.all([
+      supabase
+        .from("sleep_sessions")
+        .select(`
+          sleep_place:sleep_places(name),
+          settling_method:settling_methods(name),
+          interruptions:sleep_interruptions(start_time,end_time,method:settling_methods(name))
+        `)
+        .eq("id", session.id)
+        .single(),
+      session.created_by_user_id
+        ? supabase.from("profiles").select("display_name").eq("id", session.created_by_user_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+    ]).then(([{ data, error }, { data: prof }]) => {
+      if (cancelled || error || !data) return;
+      const d = data as any;
+      setPlace(d.sleep_place?.name ? localizePlace(d.sleep_place.name) : null);
+      setMethod(d.settling_method?.name ? localizeMethod(d.settling_method.name) : null);
+      setCreator((prof as any)?.display_name ?? null);
+      const intrs = (d.interruptions ?? []) as any[];
+      setInterruptions(
+        intrs
+          .slice()
+          .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+          .map((row) => ({
+            start_time: row.start_time,
+            end_time: row.end_time,
+            method_name: row.method?.name ? localizeMethod(row.method.name) : null,
+          })),
+      );
+    });
     return () => { cancelled = true; };
   }, [session.id]);
 

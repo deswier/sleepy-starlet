@@ -2,7 +2,8 @@ import { lazy, memo, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarCheck } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
@@ -28,6 +29,7 @@ export default function History() {
   const { t } = useTranslation();
   const { role } = useChildRole();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const splitByDate = !!settings?.split_night_sleep_by_date;
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? "19:00",
@@ -35,7 +37,24 @@ export default function History() {
   };
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [day, setDay] = useState<Date>(startOfDay(new Date()));
+  const [day, setDay] = useState<Date>(() => {
+    const q = searchParams.get("date");
+    if (q) {
+      const d = startOfDay(new Date(q));
+      if (!isNaN(d.getTime())) return d;
+    }
+    return startOfDay(new Date());
+  });
+
+  // Sync day → URL so reload/share preserves it; also clear param when today.
+  useEffect(() => {
+    const today = startOfDay(new Date());
+    const params = new URLSearchParams(searchParams);
+    if (isSameDay(day, today)) params.delete("date");
+    else params.set("date", format(day, "yyyy-MM-dd"));
+    setSearchParams(params, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day]);
 
   // react-query handles: race conditions on rapid day switches (stale results
   // discarded), retry on transient errors, cache (revisiting a day is instant
@@ -118,6 +137,12 @@ export default function History() {
           onClick={() => setDay(addDays(day, 1))}>
           <ChevronRight className="w-4 h-4" />
         </Button>
+        {!isSameDay(day, today) && (
+          <Button variant="ghost" size="icon" onClick={() => setDay(today)}
+            title={t("common.today")} aria-label={t("common.today")}>
+            <CalendarCheck className="w-4 h-4" />
+          </Button>
+        )}
       </div>
 
       {loading && (
