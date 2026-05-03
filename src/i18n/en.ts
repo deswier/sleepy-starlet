@@ -100,6 +100,8 @@ const en = {
     weekIgnoresToday: "Today is excluded",
     pickWeek: "Pick week",
     daysIncluded: "Days included: {{days}}",
+    noDataForDay: "No data for this day",
+    dayToggleHint: "Tap to exclude or include a day",
     weekRange: "{{from}} – {{to}}",
     openHeatmap: "Open diagram",
     heatmapTitle: "Sleep diagram",

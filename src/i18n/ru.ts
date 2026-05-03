@@ -101,6 +101,8 @@ const ru = {
     weekIgnoresToday: "Текущий день не учитывается",
     pickWeek: "Выбрать неделю",
     daysIncluded: "Учтены дни: {{days}}",
+    noDataForDay: "Нет данных за этот день",
+    dayToggleHint: "Нажмите, чтобы исключить или вернуть день в расчёт",
     weekRange: "{{from}} – {{to}}",
     openHeatmap: "Открыть диаграмму",
     heatmapTitle: "Диаграмма сна",
