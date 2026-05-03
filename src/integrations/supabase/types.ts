@@ -475,6 +475,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      sync_session_interruptions: {
+        Args: { _interruptions: Json; _session_id: string }
+        Returns: undefined
+      }
       user_has_child_access: {
         Args: { _child_id: string; _user_id: string }
         Returns: boolean
