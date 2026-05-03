@@ -58,6 +58,7 @@ export default function Analytics() {
     start: settings?.night_start_time?.slice(0, 5) ?? DEFAULT_NIGHT.start,
     end: settings?.night_end_time?.slice(0, 5) ?? DEFAULT_NIGHT.end,
   };
+  const splitByDate = !!settings?.split_night_sleep_by_date;
   const [loading, setLoading] = useState(true);
   const [initialDaySessions, setInitialDaySessions] = useState<SleepSession[]>([]);
   const [tab, setTab] = useState<string>(() => {
@@ -113,8 +114,8 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} initialSessions={initialDaySessions} /></TabsContent>
-        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
+        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} initialSessions={initialDaySessions} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
       </Tabs>
       )}
     </section>
@@ -122,7 +123,7 @@ export default function Analytics() {
 }
 
 // ---------- DAY ----------
-function DayView({ childId, birthDate, night, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; initialSessions: SleepSession[] }) {
+function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean; initialSessions: SleepSession[] }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dayKey = `analytics.day.${childId}`;
@@ -184,25 +185,23 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
     ? Math.max(0, Math.round((now.getTime() - startOfDay(day).getTime()) / 60000))
     : 24 * 60;
 
-  // Sleeps whose start_time is on the chosen day (used for nap counts and WW).
+  // Sleeps attributed to the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
-    () => sessions.filter((s) => isSameDay(sessionDay(s, night), day)).sort(
-      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-    ),
-    [sessions, day, night]
+    () => sessions.filter((s) => {
+      const bucket = splitByDate ? startOfDay(new Date(s.start_time)) : sessionDay(s, night);
+      return isSameDay(bucket, day);
+    }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()),
+    [sessions, day, night, splitByDate]
   );
 
   const { totalSleep, nightSleep } = useMemo(() => {
-    // Parse night-window string once; compute all three metrics in a single pass.
     const { h: nsH, m: nsM } = parseHM(night.start);
     const nsMin = nsH * 60 + nsM;
     const dayMs = startOfDay(day).getTime();
-    const dayStartMs = startOfDay(day).getTime();
+    const dayStartMs = dayMs;
     const dayEndMs = isCurrentDay ? now.getTime() : dayStartMs + 24 * 60 * 60 * 1000;
     const nowMs = now.getTime();
 
-    // Physical overlap with today's calendar window — same metric the Week
-    // view uses per-day, so a single date shows identical totals in both tabs.
     let totalSleep = 0;
     let nightSleep = 0;
 
@@ -210,23 +209,24 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
       const startMs = new Date(s.start_time).getTime();
       const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
 
-      // Physical overlap with the selected calendar day.
       const ovStart = Math.max(startMs, dayStartMs);
       const ovEnd = Math.min(endMs, dayEndMs);
       if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
 
-      // "Night sleep" still uses bucketed attribution (longest night session
-      // belonging to this day per night-window rules) — Week view does same.
       if (s.sleep_type === "night" && s.end_time) {
-        const start = new Date(startMs);
-        const startMin = start.getHours() * 60 + start.getMinutes();
         let sDayMs: number;
-        if (startMin >= nsMin && startMin >= 12 * 60) {
-          const sd = startOfDay(start).getTime();
-          const ed = startOfDay(new Date(endMs)).getTime();
-          sDayMs = ed !== sd ? ed : sd;
+        if (splitByDate) {
+          sDayMs = startOfDay(new Date(startMs)).getTime();
         } else {
-          sDayMs = startOfDay(start).getTime();
+          const start = new Date(startMs);
+          const startMin = start.getHours() * 60 + start.getMinutes();
+          if (startMin >= nsMin && startMin >= 12 * 60) {
+            const sd = startOfDay(start).getTime();
+            const ed = startOfDay(new Date(endMs)).getTime();
+            sDayMs = ed !== sd ? ed : sd;
+          } else {
+            sDayMs = startOfDay(new Date(startMs)).getTime();
+          }
         }
         if (sDayMs === dayMs) {
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
@@ -235,7 +235,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
     }
 
     return { totalSleep, nightSleep };
-  }, [sessions, day, night, isCurrentDay]);
+  }, [sessions, day, night, splitByDate, isCurrentDay]);
 
   const totalWake = Math.max(0, dayElapsedMin - totalSleep);
 
@@ -366,7 +366,7 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
+function WeekView({ childId, birthDate, night, splitByDate }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const now = new Date();
@@ -456,7 +456,7 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
       const startMs = new Date(s.start_time).getTime();
       const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
       let dayMs: number;
-      if (s.sleep_type !== "night") {
+      if (s.sleep_type !== "night" || splitByDate) {
         dayMs = startOfDay(new Date(startMs)).getTime();
       } else {
         const start = new Date(startMs);
@@ -522,7 +522,7 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
 
       return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
     });
-  }, [sessions, days, night]);
+  }, [sessions, days, night, splitByDate]);
 
   const openHeatmap = () => {
     // Heatmap uses startOfWeek(anchor); pass any day from the displayed range
