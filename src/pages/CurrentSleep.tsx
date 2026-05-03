@@ -346,6 +346,16 @@ export default function CurrentSleep() {
             </button>
           )}
           <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
+          {intrStats.count > 0 && (
+            <div className="text-sm opacity-80 mb-3">
+              {t("sleep.interruptionsCount", { count: intrStats.count })}
+              {!interruption && intrStats.lastEnd && (
+                <> · {t("sleep.lastWokeAgo", {
+                  duration: formatDuration(Math.max(0, Math.round((now.getTime() - new Date(intrStats.lastEnd).getTime()) / 60000))),
+                })}</>
+              )}
+            </div>
+          )}
           {interruption && (
             <div className="bg-white/10 rounded-xl px-4 py-2 mb-4 text-sm">
               {editingIntrStart ? (
