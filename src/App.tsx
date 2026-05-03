@@ -1,6 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { isNative, handleOAuthCallback } from "@/lib/capacitor-oauth";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -36,6 +37,21 @@ const queryClient = new QueryClient({
 });
 const fallback = <div className="min-h-screen bg-hero" />;
 
+function DeepLinkHandler() {
+  useEffect(() => {
+    if (!isNative()) return;
+    let cleanup: (() => void) | undefined;
+    import("@capacitor/app").then(({ App: CapApp }) => {
+      const handle = CapApp.addListener("appUrlOpen", ({ url }) => {
+        handleOAuthCallback(url);
+      });
+      cleanup = () => { handle.then((h) => h.remove()); };
+    });
+    return () => cleanup?.();
+  }, []);
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -44,6 +60,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <ChildProvider>
+            <DeepLinkHandler />
             <RouteTracker />
             <Suspense fallback={fallback}>
               <Routes>
