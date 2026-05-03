@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -58,32 +59,12 @@ export default function Analytics() {
   };
   const [loading, setLoading] = useState(true);
   const [initialDaySessions, setInitialDaySessions] = useState<SleepSession[]>([]);
-  const [weekSessions, setWeekSessions] = useState<SleepSession[]>([]);
-  const [weekLoading, setWeekLoading] = useState(true);
 
   useEffect(() => {
     if (!activeChild) return;
     setLoading(true);
-    setWeekLoading(true);
 
     const today = startOfDay(new Date());
-
-    // Week loads in background — does not block day rendering.
-    (async () => {
-      try {
-        const { data, error } = await supabase.from("sleep_sessions").select("*")
-          .eq("child_id", activeChild.id)
-          .gte("start_time", subDays(today, 9).toISOString())
-          .order("start_time");
-        if (error) throw error;
-        setWeekSessions((data ?? []) as SleepSession[]);
-      } catch (e) {
-        console.error("[Analytics] week load failed", e);
-        toast.error(t("common.loadFailed"));
-      } finally {
-        setWeekLoading(false);
-      }
-    })();
 
     // Today's sessions — spinner only until this finishes.
     (async () => {
@@ -127,7 +108,7 @@ export default function Analytics() {
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
         <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} initialSessions={initialDaySessions} /></TabsContent>
-        <TabsContent value="week" forceMount><WeekView birthDate={activeChild.birth_date} night={night} sessions={weekSessions} loading={weekLoading} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
       </Tabs>
       )}
     </section>
@@ -367,17 +348,50 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ birthDate, night, sessions, loading: loadingWeek }: { birthDate: string | null; night: NightWindow; sessions: SleepSession[]; loading: boolean }) {
+function WeekView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
   const now = new Date();
   const today = startOfDay(now);
 
-  // Last 7 fully-completed days: yesterday .. yesterday-6. Today excluded.
+  // weekOffset: 0 = last 7 completed days (yesterday..-6), 1 = the 7 before that, etc.
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loadingWeek, setLoadingWeek] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const days = useMemo(() => {
     const arr: Date[] = [];
-    for (let i = 1; i <= 7; i++) arr.push(subDays(today, i));
+    const base = 1 + weekOffset * 7;
+    for (let i = 0; i < 7; i++) arr.push(subDays(today, base + i));
     return arr.reverse();
-  }, [today.getTime()]);
+  }, [today.getTime(), weekOffset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingWeek(true);
+    const since = subDays(days[0], 2).toISOString();
+    const until = addDays(days[days.length - 1], 2).toISOString();
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", childId)
+          .gte("start_time", since)
+          .lt("start_time", until)
+          .order("start_time");
+        if (cancelled) return;
+        if (error) throw error;
+        setSessions((data ?? []) as SleepSession[]);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("[WeekView] load failed", e);
+          toast.error(t("common.loadFailed"));
+        }
+      } finally {
+        if (!cancelled) setLoadingWeek(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childId, weekOffset]);
 
   const perDay = useMemo(() => {
     // Parse night-window string once instead of once per session per day.
@@ -448,42 +462,62 @@ function WeekView({ birthDate, night, sessions, loading: loadingWeek }: { birthD
     });
   }, [sessions, days, night]);
 
+  const picker = (
+    <WeekPicker
+      days={days}
+      offset={weekOffset}
+      setOffset={setWeekOffset}
+      open={pickerOpen}
+      setOpen={setPickerOpen}
+      t={t}
+    />
+  );
+
   if (loadingWeek) {
     return (
-      <Card className="p-5 shadow-card border-border/50 space-y-3">
-        <div className="h-16 bg-muted animate-pulse rounded-xl" />
-        <div className="h-16 bg-muted animate-pulse rounded-xl" />
-        <div className="h-16 bg-muted animate-pulse rounded-xl" />
-        <div className="h-24 bg-muted animate-pulse rounded-xl" />
-        <div className="h-24 bg-muted animate-pulse rounded-xl" />
-      </Card>
+      <div className="space-y-3">
+        {picker}
+        <Card className="p-5 shadow-card border-border/50 space-y-3">
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-24 bg-muted animate-pulse rounded-xl" />
+          <div className="h-24 bg-muted animate-pulse rounded-xl" />
+        </Card>
+      </div>
     );
   }
 
-  const withData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
-  if (withData.length === 0) {
+  // Only count days that actually have records.
+  const daysWithData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
+  if (daysWithData.length === 0) {
     return (
-      <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      <div className="space-y-3">
+        {picker}
+        <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      </div>
     );
   }
 
   const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
 
-  const avgTotalSleep = avg(perDay.map((d) => d.totalSleep));
-  const avgTotalWake = avg(perDay.map((d) => d.totalWake));
-  const avgNightSleep = avg(perDay.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
+  const avgTotalSleep = avg(daysWithData.map((d) => d.totalSleep));
+  const avgTotalWake = avg(daysWithData.map((d) => d.totalWake));
+  const avgNightSleep = avg(daysWithData.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
 
-  const allWWs = perDay.flatMap((d) => d.wws);
+  const allWWs = daysWithData.flatMap((d) => d.wws);
   const avgWW = avg(allWWs);
   const minWW = allWWs.length ? Math.min(...allWWs) : 0;
   const maxWW = allWWs.length ? Math.max(...allWWs) : 0;
 
-  const napCounts = perDay.map((d) => d.napsCount);
-  const avgNapsCount = Math.round((napCounts.reduce((a, b) => a + b, 0) / napCounts.length) * 10) / 10;
-  const minNapsCount = Math.min(...napCounts);
-  const maxNapsCount = Math.max(...napCounts);
+  const napCounts = daysWithData.map((d) => d.napsCount);
+  const avgNapsCount = napCounts.length
+    ? Math.round((napCounts.reduce((a, b) => a + b, 0) / napCounts.length) * 10) / 10
+    : 0;
+  const minNapsCount = napCounts.length ? Math.min(...napCounts) : 0;
+  const maxNapsCount = napCounts.length ? Math.max(...napCounts) : 0;
 
-  const allNapDur = perDay.flatMap((d) => d.napDurations);
+  const allNapDur = daysWithData.flatMap((d) => d.napDurations);
   const avgNap = avg(allNapDur);
   const minNap = allNapDur.length ? Math.min(...allNapDur) : 0;
   const maxNap = allNapDur.length ? Math.max(...allNapDur) : 0;
@@ -491,9 +525,17 @@ function WeekView({ birthDate, night, sessions, loading: loadingWeek }: { birthD
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
 
+  // Compact list of dates that contributed (e.g. "03.05, 04.05, 06.05").
+  const includedLabel = perDay
+    .map((d, i) => ({ d, date: days[i] }))
+    .filter(({ d }) => d.totalSleep > 0 || d.napsCount > 0)
+    .map(({ date }) => format(date, "dd.MM"))
+    .join(", ");
+
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">{t("analytics.weekIgnoresToday")}</p>
+      {picker}
+      <p className="text-xs text-muted-foreground">{t("analytics.daysIncluded", { days: includedLabel })}</p>
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
@@ -541,6 +583,56 @@ function WeekView({ birthDate, night, sessions, loading: loadingWeek }: { birthD
 }
 
 // ---------- helpers ----------
+function WeekPicker({
+  days, offset, setOffset, open, setOpen, t,
+}: {
+  days: Date[]; offset: number; setOffset: (n: number) => void;
+  open: boolean; setOpen: (b: boolean) => void;
+  t: (k: string, o?: any) => string;
+}) {
+  const from = days[0];
+  const to = days[days.length - 1];
+  const label = t("analytics.weekRange", { from: format(from, "dd.MM"), to: format(to, "dd.MM") });
+
+  // Build 12 selectable weeks starting from offset 0 (most recent).
+  const today = startOfDay(new Date());
+  const options: { offset: number; from: Date; to: Date }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const base = 1 + i * 7;
+    const wTo = subDays(today, base);
+    const wFrom = subDays(today, base + 6);
+    options.push({ offset: i, from: wFrom, to: wTo });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="ghost" size="icon" onClick={() => setOffset(offset + 1)}>
+        <ChevronLeft className="w-4 h-4" />
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="flex-1 font-normal">{label}</Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-1 max-h-72 overflow-y-auto" align="center">
+          {options.map((o) => (
+            <Button
+              key={o.offset}
+              variant={o.offset === offset ? "secondary" : "ghost"}
+              className="w-full justify-start font-normal"
+              onClick={() => { setOffset(o.offset); setOpen(false); }}
+            >
+              {format(o.from, "dd.MM")} – {format(o.to, "dd.MM")}
+            </Button>
+          ))}
+        </PopoverContent>
+      </Popover>
+      <Button variant="ghost" size="icon" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
+        <ChevronRight className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+}
+
 function ageNorm(birthDate: string | null, at: Date) {
   if (!birthDate) return null;
   const months = ageInMonthsAt(birthDate, at);
