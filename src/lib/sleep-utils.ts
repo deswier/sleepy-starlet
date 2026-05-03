@@ -27,7 +27,7 @@ export const formatDuration = (minutes: number): string => {
 
 export const sessionDuration = (s: SleepSession, now = new Date()): number => {
   const end = s.end_time ? new Date(s.end_time) : now;
-  return differenceInMinutes(end, new Date(s.start_time));
+  return Math.round((end.getTime() - new Date(s.start_time).getTime()) / 60000);
 };
 
 export const wakeWindowMinutes = (prev: SleepSession, current: SleepSession): number | null => {
