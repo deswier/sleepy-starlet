@@ -105,9 +105,40 @@ export default function History() {
   if (!activeChild) return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
 
   const today = startOfDay(new Date());
-  const daySessions = sessions
-    .filter((s) => isSameDay(bucketDay(s, splitByDate, night), day))
-    .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+
+  // Primary sessions for this day. Ongoing cross-midnight night sessions are excluded here —
+  // they're shown as stubs on their start day and only appear here once completed.
+  const daySessions = (() => {
+    let crossIncluded = false;
+    return sessions
+      .filter((s) => {
+        if (!isSameDay(bucketDay(s, splitByDate, night), day)) return false;
+        // Ongoing session that started on a previous day: show as stub there, not here yet.
+        if (!s.end_time && !isSameDay(startOfDay(new Date(s.start_time)), day)) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+      .filter((s) => {
+        // On the end day, keep only the most recent cross-midnight night session from the previous day.
+        if (splitByDate || isSameDay(startOfDay(new Date(s.start_time)), day)) return true;
+        if (!crossIncluded) { crossIncluded = true; return true; }
+        return false;
+      });
+  })();
+
+  // Night sessions that started on this day but bucket to a different day (ongoing evening
+  // sleep or completed cross-midnight). Shown as start-time-only stubs so the user sees
+  // them on the day they began; the full session appears on the end day once completed.
+  const nightStubs = !splitByDate
+    ? sessions
+        .filter((s) =>
+          s.sleep_type === "night" &&
+          isSameDay(startOfDay(new Date(s.start_time)), day) &&
+          !isSameDay(bucketDay(s, splitByDate, night), day)
+        )
+        .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+    : [];
+
   const isCurrentDay = isSameDay(day, today);
   // Latest completed sleep across all sessions (sessions are DESC by start_time).
   const latestCompletedAny = sessions.find((s) => s.end_time) ?? null;
@@ -155,12 +186,12 @@ export default function History() {
         </Card>
       )}
 
-      {!loading && daySessions.length === 0 && !isCurrentDay && (
+      {!loading && daySessions.length === 0 && nightStubs.length === 0 && !isCurrentDay && (
         <Card className="p-8 text-center text-muted-foreground shadow-card">{t("sleep.noHistory")}</Card>
       )}
 
-      {!loading && (daySessions.length > 0 || isCurrentDay) && (
-        <DayGroup date={day} sessions={daySessions}
+      {!loading && (daySessions.length > 0 || nightStubs.length > 0 || isCurrentDay) && (
+        <DayGroup date={day} sessions={daySessions} stubs={nightStubs}
           birthDate={activeChild.birth_date} onOpen={setOpen}
           fallbackLatestCompleted={latestCompletedAny} />
       )}
@@ -185,8 +216,8 @@ function dayLabel(d: Date, t: (k: string) => string) {
   return fmtWeekday(d);
 }
 
-const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fallbackLatestCompleted }: {
-  date: Date; sessions: SleepSession[];
+const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate, onOpen, fallbackLatestCompleted }: {
+  date: Date; sessions: SleepSession[]; stubs?: SleepSession[];
   birthDate: string | null;
   onOpen: (s: SleepSession) => void;
   fallbackLatestCompleted?: SleepSession | null;
@@ -195,6 +226,8 @@ const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fal
   const now = new Date();
   // Sessions arrive in DESC order (latest first) — display them that way.
   const ordered = sessions;
+  // Stubs are not counted in totals — they're shown on both the start and end day,
+  // and their full duration is counted only on the end day.
   const totalMin = ordered.reduce((acc, s) => acc + sessionDuration(s, now), 0);
   const dayNapsCount = ordered.filter((s) => s.sleep_type === "day").length;
 
@@ -202,7 +235,8 @@ const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fal
   // is at index 0 in DESC order).
   const latestCompleted = ordered.find((s) => s.end_time) ?? fallbackLatestCompleted ?? null;
   const isCurrentDay = isToday(date);
-  const hasOngoing = ordered.some((s) => !s.end_time);
+  // Stubs count for hasOngoing: an ongoing stub means the child is sleeping right now.
+  const hasOngoing = ordered.some((s) => !s.end_time) || stubs.some((s) => !s.end_time);
   const projectedWW = (isCurrentDay && !hasOngoing && latestCompleted)
     ? Math.max(0, Math.round((now.getTime() - new Date(latestCompleted.end_time!).getTime()) / 60000))
     : null;
@@ -236,6 +270,25 @@ const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fal
             </div>
           </div>
         )}
+
+        {/* Stub rows: night sessions that started on this day but end on the next.
+            Show start time only; full session appears on the end day once complete. */}
+        {stubs.map((s) => (
+          <div key={s.id}>
+            <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
+              <div className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-primary" />
+                <span className="font-medium">{formatTime(s.start_time)}</span>
+                {!s.end_time && (
+                  <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                    {t("sleep.ongoing")}
+                  </span>
+                )}
+              </div>
+            </button>
+          </div>
+        ))}
+
         {ordered.map((s, i) => {
           // Chronologically earlier sleep is the next row in DESC display.
           const earlier = ordered.slice(i + 1).find((x) => x.end_time) ?? null;
