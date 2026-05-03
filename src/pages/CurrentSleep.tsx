@@ -267,16 +267,26 @@ export default function CurrentSleep() {
   return (
     <section className="px-4 max-w-md mx-auto w-full">
       {checkingActive ? (
-        // Neutral, minimal placeholder shown only for the brief window before
-        // we know whether the child is sleeping. Once resolved, the real
-        // colored card replaces it (no flash).
-        <Card className="p-8 text-center shadow-card border-border/50 mt-4">
-          <div className="w-20 h-20 rounded-full bg-muted animate-pulse mx-auto mb-4" />
-          <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
-          <div className="h-4 bg-muted animate-pulse rounded w-1/2 mx-auto mb-6" />
-          <div className="h-14 bg-muted animate-pulse rounded-xl w-full mb-3" />
-          <div className="h-10 bg-muted animate-pulse rounded-xl w-full" />
-        </Card>
+        // Skeleton uses the last-known sleep state from localStorage so the
+        // background color matches what the resolved card will be — avoids
+        // a flash from white → blue (or vice versa) when the query returns.
+        optimisticSleeping ? (
+          <Card className="p-8 text-center bg-night text-primary-foreground shadow-glow border-0 mt-4">
+            <div className="w-20 h-20 rounded-full bg-white/10 animate-pulse mx-auto mb-4" />
+            <div className="h-7 bg-white/10 animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
+            <div className="h-4 bg-white/10 animate-pulse rounded w-1/2 mx-auto mb-6" />
+            <div className="h-14 bg-white/10 animate-pulse rounded-xl w-full mb-3" />
+            <div className="h-10 bg-white/10 animate-pulse rounded-xl w-full" />
+          </Card>
+        ) : (
+          <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
+            <div className="w-20 h-20 rounded-full bg-primary/10 animate-pulse mx-auto mb-4" />
+            <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
+            <div className="h-4 bg-muted animate-pulse rounded w-1/2 mx-auto mb-6" />
+            <div className="h-14 bg-muted animate-pulse rounded-xl w-full mb-3" />
+            <div className="h-10 bg-muted animate-pulse rounded-xl w-full" />
+          </Card>
+        )
       ) : !active ? (
         <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
           <div className="inline-flex w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-4">
