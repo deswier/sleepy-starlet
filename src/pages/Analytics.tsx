@@ -438,9 +438,19 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
       const completed = forDay.filter((e) => e.s.end_time)
         .sort((a, b) => a.startMs - b.startMs);
 
-      const totalSleep = forDay.reduce((acc, e) =>
-        acc + Math.max(0, Math.round((e.endMs - e.startMs) / 60000)), 0);
-      const totalWake = Math.max(0, 24 * 60 - totalSleep);
+      // Physical overlap with the calendar day window — used for wake-time math
+      // so that a 19:00→07:00 night sleep contributes 5h to the previous day
+      // and 7h to the next day, regardless of which day it is "attributed" to.
+      const dayStartMs = dMs;
+      const dayEndMs = dMs + 24 * 60 * 60 * 1000;
+      let physicalSleep = 0;
+      for (const e of ext) {
+        const ovStart = Math.max(e.startMs, dayStartMs);
+        const ovEnd = Math.min(e.endMs, dayEndMs);
+        if (ovEnd > ovStart) physicalSleep += Math.round((ovEnd - ovStart) / 60000);
+      }
+      const totalSleep = physicalSleep;
+      const totalWake = Math.max(0, 24 * 60 - physicalSleep);
 
       let nightSleep = 0;
       for (const e of forDay) {
