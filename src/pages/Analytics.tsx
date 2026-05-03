@@ -60,6 +60,14 @@ export default function Analytics() {
   };
   const [loading, setLoading] = useState(true);
   const [initialDaySessions, setInitialDaySessions] = useState<SleepSession[]>([]);
+  const [tab, setTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "day";
+    const v = localStorage.getItem("analytics.tab");
+    return v === "week" || v === "day" ? v : "day";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("analytics.tab", tab); } catch {}
+  }, [tab]);
 
   useEffect(() => {
     if (!activeChild) return;
@@ -103,7 +111,7 @@ export default function Analytics() {
           <Loader2 className="w-4 h-4 animate-spin" />
         </Card>
       ) : (
-      <Tabs defaultValue="day">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="grid grid-cols-2 w-full mb-4">
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
