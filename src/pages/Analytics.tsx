@@ -60,32 +60,12 @@ export default function Analytics() {
   };
   const [loading, setLoading] = useState(true);
   const [initialDaySessions, setInitialDaySessions] = useState<SleepSession[]>([]);
-  const [weekSessions, setWeekSessions] = useState<SleepSession[]>([]);
-  const [weekLoading, setWeekLoading] = useState(true);
 
   useEffect(() => {
     if (!activeChild) return;
     setLoading(true);
-    setWeekLoading(true);
 
     const today = startOfDay(new Date());
-
-    // Week loads in background — does not block day rendering.
-    (async () => {
-      try {
-        const { data, error } = await supabase.from("sleep_sessions").select("*")
-          .eq("child_id", activeChild.id)
-          .gte("start_time", subDays(today, 9).toISOString())
-          .order("start_time");
-        if (error) throw error;
-        setWeekSessions((data ?? []) as SleepSession[]);
-      } catch (e) {
-        console.error("[Analytics] week load failed", e);
-        toast.error(t("common.loadFailed"));
-      } finally {
-        setWeekLoading(false);
-      }
-    })();
 
     // Today's sessions — spinner only until this finishes.
     (async () => {
@@ -129,7 +109,7 @@ export default function Analytics() {
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
         <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} initialSessions={initialDaySessions} /></TabsContent>
-        <TabsContent value="week" forceMount><WeekView birthDate={activeChild.birth_date} night={night} sessions={weekSessions} loading={weekLoading} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
       </Tabs>
       )}
     </section>
