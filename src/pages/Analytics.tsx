@@ -113,8 +113,8 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} initialSessions={initialDaySessions} navigate={navigate} /></TabsContent>
-        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} navigate={navigate} /></TabsContent>
+        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} initialSessions={initialDaySessions} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
       </Tabs>
       )}
     </section>
@@ -124,6 +124,7 @@ export default function Analytics() {
 // ---------- DAY ----------
 function DayView({ childId, birthDate, night, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; initialSessions: SleepSession[] }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const dayKey = `analytics.day.${childId}`;
   const [day, setDay] = useState<Date>(() => {
     try {
@@ -292,7 +293,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   if (loadingDay) {
     return (
       <>
-        <DayPicker day={day} setDay={setDay} />
+        <DayPicker day={day} setDay={setDay} onOpenHistory={() => navigate(`/history?date=${format(day, "yyyy-MM-dd")}`)} />
         <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
         </Card>
@@ -303,7 +304,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   if (totalSleep === 0 && napsCount === 0) {
     return (
       <>
-        <DayPicker day={day} setDay={setDay} />
+        <DayPicker day={day} setDay={setDay} onOpenHistory={() => navigate(`/history?date=${format(day, "yyyy-MM-dd")}`)} />
         <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
       </>
     );
@@ -311,7 +312,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
 
   return (
     <div className="space-y-3">
-      <DayPicker day={day} setDay={setDay} />
+      <DayPicker day={day} setDay={setDay} onOpenHistory={() => navigate(`/history?date=${format(day, "yyyy-MM-dd")}`)} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(totalSleep)}
@@ -355,9 +356,11 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   );
 }
 
-function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
+function DayPicker({ day, setDay, onOpenHistory }: { day: Date; setDay: (d: Date) => void; onOpenHistory?: () => void }) {
   const today = startOfDay(new Date());
   const value = format(day, "yyyy-MM-dd");
+  const { t } = useTranslation();
+  const isToday = isSameDay(day, today);
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
@@ -371,6 +374,16 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
         onClick={() => setDay(addDays(day, 1))}>
         <ChevronRight className="w-4 h-4" />
       </Button>
+      {!isToday && (
+        <Button variant="ghost" size="icon" onClick={() => setDay(today)} title={t("common.today")} aria-label={t("common.today")}>
+          <CalendarCheck className="w-4 h-4" />
+        </Button>
+      )}
+      {onOpenHistory && (
+        <Button variant="ghost" size="icon" onClick={onOpenHistory} title={t("history.title")} aria-label={t("history.title")}>
+          <CalendarDays className="w-4 h-4" />
+        </Button>
+      )}
     </div>
   );
 }
@@ -378,6 +391,7 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 // ---------- WEEK ----------
 function WeekView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const now = new Date();
   const today = startOfDay(now);
 
@@ -533,6 +547,13 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
     });
   }, [sessions, days, night]);
 
+  const openHeatmap = () => {
+    // Heatmap uses startOfWeek(anchor); pass any day from the displayed range
+    // and let it snap to the locale-defined week. The user wants ALL data for
+    // the visible week regardless of which day chips are deselected.
+    navigate(`/heatmap?anchor=${format(days[Math.floor(days.length / 2)], "yyyy-MM-dd")}`);
+  };
+
   const picker = (
     <WeekPicker
       days={days}
@@ -541,6 +562,7 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
       open={pickerOpen}
       setOpen={setPickerOpen}
       t={t}
+      onOpenHeatmap={openHeatmap}
     />
   );
 
@@ -723,11 +745,12 @@ function DayChips({
 
 // ---------- helpers ----------
 function WeekPicker({
-  days, offset, setOffset, open, setOpen, t,
+  days, offset, setOffset, open, setOpen, t, onOpenHeatmap,
 }: {
   days: Date[]; offset: number; setOffset: (n: number) => void;
   open: boolean; setOpen: (b: boolean) => void;
   t: (k: string, o?: any) => string;
+  onOpenHeatmap?: () => void;
 }) {
   const from = days[0];
   const to = days[days.length - 1];
@@ -744,6 +767,7 @@ function WeekPicker({
   }
 
   return (
+    <div className="flex flex-col gap-2">
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="icon" onClick={() => setOffset(offset + 1)}>
         <ChevronLeft className="w-4 h-4" />
@@ -768,6 +792,17 @@ function WeekPicker({
       <Button variant="ghost" size="icon" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
         <ChevronRight className="w-4 h-4" />
       </Button>
+      {offset !== 0 && (
+        <Button variant="ghost" size="icon" onClick={() => setOffset(0)} title={t("analytics.thisWeek")} aria-label={t("analytics.thisWeek")}>
+          <CalendarCheck className="w-4 h-4" />
+        </Button>
+      )}
+      {onOpenHeatmap && (
+        <Button variant="ghost" size="icon" onClick={onOpenHeatmap} title={t("analytics.openHeatmap")} aria-label={t("analytics.openHeatmap")}>
+          <Grid3x3 className="w-4 h-4" />
+        </Button>
+      )}
+    </div>
     </div>
   );
 }
