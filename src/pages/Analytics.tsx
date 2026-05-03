@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check, CalendarDays, CalendarCheck } from "lucide-react";
+import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
@@ -293,7 +293,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   if (loadingDay) {
     return (
       <>
-        <DayPicker day={day} setDay={setDay} onOpenHistory={() => navigate(`/history?date=${format(day, "yyyy-MM-dd")}`)} />
+       <DayPicker day={day} setDay={setDay} />
         <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
         </Card>
@@ -304,7 +304,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   if (totalSleep === 0 && napsCount === 0) {
     return (
       <>
-        <DayPicker day={day} setDay={setDay} onOpenHistory={() => navigate(`/history?date=${format(day, "yyyy-MM-dd")}`)} />
+       <DayPicker day={day} setDay={setDay} />
         <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
       </>
     );
@@ -312,7 +312,7 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
 
   return (
     <div className="space-y-3">
-      <DayPicker day={day} setDay={setDay} onOpenHistory={() => navigate(`/history?date=${format(day, "yyyy-MM-dd")}`)} />
+      <DayPicker day={day} setDay={setDay} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(totalSleep)}
@@ -356,11 +356,9 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   );
 }
 
-function DayPicker({ day, setDay, onOpenHistory }: { day: Date; setDay: (d: Date) => void; onOpenHistory?: () => void }) {
+function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
   const today = startOfDay(new Date());
   const value = format(day, "yyyy-MM-dd");
-  const { t } = useTranslation();
-  const isToday = isSameDay(day, today);
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
@@ -374,16 +372,6 @@ function DayPicker({ day, setDay, onOpenHistory }: { day: Date; setDay: (d: Date
         onClick={() => setDay(addDays(day, 1))}>
         <ChevronRight className="w-4 h-4" />
       </Button>
-      {!isToday && (
-        <Button variant="ghost" size="icon" onClick={() => setDay(today)} title={t("common.today")} aria-label={t("common.today")}>
-          <CalendarCheck className="w-4 h-4" />
-        </Button>
-      )}
-      {onOpenHistory && (
-        <Button variant="ghost" size="icon" onClick={onOpenHistory} title={t("history.title")} aria-label={t("history.title")}>
-          <CalendarDays className="w-4 h-4" />
-        </Button>
-      )}
     </div>
   );
 }
@@ -792,11 +780,6 @@ function WeekPicker({
       <Button variant="ghost" size="icon" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
         <ChevronRight className="w-4 h-4" />
       </Button>
-      {offset !== 0 && (
-        <Button variant="ghost" size="icon" onClick={() => setOffset(0)} title={t("analytics.thisWeek")} aria-label={t("analytics.thisWeek")}>
-          <CalendarCheck className="w-4 h-4" />
-        </Button>
-      )}
       {onOpenHeatmap && (
         <Button variant="ghost" size="icon" onClick={onOpenHeatmap} title={t("analytics.openHeatmap")} aria-label={t("analytics.openHeatmap")}>
           <Grid3x3 className="w-4 h-4" />

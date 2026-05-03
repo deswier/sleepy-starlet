@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, ChevronLeft, ChevronRight, CalendarCheck } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
@@ -141,12 +141,6 @@ export default function History() {
           onClick={() => setDay(addDays(day, 1))}>
           <ChevronRight className="w-4 h-4" />
         </Button>
-        {!isSameDay(day, today) && (
-          <Button variant="ghost" size="icon" onClick={() => setDay(today)}
-            title={t("common.today")} aria-label={t("common.today")}>
-            <CalendarCheck className="w-4 h-4" />
-          </Button>
-        )}
       </div>
 
       {loading && (
