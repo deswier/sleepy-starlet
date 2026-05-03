@@ -209,6 +209,9 @@ const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fal
   const projectedTh = projectedWW !== null
     ? wwThresholdsAt(now, birthDate)
     : null;
+  const projectedStatus = projectedTh && projectedWW !== null
+    ? wwStatus(projectedWW, projectedTh.min, projectedTh.max)
+    : null;
   const projectedOver = projectedTh && projectedWW !== null && projectedWW > projectedTh.max;
 
   return (
@@ -226,8 +229,8 @@ const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fal
               </div>
             )}
             <div className="flex items-center gap-3 py-2 pl-2">
-              <div className={`w-0.5 h-8 rounded-full ${projectedOver ? "bg-ww-warn" : "bg-ww-good"}`} />
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${projectedOver ? "bg-ww-warn-soft text-[hsl(var(--ww-warn))]" : "bg-ww-good-soft text-[hsl(var(--ww-good))]"}`}>
+              <div className={`w-0.5 h-8 rounded-full ${projectedStatus === "warn" ? "bg-ww-warn" : "bg-ww-good"}`} />
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${projectedStatus === "warn" ? "bg-ww-warn-soft text-[hsl(var(--ww-warn))]" : "bg-ww-good-soft text-[hsl(var(--ww-good))]"}`}>
                 {t("sleep.awake_label", { duration: formatDuration(projectedWW) })}
               </span>
             </div>
