@@ -142,14 +142,20 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
   useEffect(() => {
     try { localStorage.setItem(dayKey, format(day, "yyyy-MM-dd")); } catch {}
   }, [day, dayKey]);
-  const [sessions, setSessions] = useState<SleepSession[]>(initialSessions);
-  const [loadingDay, setLoadingDay] = useState(false);
+  const today = startOfDay(new Date());
+  const isTodaySelected = isSameDay(day, today);
+  // Only reuse the preloaded "today" sessions when the persisted day IS today.
+  const [sessions, setSessions] = useState<SleepSession[]>(
+    isTodaySelected ? initialSessions : []
+  );
+  const [loadingDay, setLoadingDay] = useState(!isTodaySelected);
   const isInitialRender = useRef(true);
 
   useEffect(() => {
+    // Skip the first effect ONLY if the initial day is today (sessions already preloaded).
     if (isInitialRender.current) {
       isInitialRender.current = false;
-      return;
+      if (isSameDay(day, startOfDay(new Date()))) return;
     }
     let cancelled = false;
     setLoadingDay(true);
