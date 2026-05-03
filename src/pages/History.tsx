@@ -63,6 +63,10 @@ export default function History() {
   const { data: sessions = [], isLoading: loading } = useQuery({
     queryKey: [...SESSIONS_QUERY_KEY, activeChild?.id, dayKey],
     enabled: !!activeChild,
+    // Always refetch on mount: if a sleep was added/edited on another page
+    // (e.g. CurrentSleep) while History was unmounted, the realtime sub here
+    // wasn't active, and the 30s staleTime would otherwise serve stale data.
+    refetchOnMount: "always",
     queryFn: async () => {
       const since = subDays(startOfDay(day), 1).toISOString();
       const until = addDays(startOfDay(day), 1).toISOString();
