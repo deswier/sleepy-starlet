@@ -31,7 +31,10 @@ export default function CurrentSleep() {
   const showMethodFlag = settings?.show_falling_asleep_method !== false;
   const [active, setActive] = useState<SleepSession | null>(null);
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Two-phase loading: first resolve "is child sleeping?" so we can render the
+  // correctly-colored shell immediately, then load secondary details
+  // (interruption) without blocking the initial paint.
+  const [checkingActive, setCheckingActive] = useState(true);
   const [now, setNow] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
@@ -59,7 +62,6 @@ export default function CurrentSleep() {
 
   const load = async () => {
     if (!activeChild) return;
-    setLoading(true);
     const { data } = await supabase
       .from("sleep_sessions").select("*")
       .eq("child_id", activeChild.id)
@@ -67,13 +69,13 @@ export default function CurrentSleep() {
       .order("start_time", { ascending: false })
       .limit(1).maybeSingle();
     setActive(data as SleepSession | null);
+    setCheckingActive(false);
     if (data) {
       const { data: open } = await supabase
         .from("sleep_interruptions").select("id,start_time")
         .eq("sleep_session_id", data.id).is("end_time", null).maybeSingle();
       setInterruption(open ?? null);
     } else setInterruption(null);
-    setLoading(false);
   };
 
   useEffect(() => { load(); }, [activeChild?.id]);
@@ -244,7 +246,10 @@ export default function CurrentSleep() {
 
   return (
     <section className="px-4 max-w-md mx-auto w-full">
-      {loading ? (
+      {checkingActive ? (
+        // Neutral, minimal placeholder shown only for the brief window before
+        // we know whether the child is sleeping. Once resolved, the real
+        // colored card replaces it (no flash).
         <Card className="p-8 text-center shadow-card border-border/50 mt-4">
           <div className="w-20 h-20 rounded-full bg-muted animate-pulse mx-auto mb-4" />
           <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
