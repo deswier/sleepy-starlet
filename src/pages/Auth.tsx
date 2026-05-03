@@ -42,13 +42,18 @@ export default function Auth() {
   });
   useEffect(() => { if (i18n.language !== language) i18n.changeLanguage(language); }, [language]); // eslint-disable-line
 
+  // Single routing point: fires when AuthContext resolves `user` after any
+  // sign-in method. Removing explicit routePostAuth calls from handlers
+  // eliminates the double child_users query that happened on password sign-in
+  // (handler fired immediately, then useEffect fired on the re-render).
   useEffect(() => { if (!loading && user) routePostAuth(navigate); }, [user, loading, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
-    if (error) toast.error(error.message); else routePostAuth(navigate);
+    if (error) toast.error(error.message);
+    // Routing handled by the useEffect above once user state updates.
   };
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true);
@@ -63,13 +68,15 @@ export default function Auth() {
       if (u) await supabase.from("profiles").update({ language }).eq("id", u.id);
     } catch { /* ignore */ }
     setBusy(false);
-    toast.success(t("auth.welcome")); routePostAuth(navigate);
+    toast.success(t("auth.welcome"));
+    // Routing handled by useEffect above.
   };
   const handleGoogle = async () => {
     setBusy(true);
     const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
     if (result.error) { toast.error(t("auth.googleFailed")); setBusy(false); return; }
-    if (result.redirected) return;
+    if (result.redirected) return; // browser will reload → useEffect handles routing
+    // Non-redirect OAuth (popup flow): route explicitly since no page reload occurs.
     routePostAuth(navigate);
   };
 

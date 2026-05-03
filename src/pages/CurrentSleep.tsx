@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime, formatTime } from "@/lib/sleep-utils";
 import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
+import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
 
@@ -50,8 +51,11 @@ export default function CurrentSleep() {
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState<Date>(new Date());
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
-  // Wake-up confirmation modal (draft, replaces silent save).
-  const [confirmWake, setConfirmWake] = useState<SleepSession | null>(null);
+  // Wake-up confirmation modal — holds the draft session + pre-built
+  // interruptions list so we never modify the DB before the user confirms.
+  const [confirmWake, setConfirmWake] = useState<{
+    session: SleepSession; interruptions: DraftInterruption[];
+  } | null>(null);
   // Inline edit of active interruption start.
   const [editingIntrStart, setEditingIntrStart] = useState(false);
   const [intrStartDraft, setIntrStartDraft] = useState<Date>(new Date());
@@ -164,18 +168,28 @@ export default function CurrentSleep() {
     if (error) toast.error(error.message); else load();
   };
 
-  // Wake Up: instead of silently saving, open a confirmation modal where the user
-  // can edit start, end, interruptions, place, settling, and comment.
+  // Wake Up: build the draft entirely in local state — no DB write until
+  // the user confirms. This prevents the previous "write + rollback on cancel"
+  // pattern that could leave the DB inconsistent on browser crash.
   const wakeUp = async () => {
     if (!active) return;
-    const endIso = new Date().toISOString();
-    // Auto-close any open interruption at sleepEndTime (acts as draft persisted in DB so the
-    // edit modal can load it). On cancel we restore it back to "active".
-    if (interruption) {
-      await supabase.from("sleep_interruptions")
-        .update({ end_time: endIso }).eq("id", interruption.id);
-    }
-    setConfirmWake({ ...active, end_time: endIso });
+    const endTime = new Date();
+    const endIso = endTime.toISOString();
+    // Fetch the full interruptions list for the current session so we can
+    // build a complete draft (we need settling_method_id which load() omits).
+    const { data: intrs } = await supabase
+      .from("sleep_interruptions")
+      .select("id,start_time,end_time,settling_method_id")
+      .eq("sleep_session_id", active.id)
+      .order("start_time");
+    const draftIntrs: DraftInterruption[] = (intrs ?? []).map((r: any) => ({
+      id: r.id,
+      start_time: new Date(r.start_time),
+      // Close any open interruption at the wake-up time (draft only).
+      end_time: r.end_time ? new Date(r.end_time) : endTime,
+      settling_method_id: r.settling_method_id,
+    }));
+    setConfirmWake({ session: { ...active, end_time: endIso }, interruptions: draftIntrs });
   };
 
   // FSM transitions for the pause/resume button.
@@ -244,14 +258,9 @@ export default function CurrentSleep() {
     else { setStopIntrDraft(null); load(); }
   };
 
-  // If user cancels wake-up, restore the auto-closed interruption.
-  const cancelWake = async () => {
-    if (interruption?.id) {
-      await supabase.from("sleep_interruptions")
-        .update({ end_time: null }).eq("id", interruption.id);
-    }
+  // Cancel wake-up: just discard the local draft — nothing to roll back.
+  const cancelWake = () => {
     setConfirmWake(null);
-    load();
   };
 
   const beginEditStart = () => {
@@ -439,8 +448,9 @@ export default function CurrentSleep() {
             <Suspense fallback={null}>
               <SleepForm
                 mode="edit"
-                sessionId={confirmWake.id}
-                initial={confirmWake}
+                sessionId={confirmWake.session.id}
+                initial={confirmWake.session}
+                initialInterruptions={confirmWake.interruptions}
                 onDone={() => { setConfirmWake(null); load(); }}
               />
             </Suspense>

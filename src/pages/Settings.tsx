@@ -128,16 +128,32 @@ export default function Settings() {
   useEffect(() => { load(); }, [activeChild]);
 
   const saveSettings = async () => {
-    if (!activeChild) return;
-    const { error } = await supabase.from("child_settings").update({
+    if (!activeChild || !s) return;
+    // Optimistic lock: include updated_at in WHERE so we detect concurrent
+    // edits by another family member. If 0 rows are affected, the DB row
+    // was updated after we loaded — reload and warn instead of silently
+    // overwriting.
+    const { data, error } = await supabase.from("child_settings").update({
       night_start_time: s.night_start_time,
       night_end_time: s.night_end_time,
       split_night_sleep_by_date: s.split_night_sleep_by_date,
       show_sleep_place: s.show_sleep_place,
       show_falling_asleep_method: s.show_falling_asleep_method,
       show_interruptions: s.show_interruptions,
-    }).eq("child_id", activeChild.id);
-    if (error) toast.error(error.message); else { toast.success(t("common.saved")); refreshSettings(); }
+    })
+      .eq("child_id", activeChild.id)
+      .eq("updated_at", s.updated_at)
+      .select("updated_at")
+      .maybeSingle();
+    if (error) { toast.error(error.message); return; }
+    if (!data) {
+      toast.error(t("settings.conflict"));
+      load();
+      return;
+    }
+    setS({ ...s, updated_at: data.updated_at });
+    toast.success(t("common.saved"));
+    refreshSettings();
   };
 
   const saveChild = async () => {

@@ -142,6 +142,7 @@ const en = {
     confirmLeave: "Stop tracking this child? You can re-join with an invite code.",
     removeMember: "Remove member",
     confirmRemoveMember: "Remove this member from the family?",
+    conflict: "Settings were changed by another family member. The page has been refreshed.",
   },
   defaults: {
     places: { Crib: "Crib", Bed: "Bed", Stroller: "Stroller", Car: "Car" },
