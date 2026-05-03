@@ -67,6 +67,12 @@ export default function History() {
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
         () => invalidateSessions())
+      // Interruptions affect totals/duration shown in History. We can't filter
+      // by child_id directly (FK is sleep_session_id), so subscribe broadly
+      // and invalidate — payload volume is tiny in practice.
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_interruptions" },
+        () => invalidateSessions())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // queryClient is stable; activeChild?.id is the only meaningful dep.
