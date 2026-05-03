@@ -17,13 +17,6 @@ import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import InterruptionsEditor, { DraftInterruption, validateInterruptions } from "./InterruptionsEditor";
 
-interface Settings {
-  night_start_time: string;
-  night_end_time: string;
-  show_sleep_place?: boolean;
-  show_falling_asleep_method?: boolean;
-  show_interruptions?: boolean;
-}
 
 interface Props {
   mode: "manual" | "edit";
@@ -36,11 +29,10 @@ interface Props {
 
 export default function SleepForm({ mode, sessionId, initial, onDone, defaultDate }: Props) {
   const { t } = useTranslation();
-  const { activeChild } = useChildren();
+  const { activeChild, settings } = useChildren();
   const { user } = useAuth();
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
-  const [settings, setSettings] = useState<Settings | null>(null);
 
   const now = new Date();
   const computeDefaults = () => {
@@ -72,17 +64,14 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
 
   useEffect(() => {
     if (!activeChild) return;
-    (async () => {
-      const [p, m, s] = await Promise.all([
-        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("child_settings").select("night_start_time,night_end_time,show_sleep_place,show_falling_asleep_method,show_interruptions").eq("child_id", activeChild.id).single(),
-      ]);
+    Promise.all([
+      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
+      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+    ]).then(([p, m]) => {
       setPlaces(p.data ?? []);
       setMethods(m.data ?? []);
-      if (s.data) setSettings(s.data);
-    })();
-  }, [activeChild]);
+    });
+  }, [activeChild?.id]);
 
   // Load existing interruptions when editing.
   useEffect(() => {

@@ -15,36 +15,22 @@ import { isToday, isYesterday, startOfDay, isSameDay, addDays, subDays, format, 
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import SleepForm from "@/components/sleep/SleepForm";
 import SleepDetail from "@/components/sleep/SleepDetail";
-import { Loader2 } from "lucide-react";
 import { sessionDay, type NightWindow } from "@/pages/Analytics";
 
 export default function History() {
-  const { activeChild } = useChildren();
+  const { activeChild, settings } = useChildren();
   const { t } = useTranslation();
   const { role } = useChildRole();
+  const splitByDate = !!settings?.split_night_sleep_by_date;
+  const night: NightWindow = {
+    start: settings?.night_start_time?.slice(0, 5) ?? "19:00",
+    end: settings?.night_end_time?.slice(0, 5) ?? "07:00",
+  };
   const [sessions, setSessions] = useState<SleepSession[]>([]);
-  const [splitByDate, setSplitByDate] = useState(false);
-  const [night, setNight] = useState<NightWindow>({ start: "19:00", end: "07:00" });
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
-
-  // Settings only change when the child changes — fetch once, separately.
-  useEffect(() => {
-    if (!activeChild) return;
-    supabase.from("child_settings")
-      .select("split_night_sleep_by_date,night_start_time,night_end_time")
-      .eq("child_id", activeChild.id).single()
-      .then(({ data: cs }) => {
-        if (!cs) return;
-        setSplitByDate(!!cs.split_night_sleep_by_date);
-        setNight({
-          start: (cs.night_start_time as string)?.slice(0, 5) ?? "19:00",
-          end: (cs.night_end_time as string)?.slice(0, 5) ?? "07:00",
-        });
-      });
-  }, [activeChild?.id]);
 
   // Sessions scoped to the selected day's window — refetch when day or child changes.
   const loadSessions = useCallback(async () => {

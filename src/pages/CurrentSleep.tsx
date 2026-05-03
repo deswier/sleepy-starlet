@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X, Loader2 } from "lucide-react";
+import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -22,9 +22,11 @@ import { MethodOptionLabel } from "@/lib/method-icons";
 export default function CurrentSleep() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { activeChild, loading: childLoading } = useChildren();
+  const { activeChild, loading: childLoading, settings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
+  const showInterruptionFlag = settings?.show_interruptions !== false;
+  const showMethodFlag = settings?.show_falling_asleep_method !== false;
   const [active, setActive] = useState<SleepSession | null>(null);
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,8 +34,6 @@ export default function CurrentSleep() {
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState<Date>(new Date());
-  const [showInterruptionFlag, setShowInterruptionFlag] = useState(true);
-  const [showMethodFlag, setShowMethodFlag] = useState(true);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   // Wake-up confirmation modal (draft, replaces silent save).
   const [confirmWake, setConfirmWake] = useState<SleepSession | null>(null);
@@ -49,18 +49,15 @@ export default function CurrentSleep() {
     if (!childLoading && !activeChild) navigate("/child/new");
   }, [activeChild, childLoading, navigate]);
 
+  useEffect(() => {
+    if (!activeChild) return;
+    supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name")
+      .then(({ data: mList }) => setMethods(mList ?? []));
+  }, [activeChild?.id]);
+
   const load = async () => {
     if (!activeChild) return;
     setLoading(true);
-    const { data: cs } = await supabase
-      .from("child_settings")
-      .select("show_interruptions,show_falling_asleep_method")
-      .eq("child_id", activeChild.id).single();
-    setShowInterruptionFlag(cs?.show_interruptions !== false);
-    setShowMethodFlag(cs?.show_falling_asleep_method !== false);
-    const { data: mList } = await supabase
-      .from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name");
-    setMethods(mList ?? []);
     const { data } = await supabase
       .from("sleep_sessions").select("*")
       .eq("child_id", activeChild.id)
@@ -77,7 +74,7 @@ export default function CurrentSleep() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [activeChild]);
+  useEffect(() => { load(); }, [activeChild?.id]);
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(i);
@@ -100,8 +97,6 @@ export default function CurrentSleep() {
 
   const startSleep = async () => {
     if (!activeChild || !user) return;
-    const { data: settings } = await supabase
-      .from("child_settings").select("night_start_time,night_end_time").eq("child_id", activeChild.id).single();
     const startTime = new Date();
     const type = settings ? inferSleepType(startTime, settings.night_start_time, settings.night_end_time) : "day";
     // Prevent overlap with any existing record for this child
@@ -236,8 +231,12 @@ export default function CurrentSleep() {
   return (
     <section className="px-4 max-w-md mx-auto w-full">
       {loading ? (
-        <Card className="p-8 text-center shadow-card border-border/50 mt-4 flex items-center justify-center gap-2 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin" />
+        <Card className="p-8 text-center shadow-card border-border/50 mt-4">
+          <div className="w-20 h-20 rounded-full bg-muted animate-pulse mx-auto mb-4" />
+          <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
+          <div className="h-4 bg-muted animate-pulse rounded w-1/2 mx-auto mb-6" />
+          <div className="h-14 bg-muted animate-pulse rounded-xl w-full mb-3" />
+          <div className="h-10 bg-muted animate-pulse rounded-xl w-full" />
         </Card>
       ) : !active ? (
         <Card className="p-8 text-center shadow-soft border-border/50 mt-4">

@@ -10,16 +10,36 @@ export interface Child {
   gender: "male" | "female" | "other" | null;
 }
 
+export interface ChildSettings {
+  child_id: string;
+  night_start_time: string;
+  night_end_time: string;
+  split_night_sleep_by_date: boolean;
+  show_sleep_place: boolean;
+  show_falling_asleep_method: boolean;
+  show_interruptions: boolean;
+}
+
 interface ChildCtx {
   children: Child[];
   activeChild: Child | null;
   setActiveChildId: (id: string) => void;
   refresh: () => Promise<void>;
+  refreshSettings: () => void;
   loading: boolean;
+  settings: ChildSettings | null;
 }
 
 const Ctx = createContext<ChildCtx>({} as ChildCtx);
 const STORAGE_KEY = "active_child_id";
+const CHILDREN_CACHE_KEY = "children_cache_v1";
+
+interface ChildrenCache { userId: string; children: Child[] }
+
+function readChildrenCache(): ChildrenCache | null {
+  try { return JSON.parse(localStorage.getItem(CHILDREN_CACHE_KEY) ?? "null"); }
+  catch { return null; }
+}
 
 export const ChildProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
@@ -27,19 +47,49 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   const [activeId, setActiveId] = useState<string | null>(localStorage.getItem(STORAGE_KEY));
   const [loading, setLoading] = useState(true);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<ChildSettings | null>(null);
 
-  // Ref so refresh always reads the latest activeId without becoming a dep.
   const activeIdRef = useRef(activeId);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
+  // Fetch settings whenever active child changes.
+  // activeId is available from localStorage on first render, so this fires immediately —
+  // no need to wait for the children list to load first.
+  useEffect(() => {
+    if (!activeId) { setSettings(null); return; }
+    supabase.from("child_settings")
+      .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
+      .eq("child_id", activeId).single()
+      .then(({ data }) => setSettings(data as ChildSettings | null));
+  }, [activeId]);
+
+  const refreshSettings = useCallback(() => {
+    if (!activeId) return;
+    supabase.from("child_settings")
+      .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
+      .eq("child_id", activeId).single()
+      .then(({ data }) => setSettings(data as ChildSettings | null));
+  }, [activeId]);
+
   const refresh = useCallback(async () => {
-    if (!user) {
-      setList([]);
-      setLoadedUserId(null);
+    if (!user) { setList([]); setLoadedUserId(null); setLoading(false); return; }
+
+    // Restore from cache instantly if same user — renders the page without waiting for network.
+    const cache = readChildrenCache();
+    if (cache?.userId === user.id && cache.children.length > 0) {
+      setList(cache.children);
+      if (!activeIdRef.current || !cache.children.find((k) => k.id === activeIdRef.current)) {
+        const firstId = cache.children[0].id;
+        setActiveId(firstId);
+        localStorage.setItem(STORAGE_KEY, firstId);
+      }
+      setLoadedUserId(user.id);
       setLoading(false);
-      return;
+    } else {
+      setLoading(true);
     }
-    setLoading(true);
+
+    // Always fetch fresh data in background to keep cache up to date.
     const { data } = await supabase
       .from("child_users")
       .select("child:children(id, name, birth_date, photo_url, gender)")
@@ -49,6 +99,8 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean)
       .sort((a: Child, b: Child) => (a.name || "").localeCompare(b.name || "") || a.id.localeCompare(b.id)) as Child[];
     setList(kids);
+    const cacheData: ChildrenCache = { userId: user.id, children: kids };
+    localStorage.setItem(CHILDREN_CACHE_KEY, JSON.stringify(cacheData));
     if (kids.length && (!activeIdRef.current || !kids.find((k) => k.id === activeIdRef.current))) {
       setActiveId(kids[0].id);
       localStorage.setItem(STORAGE_KEY, kids[0].id);
@@ -65,11 +117,10 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const activeChild = list.find((c) => c.id === activeId) ?? null;
-
   const effectiveLoading = loading || (!!user && loadedUserId !== user.id);
 
   return (
-    <Ctx.Provider value={{ children: list, activeChild, setActiveChildId, refresh, loading: effectiveLoading }}>
+    <Ctx.Provider value={{ children: list, activeChild, setActiveChildId, refresh, refreshSettings, loading: effectiveLoading, settings }}>
       {children}
     </Ctx.Provider>
   );

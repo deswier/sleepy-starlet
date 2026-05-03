@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -49,25 +49,45 @@ export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT):
 
 export default function Analytics() {
   const navigate = useNavigate();
-  const { activeChild } = useChildren();
+  const { activeChild, settings } = useChildren();
   const { t } = useTranslation();
-  const [night, setNight] = useState<NightWindow>(DEFAULT_NIGHT);
+  const night: NightWindow = {
+    start: settings?.night_start_time?.slice(0, 5) ?? DEFAULT_NIGHT.start,
+    end: settings?.night_end_time?.slice(0, 5) ?? DEFAULT_NIGHT.end,
+  };
   const [loading, setLoading] = useState(true);
+  const [initialDaySessions, setInitialDaySessions] = useState<SleepSession[]>([]);
+  const [weekSessions, setWeekSessions] = useState<SleepSession[]>([]);
+  const [weekLoading, setWeekLoading] = useState(true);
 
   useEffect(() => {
     if (!activeChild) return;
     setLoading(true);
-    supabase.from("child_settings")
-      .select("night_start_time,night_end_time")
-      .eq("child_id", activeChild.id).single()
-      .then(({ data: cs }) => {
-        if (cs) setNight({
-          start: (cs.night_start_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.start,
-          end: (cs.night_end_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.end,
-        });
+    setWeekLoading(true);
+
+    const today = startOfDay(new Date());
+
+    // Week loads in background — does not block day rendering.
+    supabase.from("sleep_sessions").select("*")
+      .eq("child_id", activeChild.id)
+      .gte("start_time", subDays(today, 9).toISOString())
+      .order("start_time")
+      .then(({ data }) => {
+        setWeekSessions((data ?? []) as SleepSession[]);
+        setWeekLoading(false);
+      });
+
+    // Today's sessions — spinner only until this finishes.
+    supabase.from("sleep_sessions").select("*")
+      .eq("child_id", activeChild.id)
+      .gte("start_time", subDays(today, 1).toISOString())
+      .lt("start_time", addDays(today, 1).toISOString())
+      .order("start_time")
+      .then(({ data }) => {
+        setInitialDaySessions((data ?? []) as SleepSession[]);
         setLoading(false);
       });
-  }, [activeChild]);
+  }, [activeChild?.id]);
 
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
@@ -91,8 +111,8 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
-        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} /></TabsContent>
+        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} initialSessions={initialDaySessions} /></TabsContent>
+        <TabsContent value="week" forceMount><WeekView birthDate={activeChild.birth_date} night={night} sessions={weekSessions} loading={weekLoading} /></TabsContent>
       </Tabs>
       )}
     </section>
@@ -100,13 +120,18 @@ export default function Analytics() {
 }
 
 // ---------- DAY ----------
-function DayView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
+function DayView({ childId, birthDate, night, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; initialSessions: SleepSession[] }) {
   const { t } = useTranslation();
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
-  const [sessions, setSessions] = useState<SleepSession[]>([]);
-  const [loadingDay, setLoadingDay] = useState(true);
+  const [sessions, setSessions] = useState<SleepSession[]>(initialSessions);
+  const [loadingDay, setLoadingDay] = useState(false);
+  const isInitialRender = useRef(true);
 
   useEffect(() => {
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      return;
+    }
     setLoadingDay(true);
     const since = subDays(startOfDay(day), 1).toISOString();
     const until = addDays(startOfDay(day), 1).toISOString();
@@ -320,27 +345,10 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
+function WeekView({ birthDate, night, sessions, loading: loadingWeek }: { birthDate: string | null; night: NightWindow; sessions: SleepSession[]; loading: boolean }) {
   const { t } = useTranslation();
-  const [sessions, setSessions] = useState<SleepSession[]>([]);
-  const [loadingWeek, setLoadingWeek] = useState(true);
   const now = new Date();
   const today = startOfDay(now);
-
-  useEffect(() => {
-    setLoadingWeek(true);
-    // 9 days back: 7 days of stats + 2-day buffer for night sessions
-    // attributed to the next calendar day via sessionDay().
-    const since = subDays(today, 9).toISOString();
-    supabase.from("sleep_sessions").select("*")
-      .eq("child_id", childId)
-      .gte("start_time", since)
-      .order("start_time")
-      .then(({ data }) => {
-        setSessions((data ?? []) as SleepSession[]);
-        setLoadingWeek(false);
-      });
-  }, [childId]);
 
   // Last 7 fully-completed days: yesterday .. yesterday-6. Today excluded.
   const days = useMemo(() => {
@@ -420,8 +428,12 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
 
   if (loadingWeek) {
     return (
-      <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
-        <Loader2 className="w-4 h-4 animate-spin" />
+      <Card className="p-5 shadow-card border-border/50 space-y-3">
+        <div className="h-16 bg-muted animate-pulse rounded-xl" />
+        <div className="h-16 bg-muted animate-pulse rounded-xl" />
+        <div className="h-16 bg-muted animate-pulse rounded-xl" />
+        <div className="h-24 bg-muted animate-pulse rounded-xl" />
+        <div className="h-24 bg-muted animate-pulse rounded-xl" />
       </Card>
     );
   }

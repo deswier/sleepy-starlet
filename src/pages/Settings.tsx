@@ -30,7 +30,7 @@ type Member = {
 export default function Settings() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { activeChild, refresh } = useChildren();
+  const { activeChild, refresh, refreshSettings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
   const isAdmin = canEditChild(role);
@@ -132,7 +132,7 @@ export default function Settings() {
       show_falling_asleep_method: s.show_falling_asleep_method,
       show_interruptions: s.show_interruptions,
     }).eq("child_id", activeChild.id);
-    if (error) toast.error(error.message); else toast.success(t("common.saved"));
+    if (error) toast.error(error.message); else { toast.success(t("common.saved")); refreshSettings(); }
   };
 
   const saveChild = async () => {
@@ -191,7 +191,19 @@ export default function Settings() {
     else { toast.success(t("common.deleted")); await refresh(); navigate("/"); }
   };
 
-  if (!activeChild || !s) return null;
+  if (!activeChild || !s) return (
+    <main className="min-h-screen bg-hero p-4">
+      <div className="max-w-md mx-auto py-4">
+        <div className="h-8 w-24 bg-muted animate-pulse rounded-lg mb-4" />
+        <div className="h-10 w-40 bg-muted animate-pulse rounded-lg mb-6" />
+        {[120, 180, 96, 140, 96].map((h, i) => (
+          <div key={i} className="bg-card rounded-xl shadow-card mb-4" style={{ height: h }}>
+            <div className="h-full bg-muted/50 animate-pulse rounded-xl" />
+          </div>
+        ))}
+      </div>
+    </main>
+  );
 
   // Viewers cannot edit any settings — show a read-only minimal screen.
   if (isViewer) {
