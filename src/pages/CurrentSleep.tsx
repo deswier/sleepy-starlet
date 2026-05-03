@@ -31,6 +31,8 @@ export default function CurrentSleep() {
   const showMethodFlag = settings?.show_falling_asleep_method !== false;
   const [active, setActive] = useState<SleepSession | null>(null);
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
+  // Stats about completed interruptions in the current sleep session.
+  const [intrStats, setIntrStats] = useState<{ count: number; lastEnd: string | null }>({ count: 0, lastEnd: null });
   // Two-phase loading: first resolve "is child sleeping?" so we can render the
   // correctly-colored shell immediately, then load secondary details
   // (interruption) without blocking the initial paint.
@@ -84,11 +86,21 @@ export default function CurrentSleep() {
     }
     setOptimisticSleeping(!!data);
     if (data) {
-      const { data: open } = await supabase
-        .from("sleep_interruptions").select("id,start_time")
-        .eq("sleep_session_id", data.id).is("end_time", null).maybeSingle();
-      setInterruption(open ?? null);
-    } else setInterruption(null);
+      const { data: allIntrs } = await supabase
+        .from("sleep_interruptions").select("id,start_time,end_time")
+        .eq("sleep_session_id", data.id);
+      const list = allIntrs ?? [];
+      const open = list.find((i: any) => !i.end_time) ?? null;
+      const closed = list.filter((i: any) => i.end_time) as { end_time: string }[];
+      const lastEnd = closed.length
+        ? closed.reduce((a, b) => (new Date(a.end_time) > new Date(b.end_time) ? a : b)).end_time
+        : null;
+      setInterruption(open ? { id: open.id, start_time: open.start_time } : null);
+      setIntrStats({ count: closed.length, lastEnd });
+    } else {
+      setInterruption(null);
+      setIntrStats({ count: 0, lastEnd: null });
+    }
   };
 
   // Re-read cache when child changes (initial state above only runs once).
