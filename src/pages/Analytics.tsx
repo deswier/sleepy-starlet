@@ -566,13 +566,14 @@ function normLabel(
   value: number,
   norm: { min: number; max: number },
 ): string {
+  const isDuration = norm.max >= 30;
   if (value >= norm.min && value <= norm.max) {
     return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.withinNorm")}`;
   }
   if (value < norm.min) {
-    return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.below", { value: humanDelta(norm.min - value) })}`;
+    return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.below", { value: humanDelta(norm.min - value, isDuration) })}`;
   }
-  return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.above", { value: humanDelta(value - norm.max) })}`;
+  return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.above", { value: humanDelta(value - norm.max, isDuration) })}`;
 }
 
 function formatRange(n: { min: number; max: number }): string {
@@ -580,8 +581,8 @@ function formatRange(n: { min: number; max: number }): string {
   if (n.max >= 30) return `${formatDuration(n.min)}–${formatDuration(n.max)}`;
   return `${n.min}–${n.max}`;
 }
-function humanDelta(v: number): string {
-  if (v >= 30) return formatDuration(Math.round(v));
+function humanDelta(v: number, isDuration = false): string {
+  if (isDuration) return formatDuration(Math.max(1, Math.round(v)));
   return Math.round(v * 10) / 10 + "";
 }
 
