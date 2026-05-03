@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 import {
   formatDuration, sessionDuration, SleepSession,
   ageInMonthsAt, wakeWindowForAge,
+  fmtDate,
 } from "@/lib/sleep-utils";
 import {
   isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
