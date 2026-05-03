@@ -526,10 +526,11 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
   const norm = ageNorm(birthDate, midDay);
 
   // Compact list of dates that contributed (e.g. "03.05, 04.05, 06.05").
-  const includedDays = daysWithData
-    .map((_, i) => days[perDay.indexOf(daysWithData[i])])
-    .filter(Boolean);
-  const includedLabel = includedDays.map((d) => format(d, "dd.MM")).join(", ");
+  const includedLabel = perDay
+    .map((d, i) => ({ d, date: days[i] }))
+    .filter(({ d }) => d.totalSleep > 0 || d.napsCount > 0)
+    .map(({ date }) => format(date, "dd.MM"))
+    .join(", ");
 
   return (
     <div className="space-y-3">
