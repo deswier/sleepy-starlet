@@ -629,7 +629,7 @@ function DayChips({
 }) {
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-nowrap gap-1 w-full">
         {days.map((d, i) => {
           const isActive = active[i];
           const disabled = !hasData[i];
@@ -640,7 +640,7 @@ function DayChips({
               disabled={disabled}
               onClick={() => onToggle(i)}
               className={
-                "px-2.5 py-1 rounded-full text-xs font-medium border transition-colors " +
+                "flex-1 min-w-0 px-1 py-1 rounded-full text-[11px] leading-tight font-medium border transition-colors text-center tabular-nums " +
                 (disabled
                   ? "bg-muted/40 text-muted-foreground/60 border-border/40 cursor-not-allowed line-through"
                   : isActive
@@ -654,7 +654,7 @@ function DayChips({
           if (disabled) {
             return (
               <Tooltip key={i}>
-                <TooltipTrigger asChild><span>{chip}</span></TooltipTrigger>
+                <TooltipTrigger asChild><span className="flex-1 min-w-0">{chip}</span></TooltipTrigger>
                 <TooltipContent>{t("analytics.noDataForDay")}</TooltipContent>
               </Tooltip>
             );
