@@ -241,14 +241,16 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
     for (let i = 1; i < startedToday.length; i++) {
       const prev = startedToday[i - 1];
       if (!prev.end_time) continue;
-      const d = differenceInMinutes(new Date(startedToday[i].start_time), new Date(prev.end_time));
+      const d = Math.round(
+        (new Date(startedToday[i].start_time).getTime() - new Date(prev.end_time).getTime()) / 60000
+      );
       if (d >= 0 && d < 12 * 60) windows.push(d);
     }
     // Today only: include the in-progress wake window up to "now".
     if (isCurrentDay && startedToday.length > 0) {
       const last = startedToday[startedToday.length - 1];
       if (last.end_time) {
-        const elapsed = differenceInMinutes(now, new Date(last.end_time));
+        const elapsed = Math.round((now.getTime() - new Date(last.end_time).getTime()) / 60000);
         if (elapsed > 0 && elapsed < 12 * 60) windows.push(elapsed);
       }
     }
