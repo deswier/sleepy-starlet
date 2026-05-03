@@ -274,8 +274,9 @@ export default function CurrentSleep() {
           <Card className="p-8 text-center bg-night text-primary-foreground shadow-glow border-0 mt-4">
             <div className="w-20 h-20 rounded-full bg-white/10 animate-pulse mx-auto mb-4" />
             <div className="h-7 bg-white/10 animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
-            <div className="h-4 bg-white/10 animate-pulse rounded w-1/2 mx-auto mb-6" />
-            <div className="h-14 bg-white/10 animate-pulse rounded-xl w-full mb-3" />
+            <div className="h-4 bg-white/10 animate-pulse rounded w-1/2 mx-auto mb-4" />
+            <div className="h-12 bg-white/10 animate-pulse rounded-lg w-2/3 mx-auto my-4" />
+            <div className="h-14 bg-white/10 animate-pulse rounded-xl w-full mb-2" />
             <div className="h-10 bg-white/10 animate-pulse rounded-xl w-full" />
           </Card>
         ) : (
