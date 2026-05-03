@@ -14,7 +14,6 @@ import { toast } from "sonner";
 import {
   formatDuration, sessionDuration, SleepSession,
   ageInMonthsAt, wakeWindowForAge,
-  fmtDate,
 } from "@/lib/sleep-utils";
 import {
   isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
