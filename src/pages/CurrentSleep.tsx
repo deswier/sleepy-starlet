@@ -35,6 +35,14 @@ export default function CurrentSleep() {
   // correctly-colored shell immediately, then load secondary details
   // (interruption) without blocking the initial paint.
   const [checkingActive, setCheckingActive] = useState(true);
+  // Optimistic guess for the skeleton color, taken from the last known state
+  // in localStorage (per child). Avoids a neutral flash before the first
+  // network response resolves.
+  const cacheKey = activeChild ? `cs:isSleeping:${activeChild.id}` : null;
+  const [optimisticSleeping, setOptimisticSleeping] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !cacheKey) return false;
+    return window.localStorage.getItem(cacheKey) === "1";
+  });
   const [now, setNow] = useState(new Date());
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
@@ -70,6 +78,11 @@ export default function CurrentSleep() {
       .limit(1).maybeSingle();
     setActive(data as SleepSession | null);
     setCheckingActive(false);
+    // Persist last known state so the skeleton colors correctly next time.
+    if (cacheKey) {
+      try { window.localStorage.setItem(cacheKey, data ? "1" : "0"); } catch {}
+    }
+    setOptimisticSleeping(!!data);
     if (data) {
       const { data: open } = await supabase
         .from("sleep_interruptions").select("id,start_time")
@@ -77,6 +90,13 @@ export default function CurrentSleep() {
       setInterruption(open ?? null);
     } else setInterruption(null);
   };
+
+  // Re-read cache when child changes (initial state above only runs once).
+  useEffect(() => {
+    if (!cacheKey || typeof window === "undefined") return;
+    setOptimisticSleeping(window.localStorage.getItem(cacheKey) === "1");
+    setCheckingActive(true);
+  }, [cacheKey]);
 
   useEffect(() => { load(); }, [activeChild?.id]);
   useEffect(() => {
