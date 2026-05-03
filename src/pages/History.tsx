@@ -273,21 +273,38 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
 
         {/* Stub rows: night sessions that started on this day but end on the next.
             Show start time only; full session appears on the end day once complete. */}
-        {stubs.map((s) => (
-          <div key={s.id}>
-            <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
-              <div className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full bg-primary" />
-                <span className="font-medium">{formatTime(s.start_time)}</span>
-                {!s.end_time && (
-                  <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                    {t("sleep.ongoing")}
+        {stubs.map((s) => {
+          const earlierPrimary = ordered.find((x) => x.end_time) ?? null;
+          const ww = earlierPrimary ? wakeWindowMinutes(earlierPrimary, s) : null;
+          let wwSt: "good" | "warn" | null = null;
+          if (ww !== null) {
+            const th = wwThresholdsAt(new Date(s.start_time), birthDate);
+            if (th) wwSt = wwStatus(ww, th.min, th.max);
+          }
+          return (
+            <div key={s.id}>
+              <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-primary" />
+                  <span className="font-medium">{formatTime(s.start_time)}</span>
+                  {!s.end_time && (
+                    <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                      {t("sleep.ongoing")}
+                    </span>
+                  )}
+                </div>
+              </button>
+              {earlierPrimary && ww !== null && ww >= 0 && (
+                <div className="flex items-center gap-3 py-2 pl-2">
+                  <div className={`w-0.5 h-8 rounded-full ${wwSt === "good" ? "bg-ww-good" : "bg-ww-warn"}`} />
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wwSt === "good" ? "bg-ww-good-soft text-[hsl(var(--ww-good))]" : "bg-ww-warn-soft text-[hsl(var(--ww-warn))]"}`}>
+                    {t("sleep.awake_label", { duration: formatDuration(ww) })}
                   </span>
-                )}
-              </div>
-            </button>
-          </div>
-        ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {ordered.map((s, i) => {
           // Chronologically earlier sleep is the next row in DESC display.
