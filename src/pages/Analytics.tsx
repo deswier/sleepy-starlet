@@ -195,12 +195,10 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
   );
 
   const { totalSleep, nightSleep } = useMemo(() => {
-    const { h: nsH, m: nsM } = parseHM(night.start);
-    const nsMin = nsH * 60 + nsM;
+    const nowMs = now.getTime();
     const dayMs = startOfDay(day).getTime();
     const dayStartMs = dayMs;
-    const dayEndMs = isCurrentDay ? now.getTime() : dayStartMs + 24 * 60 * 60 * 1000;
-    const nowMs = now.getTime();
+    const dayEndMs = isCurrentDay ? nowMs : dayStartMs + 24 * 60 * 60 * 1000;
 
     let totalSleep = 0;
     let nightSleep = 0;
@@ -209,28 +207,19 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
       const startMs = new Date(s.start_time).getTime();
       const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
 
-      const ovStart = Math.max(startMs, dayStartMs);
-      const ovEnd = Math.min(endMs, dayEndMs);
-      if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
-
-      if (s.sleep_type === "night" && s.end_time) {
-        let sDayMs: number;
-        if (splitByDate) {
-          sDayMs = startOfDay(new Date(startMs)).getTime();
-        } else {
-          const start = new Date(startMs);
-          const startMin = start.getHours() * 60 + start.getMinutes();
-          if (startMin >= nsMin && startMin >= 12 * 60) {
-            const sd = startOfDay(start).getTime();
-            const ed = startOfDay(new Date(endMs)).getTime();
-            sDayMs = ed !== sd ? ed : sd;
-          } else {
-            sDayMs = startOfDay(new Date(startMs)).getTime();
-          }
-        }
-        if (sDayMs === dayMs) {
+      if (splitByDate) {
+        // Physical overlap with calendar day boundary.
+        const ovStart = Math.max(startMs, dayStartMs);
+        const ovEnd = Math.min(endMs, dayEndMs);
+        if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
+        if (s.sleep_type === "night" && s.end_time && startOfDay(new Date(startMs)).getTime() === dayMs)
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
-        }
+      } else {
+        // Full duration of sessions attributed to this day by the night window.
+        if (sessionDay(s, night).getTime() !== dayMs) continue;
+        totalSleep += Math.round((endMs - startMs) / 60000);
+        if (s.sleep_type === "night" && s.end_time)
+          nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
       }
     }
 
@@ -490,19 +479,20 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       const completed = forDay.filter((e) => e.s.end_time)
         .sort((a, b) => a.startMs - b.startMs);
 
-      // Physical overlap with the calendar day window — used for wake-time math
-      // so that a 19:00→07:00 night sleep contributes 5h to the previous day
-      // and 7h to the next day, regardless of which day it is "attributed" to.
       const dayStartMs = dMs;
       const dayEndMs = dMs + 24 * 60 * 60 * 1000;
-      let physicalSleep = 0;
-      for (const e of ext) {
-        const ovStart = Math.max(e.startMs, dayStartMs);
-        const ovEnd = Math.min(e.endMs, dayEndMs);
-        if (ovEnd > ovStart) physicalSleep += Math.round((ovEnd - ovStart) / 60000);
+      let totalSleep = 0;
+      if (splitByDate) {
+        for (const e of ext) {
+          const ovStart = Math.max(e.startMs, dayStartMs);
+          const ovEnd = Math.min(e.endMs, dayEndMs);
+          if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
+        }
+      } else {
+        // Full duration of sessions attributed to this day by the night window.
+        for (const e of forDay) totalSleep += Math.round((e.endMs - e.startMs) / 60000);
       }
-      const totalSleep = physicalSleep;
-      const totalWake = Math.max(0, 24 * 60 - physicalSleep);
+      const totalWake = Math.max(0, 24 * 60 - totalSleep);
 
       let nightSleep = 0;
       for (const e of forDay) {
