@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
+import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check, CalendarCheck } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
@@ -102,9 +102,6 @@ export default function Analytics() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("analytics.title")}</h2>
-        <Button variant="ghost" size="sm" onClick={() => navigate("/heatmap")}>
-          <Grid3x3 className="w-4 h-4 mr-1" /> {t("analytics.openHeatmap")}
-        </Button>
       </div>
       {loading ? (
         <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
