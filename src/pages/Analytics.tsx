@@ -582,6 +582,56 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
 }
 
 // ---------- helpers ----------
+function WeekPicker({
+  days, offset, setOffset, open, setOpen, t,
+}: {
+  days: Date[]; offset: number; setOffset: (n: number) => void;
+  open: boolean; setOpen: (b: boolean) => void;
+  t: (k: string, o?: any) => string;
+}) {
+  const from = days[0];
+  const to = days[days.length - 1];
+  const label = t("analytics.weekRange", { from: format(from, "dd.MM"), to: format(to, "dd.MM") });
+
+  // Build 12 selectable weeks starting from offset 0 (most recent).
+  const today = startOfDay(new Date());
+  const options: { offset: number; from: Date; to: Date }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const base = 1 + i * 7;
+    const wTo = subDays(today, base);
+    const wFrom = subDays(today, base + 6);
+    options.push({ offset: i, from: wFrom, to: wTo });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="ghost" size="icon" onClick={() => setOffset(offset + 1)}>
+        <ChevronLeft className="w-4 h-4" />
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="flex-1 font-normal">{label}</Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-1 max-h-72 overflow-y-auto" align="center">
+          {options.map((o) => (
+            <Button
+              key={o.offset}
+              variant={o.offset === offset ? "secondary" : "ghost"}
+              className="w-full justify-start font-normal"
+              onClick={() => { setOffset(o.offset); setOpen(false); }}
+            >
+              {format(o.from, "dd.MM")} – {format(o.to, "dd.MM")}
+            </Button>
+          ))}
+        </PopoverContent>
+      </Popover>
+      <Button variant="ghost" size="icon" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
+        <ChevronRight className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+}
+
 function ageNorm(birthDate: string | null, at: Date) {
   if (!birthDate) return null;
   const months = ageInMonthsAt(birthDate, at);
