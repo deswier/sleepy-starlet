@@ -359,7 +359,6 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
 function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
   const today = startOfDay(new Date());
   const value = format(day, "yyyy-MM-dd");
-  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
