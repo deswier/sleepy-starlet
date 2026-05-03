@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
@@ -31,12 +31,22 @@ export default function Heatmap() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { activeChild } = useChildren();
+  const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [interruptions, setInterruptions] = useState<InterruptionLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
-  // Anchor = a date inside the displayed week.
-  const [anchor, setAnchor] = useState<Date>(startOfDay(new Date()));
+  // Anchor = a date inside the displayed week. Initialize from ?anchor= so
+  // callers (Analytics → "Open diagram") can land on the same week the user
+  // was viewing.
+  const [anchor, setAnchor] = useState<Date>(() => {
+    const a = searchParams.get("anchor");
+    if (a) {
+      const d = startOfDay(new Date(a));
+      if (!isNaN(d.getTime())) return d;
+    }
+    return startOfDay(new Date());
+  });
 
   const locale = i18n.language?.startsWith("ru") ? ru : enUS;
   // Week starts Monday for ru, Sunday for en — match user expectation.
