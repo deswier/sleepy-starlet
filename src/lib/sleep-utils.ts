@@ -32,7 +32,9 @@ export const sessionDuration = (s: SleepSession, now = new Date()): number => {
 
 export const wakeWindowMinutes = (prev: SleepSession, current: SleepSession): number | null => {
   if (!prev.end_time) return null;
-  return differenceInMinutes(new Date(current.start_time), new Date(prev.end_time));
+  return Math.round(
+    (new Date(current.start_time).getTime() - new Date(prev.end_time).getTime()) / 60000
+  );
 };
 
 export const wwStatus = (

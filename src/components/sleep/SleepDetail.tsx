@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDuration, formatTime, sessionDuration, SleepSession, fmtDate } from "@/lib/sleep-utils";
-import { differenceInMinutes } from "date-fns";
 import SleepForm from "./SleepForm";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -98,7 +97,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
                         <span className="text-xs font-medium tabular-nums">
                           {i.end_time
                             ? (() => {
-                                const m = Math.max(0, differenceInMinutes(new Date(i.end_time), new Date(i.start_time)));
+                                const m = Math.max(0, Math.round((new Date(i.end_time).getTime() - new Date(i.start_time).getTime()) / 60000));
                                 return m === 0 ? "0m" : formatDuration(m);
                               })()
                             : t("sleep.active")}
