@@ -463,42 +463,62 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
     });
   }, [sessions, days, night]);
 
+  const picker = (
+    <WeekPicker
+      days={days}
+      offset={weekOffset}
+      setOffset={setWeekOffset}
+      open={pickerOpen}
+      setOpen={setPickerOpen}
+      t={t}
+    />
+  );
+
   if (loadingWeek) {
     return (
-      <Card className="p-5 shadow-card border-border/50 space-y-3">
-        <div className="h-16 bg-muted animate-pulse rounded-xl" />
-        <div className="h-16 bg-muted animate-pulse rounded-xl" />
-        <div className="h-16 bg-muted animate-pulse rounded-xl" />
-        <div className="h-24 bg-muted animate-pulse rounded-xl" />
-        <div className="h-24 bg-muted animate-pulse rounded-xl" />
-      </Card>
+      <div className="space-y-3">
+        {picker}
+        <Card className="p-5 shadow-card border-border/50 space-y-3">
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-24 bg-muted animate-pulse rounded-xl" />
+          <div className="h-24 bg-muted animate-pulse rounded-xl" />
+        </Card>
+      </div>
     );
   }
 
-  const withData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
-  if (withData.length === 0) {
+  // Only count days that actually have records.
+  const daysWithData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
+  if (daysWithData.length === 0) {
     return (
-      <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      <div className="space-y-3">
+        {picker}
+        <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      </div>
     );
   }
 
   const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
 
-  const avgTotalSleep = avg(perDay.map((d) => d.totalSleep));
-  const avgTotalWake = avg(perDay.map((d) => d.totalWake));
-  const avgNightSleep = avg(perDay.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
+  const avgTotalSleep = avg(daysWithData.map((d) => d.totalSleep));
+  const avgTotalWake = avg(daysWithData.map((d) => d.totalWake));
+  const avgNightSleep = avg(daysWithData.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
 
-  const allWWs = perDay.flatMap((d) => d.wws);
+  const allWWs = daysWithData.flatMap((d) => d.wws);
   const avgWW = avg(allWWs);
   const minWW = allWWs.length ? Math.min(...allWWs) : 0;
   const maxWW = allWWs.length ? Math.max(...allWWs) : 0;
 
-  const napCounts = perDay.map((d) => d.napsCount);
-  const avgNapsCount = Math.round((napCounts.reduce((a, b) => a + b, 0) / napCounts.length) * 10) / 10;
-  const minNapsCount = Math.min(...napCounts);
-  const maxNapsCount = Math.max(...napCounts);
+  const napCounts = daysWithData.map((d) => d.napsCount);
+  const avgNapsCount = napCounts.length
+    ? Math.round((napCounts.reduce((a, b) => a + b, 0) / napCounts.length) * 10) / 10
+    : 0;
+  const minNapsCount = napCounts.length ? Math.min(...napCounts) : 0;
+  const maxNapsCount = napCounts.length ? Math.max(...napCounts) : 0;
 
-  const allNapDur = perDay.flatMap((d) => d.napDurations);
+  const allNapDur = daysWithData.flatMap((d) => d.napDurations);
   const avgNap = avg(allNapDur);
   const minNap = allNapDur.length ? Math.min(...allNapDur) : 0;
   const maxNap = allNapDur.length ? Math.max(...allNapDur) : 0;
@@ -506,9 +526,16 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
 
+  // Compact list of dates that contributed (e.g. "03.05, 04.05, 06.05").
+  const includedDays = daysWithData
+    .map((_, i) => days[perDay.indexOf(daysWithData[i])])
+    .filter(Boolean);
+  const includedLabel = includedDays.map((d) => format(d, "dd.MM")).join(", ");
+
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">{t("analytics.weekIgnoresToday")}</p>
+      {picker}
+      <p className="text-xs text-muted-foreground">{t("analytics.daysIncluded", { days: includedLabel })}</p>
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
