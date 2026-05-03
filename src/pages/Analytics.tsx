@@ -250,11 +250,18 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
       );
       if (d >= 0 && d < 12 * 60) windows.push(d);
     }
-    // Today only: include the in-progress wake window up to "now".
+    // Today only: include the last wake window, capped at the night sleep start if it has
+    // already begun (sessionDay puts it on tomorrow so it's absent from startedToday).
     if (isCurrentDay && startedToday.length > 0) {
       const last = startedToday[startedToday.length - 1];
       if (last.end_time) {
-        const elapsed = Math.round((now.getTime() - new Date(last.end_time).getTime()) / 60000);
+        const nightStub = sessions.find(
+          (s) => s.sleep_type === "night" && !s.end_time &&
+            isSameDay(startOfDay(new Date(s.start_time)), day) &&
+            !isSameDay(sessionDay(s, night), day)
+        );
+        const endpoint = nightStub ? new Date(nightStub.start_time).getTime() : now.getTime();
+        const elapsed = Math.round((endpoint - new Date(last.end_time).getTime()) / 60000);
         if (elapsed > 0 && elapsed < 12 * 60) windows.push(elapsed);
       }
     }
@@ -264,7 +271,7 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
       minWW: windows.length ? Math.min(...windows) : 0,
       maxWW: windows.length ? Math.max(...windows) : 0,
     };
-  }, [startedToday, isCurrentDay]);
+  }, [startedToday, isCurrentDay, sessions, night, day]);
 
   const norm = ageNorm(birthDate, day);
 
