@@ -181,7 +181,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, birthDate, onOpen, fal
   const isCurrentDay = isToday(date);
   const hasOngoing = ordered.some((s) => !s.end_time);
   const projectedWW = (isCurrentDay && !hasOngoing && latestCompleted)
-    ? Math.max(0, differenceInMinutes(now, new Date(latestCompleted.end_time!)))
+    ? Math.max(0, Math.round((now.getTime() - new Date(latestCompleted.end_time!).getTime()) / 60000))
     : null;
   const projectedTh = projectedWW !== null
     ? wwThresholdsAt(now, birthDate)
