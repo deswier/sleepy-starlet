@@ -10,6 +10,7 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import RouteTracker from "@/components/RouteTracker";
 
+
 const Index     = lazy(() => import("./pages/Index"));
 const Auth      = lazy(() => import("./pages/Auth"));
 const NewChild  = lazy(() => import("./pages/NewChild"));
