@@ -69,35 +69,39 @@ export default function Analytics() {
     const today = startOfDay(new Date());
 
     // Week loads in background — does not block day rendering.
-    supabase.from("sleep_sessions").select("*")
-      .eq("child_id", activeChild.id)
-      .gte("start_time", subDays(today, 9).toISOString())
-      .order("start_time")
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", activeChild.id)
+          .gte("start_time", subDays(today, 9).toISOString())
+          .order("start_time");
         if (error) throw error;
         setWeekSessions((data ?? []) as SleepSession[]);
-      })
-      .catch((e) => {
+      } catch (e) {
         console.error("[Analytics] week load failed", e);
         toast.error(t("common.loadFailed"));
-      })
-      .finally(() => setWeekLoading(false));
+      } finally {
+        setWeekLoading(false);
+      }
+    })();
 
     // Today's sessions — spinner only until this finishes.
-    supabase.from("sleep_sessions").select("*")
-      .eq("child_id", activeChild.id)
-      .gte("start_time", subDays(today, 1).toISOString())
-      .lt("start_time", addDays(today, 1).toISOString())
-      .order("start_time")
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", activeChild.id)
+          .gte("start_time", subDays(today, 1).toISOString())
+          .lt("start_time", addDays(today, 1).toISOString())
+          .order("start_time");
         if (error) throw error;
         setInitialDaySessions((data ?? []) as SleepSession[]);
-      })
-      .catch((e) => {
+      } catch (e) {
         console.error("[Analytics] day load failed", e);
         toast.error(t("common.loadFailed"));
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [activeChild?.id]);
 
   if (!activeChild) {
@@ -147,17 +151,20 @@ function DayView({ childId, birthDate, night, initialSessions }: { childId: stri
     setLoadingDay(true);
     const since = subDays(startOfDay(day), 1).toISOString();
     const until = addDays(startOfDay(day), 1).toISOString();
-    supabase.from("sleep_sessions").select("*")
-      .eq("child_id", childId)
-      .gte("start_time", since)
-      .lt("start_time", until)
-      .order("start_time")
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", childId)
+          .gte("start_time", since)
+          .lt("start_time", until)
+          .order("start_time");
         if (cancelled) return;
         if (error) { console.error("[DayView] load failed", error); return; }
         setSessions((data ?? []) as SleepSession[]);
-      })
-      .finally(() => { if (!cancelled) setLoadingDay(false); });
+      } finally {
+        if (!cancelled) setLoadingDay(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [childId, day]);
 
