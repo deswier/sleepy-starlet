@@ -8,7 +8,6 @@ import { useTranslation } from "react-i18next";
 import { localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import { formatDuration } from "@/lib/sleep-utils";
-import { differenceInMinutes } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export interface DraftInterruption {
@@ -99,7 +98,7 @@ export default function InterruptionsEditor({
 
   const durationLabel = (it: DraftInterruption): string => {
     if (!it.end_time) return t("sleep.active");
-    const m = Math.max(0, differenceInMinutes(it.end_time, it.start_time));
+    const m = Math.max(0, Math.round((it.end_time.getTime() - it.start_time.getTime()) / 60000));
     return m === 0 ? "0m" : formatDuration(m);
   };
 
