@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -7,52 +7,58 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   formatDuration, formatTime, sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
 } from "@/lib/sleep-utils";
 import { isToday, isYesterday, startOfDay, isSameDay, addDays, subDays, format, differenceInMinutes } from "date-fns";
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
-import SleepForm from "@/components/sleep/SleepForm";
-import SleepDetail from "@/components/sleep/SleepDetail";
 import { sessionDay, type NightWindow } from "@/pages/Analytics";
+
+// Both components are only used inside dialogs — lazy-loaded to keep
+// the History page bundle minimal.
+const SleepForm = lazy(() => import("@/components/sleep/SleepForm"));
+const SleepDetail = lazy(() => import("@/components/sleep/SleepDetail"));
+
+const SESSIONS_QUERY_KEY = ["history", "sessions"] as const;
 
 export default function History() {
   const { activeChild, settings } = useChildren();
   const { t } = useTranslation();
   const { role } = useChildRole();
+  const queryClient = useQueryClient();
   const splitByDate = !!settings?.split_night_sleep_by_date;
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? "19:00",
     end: settings?.night_end_time?.slice(0, 5) ?? "07:00",
   };
-  const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [day, setDay] = useState<Date>(startOfDay(new Date()));
 
-  // Sessions scoped to the selected day's window — refetch when day or child changes.
-  const loadSessions = useCallback(async () => {
-    if (!activeChild) return;
-    setLoading(true);
-    const since = subDays(startOfDay(day), 1).toISOString();
-    const until = addDays(startOfDay(day), 1).toISOString();
-    const { data } = await supabase.from("sleep_sessions").select("*")
-      .eq("child_id", activeChild.id)
-      .gte("start_time", since)
-      .lt("start_time", until)
-      .order("start_time", { ascending: false });
-    setSessions((data ?? []) as SleepSession[]);
-    setLoading(false);
-  }, [activeChild?.id, day]);
+  // react-query handles: race conditions on rapid day switches (stale results
+  // discarded), retry on transient errors, cache (revisiting a day is instant
+  // within staleTime), and dedup if multiple consumers query the same key.
+  const dayKey = format(day, "yyyy-MM-dd");
+  const { data: sessions = [], isLoading: loading } = useQuery({
+    queryKey: [...SESSIONS_QUERY_KEY, activeChild?.id, dayKey],
+    enabled: !!activeChild,
+    queryFn: async () => {
+      const since = subDays(startOfDay(day), 1).toISOString();
+      const until = addDays(startOfDay(day), 1).toISOString();
+      const { data, error } = await supabase.from("sleep_sessions").select("*")
+        .eq("child_id", activeChild!.id)
+        .gte("start_time", since)
+        .lt("start_time", until)
+        .order("start_time", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as SleepSession[];
+    },
+  });
 
-  useEffect(() => { loadSessions(); }, [loadSessions]);
-
-  // Keep ref so the realtime handler always calls the latest loadSessions
-  // without re-subscribing the channel on every day change.
-  const loadSessionsRef = useRef(loadSessions);
-  useEffect(() => { loadSessionsRef.current = loadSessions; }, [loadSessions]);
+  const invalidateSessions = () =>
+    queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
 
   useEffect(() => {
     if (!activeChild) return;
@@ -60,9 +66,11 @@ export default function History() {
       .channel(`history-${activeChild.id}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
-        () => loadSessionsRef.current())
+        () => invalidateSessions())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
+    // queryClient is stable; activeChild?.id is the only meaningful dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChild?.id]);
 
   if (!activeChild) return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
@@ -85,7 +93,9 @@ export default function History() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>{t("sleep.addPast")}</DialogTitle></DialogHeader>
-            <SleepForm mode="manual" defaultDate={day} onDone={() => { setShowAdd(false); loadSessions(); }} />
+            <Suspense fallback={null}>
+              <SleepForm mode="manual" defaultDate={day} onDone={() => { setShowAdd(false); invalidateSessions(); }} />
+            </Suspense>
           </DialogContent>
         </Dialog>}
       </div>
@@ -126,7 +136,11 @@ export default function History() {
           fallbackLatestCompleted={latestCompletedAny} />
       )}
 
-      {open && <SleepDetail session={open} onClose={() => setOpen(null)} onChange={loadSessions} />}
+      {open && (
+        <Suspense fallback={null}>
+          <SleepDetail session={open} onClose={() => setOpen(null)} onChange={invalidateSessions} />
+        </Suspense>
+      )}
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,9 @@ import { startOfDay, addDays, subDays, format, startOfWeek } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
 import { iconForMethod } from "@/lib/method-icons";
-import SleepDetail from "@/components/sleep/SleepDetail";
 import { toast } from "sonner";
+
+const SleepDetail = lazy(() => import("@/components/sleep/SleepDetail"));
 
 const HOURS = 24;
 const ROW_PX = 22; // height per hour
@@ -281,11 +282,13 @@ export default function Heatmap() {
           )}
         </Card>
         {openSession && (
-          <SleepDetail
-            session={openSession}
-            onClose={() => setOpenSession(null)}
-            onChange={() => { /* re-fetch on close not necessary; week effect handles changes */ }}
-          />
+          <Suspense fallback={null}>
+            <SleepDetail
+              session={openSession}
+              onClose={() => setOpenSession(null)}
+              onChange={() => { /* re-fetch on close not necessary; week effect handles changes */ }}
+            />
+          </Suspense>
         )}
       </div>
     </main>

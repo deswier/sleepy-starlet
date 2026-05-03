@@ -26,32 +26,42 @@ export default function SleepDetail({ session, onClose, onChange }: {
   const [interruptions, setInterruptions] = useState<{ start_time: string; end_time: string | null; method_name: string | null }[]>([]);
   const [editing, setEditing] = useState(false);
 
+  // Fetch every related row in a single round-trip via Supabase joins
+  // instead of issuing 4 separate queries. Cancel-ref prevents stale
+  // responses from overwriting state when the user opens a different
+  // session quickly.
   useEffect(() => {
-    (async () => {
-      const tasks: any[] = [];
-      if (session.sleep_place_id)
-        tasks.push(supabase.from("sleep_places").select("name").eq("id", session.sleep_place_id).single().then((r) => setPlace(r.data?.name ? localizePlace(r.data.name) : null)));
-      if (session.settling_method_id)
-        tasks.push(supabase.from("settling_methods").select("name").eq("id", session.settling_method_id).single().then((r) => setMethod(r.data?.name ? localizeMethod(r.data.name) : null)));
-      if (session.created_by_user_id)
-        tasks.push(supabase.from("profiles").select("display_name").eq("id", session.created_by_user_id).single().then((r) => setCreator(r.data?.display_name ?? null)));
-      tasks.push(
-        supabase
-          .from("sleep_interruptions")
-          .select("start_time,end_time,settling_method:settling_methods(name)")
-          .eq("sleep_session_id", session.id)
-          .order("start_time")
-          .then((r) => setInterruptions(
-            (r.data ?? []).map((row: any) => ({
+    let cancelled = false;
+    supabase
+      .from("sleep_sessions")
+      .select(`
+        sleep_place:sleep_places(name),
+        settling_method:settling_methods(name),
+        creator:profiles!sleep_sessions_created_by_user_id_fkey(display_name),
+        interruptions:sleep_interruptions(start_time,end_time,method:settling_methods(name))
+      `)
+      .eq("id", session.id)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        const d = data as any;
+        setPlace(d.sleep_place?.name ? localizePlace(d.sleep_place.name) : null);
+        setMethod(d.settling_method?.name ? localizeMethod(d.settling_method.name) : null);
+        setCreator(d.creator?.display_name ?? null);
+        const intrs = (d.interruptions ?? []) as any[];
+        setInterruptions(
+          intrs
+            .slice()
+            .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+            .map((row) => ({
               start_time: row.start_time,
               end_time: row.end_time,
-              method_name: row.settling_method?.name ? localizeMethod(row.settling_method.name) : null,
+              method_name: row.method?.name ? localizeMethod(row.method.name) : null,
             })),
-          ))
-      );
-      await Promise.all(tasks);
-    })();
-  }, [session]);
+        );
+      });
+    return () => { cancelled = true; };
+  }, [session.id]);
 
   const del = async () => {
     if (!confirm(t("common.confirmDelete"))) return;

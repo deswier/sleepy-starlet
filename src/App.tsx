@@ -21,7 +21,19 @@ const Heatmap   = lazy(() => import("./pages/Heatmap"));
 const Profile   = lazy(() => import("./pages/Profile"));
 const NotFound  = lazy(() => import("./pages/NotFound"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // 30s window where data is considered fresh — re-renders within this
+      // window read from cache instead of refetching. Realtime subscriptions
+      // explicitly invalidate when the underlying data changes.
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 const fallback = <div className="min-h-screen bg-hero" />;
 
 const App = () => (

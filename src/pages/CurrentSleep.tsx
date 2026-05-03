@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDuration, sessionDuration, inferSleepType, SleepSession } from "@/lib/sleep-utils";
-import SleepForm from "@/components/sleep/SleepForm";
 import DateTimeField from "@/components/DateTimeField";
+
+// SleepForm is only used inside dialogs — lazy-load to keep the initial bundle small.
+const SleepForm = lazy(() => import("@/components/sleep/SleepForm"));
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime, formatTime } from "@/lib/sleep-utils";
@@ -80,7 +82,7 @@ export default function CurrentSleep() {
     return () => clearInterval(i);
   }, []);
 
-  // Realtime: any change to this child's sleep sessions or interruptions reloads state.
+  // Realtime: react to changes in this child's sessions.
   useEffect(() => {
     if (!activeChild) return;
     const ch = supabase
@@ -88,12 +90,24 @@ export default function CurrentSleep() {
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
         () => load())
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "sleep_interruptions" },
-        () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [activeChild?.id]);
+
+  // Interruptions realtime is filtered to the *active* session only — without
+  // a filter we'd react to every other child's interruptions too. The channel
+  // is recreated when the active session changes.
+  useEffect(() => {
+    if (!active?.id) return;
+    const ch = supabase
+      .channel(`intr-${active.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_interruptions",
+          filter: `sleep_session_id=eq.${active.id}` },
+        () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [active?.id]);
 
   const startSleep = async () => {
     if (!activeChild || !user) return;
@@ -254,7 +268,9 @@ export default function CurrentSleep() {
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{t("sleep.addSleep")}</DialogTitle></DialogHeader>
-              <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
+              <Suspense fallback={null}>
+                <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
+              </Suspense>
             </DialogContent>
           </Dialog>}
         </Card>
@@ -362,12 +378,14 @@ export default function CurrentSleep() {
             })}</DialogTitle>
           </DialogHeader>
           {confirmWake && (
-            <SleepForm
-              mode="edit"
-              sessionId={confirmWake.id}
-              initial={confirmWake}
-              onDone={() => { setConfirmWake(null); load(); }}
-            />
+            <Suspense fallback={null}>
+              <SleepForm
+                mode="edit"
+                sessionId={confirmWake.id}
+                initial={confirmWake}
+                onDone={() => { setConfirmWake(null); load(); }}
+              />
+            </Suspense>
           )}
         </DialogContent>
       </Dialog>

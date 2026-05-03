@@ -20,6 +20,8 @@ export interface ChildSettings {
   show_interruptions: boolean;
 }
 
+export type ChildRole = "viewer" | "user" | "admin" | null;
+
 interface ChildCtx {
   children: Child[];
   activeChild: Child | null;
@@ -28,6 +30,7 @@ interface ChildCtx {
   refreshSettings: () => void;
   loading: boolean;
   settings: ChildSettings | null;
+  role: ChildRole;
 }
 
 const Ctx = createContext<ChildCtx>({} as ChildCtx);
@@ -48,9 +51,23 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [loadedUserId, setLoadedUserId] = useState<string | null>(null);
   const [settings, setSettings] = useState<ChildSettings | null>(null);
+  const [role, setRole] = useState<ChildRole>(null);
 
   const activeIdRef = useRef(activeId);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  // Role is per (child, user). Single source of truth — pages and components
+  // read it from this context instead of each running their own query.
+  useEffect(() => {
+    if (!user || !activeId) { setRole(null); return; }
+    let cancelled = false;
+    supabase.from("child_user_roles")
+      .select("role")
+      .eq("child_id", activeId).eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled) setRole((data?.role as ChildRole) ?? "user"); });
+    return () => { cancelled = true; };
+  }, [activeId, user?.id]);
 
   // Fetch settings whenever active child changes.
   // activeId is available from localStorage on first render, so this fires immediately —
@@ -132,7 +149,7 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
   const effectiveLoading = loading || (!!user && loadedUserId !== user.id);
 
   return (
-    <Ctx.Provider value={{ children: list, activeChild, setActiveChildId, refresh, refreshSettings, loading: effectiveLoading, settings }}>
+    <Ctx.Provider value={{ children: list, activeChild, setActiveChildId, refresh, refreshSettings, loading: effectiveLoading, settings, role }}>
       {children}
     </Ctx.Provider>
   );
