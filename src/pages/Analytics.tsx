@@ -349,17 +349,50 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ birthDate, night, sessions, loading: loadingWeek }: { birthDate: string | null; night: NightWindow; sessions: SleepSession[]; loading: boolean }) {
+function WeekView({ childId, birthDate, night }: { childId: string; birthDate: string | null; night: NightWindow }) {
   const { t } = useTranslation();
   const now = new Date();
   const today = startOfDay(now);
 
-  // Last 7 fully-completed days: yesterday .. yesterday-6. Today excluded.
+  // weekOffset: 0 = last 7 completed days (yesterday..-6), 1 = the 7 before that, etc.
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loadingWeek, setLoadingWeek] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const days = useMemo(() => {
     const arr: Date[] = [];
-    for (let i = 1; i <= 7; i++) arr.push(subDays(today, i));
+    const base = 1 + weekOffset * 7;
+    for (let i = 0; i < 7; i++) arr.push(subDays(today, base + i));
     return arr.reverse();
-  }, [today.getTime()]);
+  }, [today.getTime(), weekOffset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingWeek(true);
+    const since = subDays(days[0], 2).toISOString();
+    const until = addDays(days[days.length - 1], 2).toISOString();
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", childId)
+          .gte("start_time", since)
+          .lt("start_time", until)
+          .order("start_time");
+        if (cancelled) return;
+        if (error) throw error;
+        setSessions((data ?? []) as SleepSession[]);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("[WeekView] load failed", e);
+          toast.error(t("common.loadFailed"));
+        }
+      } finally {
+        if (!cancelled) setLoadingWeek(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childId, weekOffset]);
 
   const perDay = useMemo(() => {
     // Parse night-window string once instead of once per session per day.
