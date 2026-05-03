@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -358,6 +359,11 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [loadingWeek, setLoadingWeek] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Days the user has manually excluded from the average (by date key yyyy-MM-dd).
+  const [excludedKeys, setExcludedKeys] = useState<Set<string>>(new Set());
+
+  // Reset manual exclusions when navigating to a different week.
+  useEffect(() => { setExcludedKeys(new Set()); }, [weekOffset]);
 
   const days = useMemo(() => {
     const arr: Date[] = [];
@@ -498,9 +504,10 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
     );
   }
 
-  // Only count days that actually have records.
-  const daysWithData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
-  if (daysWithData.length === 0) {
+  // Days that physically have records.
+  const dayHasData = perDay.map((d) => d.totalSleep > 0 || d.napsCount > 0);
+  const anyData = dayHasData.some(Boolean);
+  if (!anyData) {
     return (
       <div className="space-y-3">
         {picker}
@@ -508,6 +515,21 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
       </div>
     );
   }
+
+  const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
+  // Active = has data AND not manually excluded.
+  const activeFlags = perDay.map((d, i) => dayHasData[i] && !excludedKeys.has(dayKey(days[i])));
+  const daysWithData = perDay.filter((_, i) => activeFlags[i]);
+
+  const toggleDay = (i: number) => {
+    if (!dayHasData[i]) return;
+    const key = dayKey(days[i]);
+    setExcludedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
 
@@ -535,17 +557,21 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
 
-  // Compact list of dates that contributed (e.g. "03.05, 04.05, 06.05").
-  const includedLabel = perDay
-    .map((d, i) => ({ d, date: days[i] }))
-    .filter(({ d }) => d.totalSleep > 0 || d.napsCount > 0)
-    .map(({ date }) => format(date, "dd.MM"))
-    .join(", ");
-
   return (
     <div className="space-y-3">
       {picker}
-      <p className="text-xs text-muted-foreground">{t("analytics.daysIncluded", { days: includedLabel })}</p>
+      <DayChips
+        days={days}
+        hasData={dayHasData}
+        active={activeFlags}
+        onToggle={toggleDay}
+        t={t}
+      />
+
+      {daysWithData.length === 0 ? (
+        <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      ) : (
+      <>
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
@@ -588,7 +614,55 @@ function WeekView({ childId, birthDate, night }: { childId: string; birthDate: s
           <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgNapsCount, norm.napsCount)}</p>
         )}
       </Card>
+      </>
+      )}
     </div>
+  );
+}
+
+function DayChips({
+  days, hasData, active, onToggle, t,
+}: {
+  days: Date[]; hasData: boolean[]; active: boolean[];
+  onToggle: (i: number) => void;
+  t: (k: string, o?: any) => string;
+}) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="flex flex-wrap gap-1.5">
+        {days.map((d, i) => {
+          const isActive = active[i];
+          const disabled = !hasData[i];
+          const chip = (
+            <button
+              key={i}
+              type="button"
+              disabled={disabled}
+              onClick={() => onToggle(i)}
+              className={
+                "px-2.5 py-1 rounded-full text-xs font-medium border transition-colors " +
+                (disabled
+                  ? "bg-muted/40 text-muted-foreground/60 border-border/40 cursor-not-allowed line-through"
+                  : isActive
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted")
+              }
+            >
+              {format(d, "dd.MM")}
+            </button>
+          );
+          if (disabled) {
+            return (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild><span>{chip}</span></TooltipTrigger>
+                <TooltipContent>{t("analytics.noDataForDay")}</TooltipContent>
+              </Tooltip>
+            );
+          }
+          return chip;
+        })}
+      </div>
+    </TooltipProvider>
   );
 }
 
