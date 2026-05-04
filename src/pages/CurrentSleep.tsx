@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X, Loader2 } from "lucide-react";
+import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -10,33 +10,53 @@ import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDuration, sessionDuration, inferSleepType, SleepSession } from "@/lib/sleep-utils";
-import SleepForm from "@/components/sleep/SleepForm";
 import DateTimeField from "@/components/DateTimeField";
+
+// SleepForm is only used inside dialogs — lazy-load to keep the initial bundle small.
+const SleepForm = lazy(() => import("@/components/sleep/SleepForm"));
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime, formatTime } from "@/lib/sleep-utils";
 import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
+import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
 
 export default function CurrentSleep() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { activeChild, loading: childLoading } = useChildren();
+  const { activeChild, loading: childLoading, settings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
+  const showInterruptionFlag = settings?.show_interruptions !== false;
+  const showMethodFlag = settings?.show_falling_asleep_method !== false;
   const [active, setActive] = useState<SleepSession | null>(null);
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Stats about completed interruptions in the current sleep session.
+  const [intrStats, setIntrStats] = useState<{ count: number; lastEnd: string | null }>({ count: 0, lastEnd: null });
+  // Two-phase loading: first resolve "is child sleeping?" so we can render the
+  // correctly-colored shell immediately, then load secondary details
+  // (interruption) without blocking the initial paint.
+  const [checkingActive, setCheckingActive] = useState(true);
+  // Optimistic guess for the skeleton color, taken from the last known state
+  // in localStorage (per child). Avoids a neutral flash before the first
+  // network response resolves.
+  const cacheKey = activeChild ? `cs:isSleeping:${activeChild.id}` : null;
+  const [optimisticSleeping, setOptimisticSleeping] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !cacheKey) return false;
+    return window.localStorage.getItem(cacheKey) === "1";
+  });
   const [now, setNow] = useState(new Date());
+  const [starting, setStarting] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState<Date>(new Date());
-  const [showInterruptionFlag, setShowInterruptionFlag] = useState(true);
-  const [showMethodFlag, setShowMethodFlag] = useState(true);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
-  // Wake-up confirmation modal (draft, replaces silent save).
-  const [confirmWake, setConfirmWake] = useState<SleepSession | null>(null);
+  // Wake-up confirmation modal — holds the draft session + pre-built
+  // interruptions list so we never modify the DB before the user confirms.
+  const [confirmWake, setConfirmWake] = useState<{
+    session: SleepSession; interruptions: DraftInterruption[];
+  } | null>(null);
   // Inline edit of active interruption start.
   const [editingIntrStart, setEditingIntrStart] = useState(false);
   const [intrStartDraft, setIntrStartDraft] = useState<Date>(new Date());
@@ -49,18 +69,14 @@ export default function CurrentSleep() {
     if (!childLoading && !activeChild) navigate("/child/new");
   }, [activeChild, childLoading, navigate]);
 
+  useEffect(() => {
+    if (!activeChild) return;
+    supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name")
+      .then(({ data: mList }) => setMethods(mList ?? []));
+  }, [activeChild?.id]);
+
   const load = async () => {
     if (!activeChild) return;
-    setLoading(true);
-    const { data: cs } = await supabase
-      .from("child_settings")
-      .select("show_interruptions,show_falling_asleep_method")
-      .eq("child_id", activeChild.id).single();
-    setShowInterruptionFlag(cs?.show_interruptions !== false);
-    setShowMethodFlag(cs?.show_falling_asleep_method !== false);
-    const { data: mList } = await supabase
-      .from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name");
-    setMethods(mList ?? []);
     const { data } = await supabase
       .from("sleep_sessions").select("*")
       .eq("child_id", activeChild.id)
@@ -68,22 +84,44 @@ export default function CurrentSleep() {
       .order("start_time", { ascending: false })
       .limit(1).maybeSingle();
     setActive(data as SleepSession | null);
+    setCheckingActive(false);
+    // Persist last known state so the skeleton colors correctly next time.
+    if (cacheKey) {
+      try { window.localStorage.setItem(cacheKey, data ? "1" : "0"); } catch {}
+    }
+    setOptimisticSleeping(!!data);
     if (data) {
-      const { data: open } = await supabase
-        .from("sleep_interruptions").select("id,start_time")
-        .eq("sleep_session_id", data.id).is("end_time", null).maybeSingle();
-      setInterruption(open ?? null);
-    } else setInterruption(null);
-    setLoading(false);
+      const { data: allIntrs } = await supabase
+        .from("sleep_interruptions").select("id,start_time,end_time")
+        .eq("sleep_session_id", data.id);
+      const list = allIntrs ?? [];
+      const open = list.find((i: any) => !i.end_time) ?? null;
+      const closed = list.filter((i: any) => i.end_time) as { end_time: string }[];
+      const lastEnd = closed.length
+        ? closed.reduce((a, b) => (new Date(a.end_time) > new Date(b.end_time) ? a : b)).end_time
+        : null;
+      setInterruption(open ? { id: open.id, start_time: open.start_time } : null);
+      setIntrStats({ count: closed.length, lastEnd });
+    } else {
+      setInterruption(null);
+      setIntrStats({ count: 0, lastEnd: null });
+    }
   };
 
-  useEffect(() => { load(); }, [activeChild]);
+  // Re-read cache when child changes (initial state above only runs once).
+  useEffect(() => {
+    if (!cacheKey || typeof window === "undefined") return;
+    setOptimisticSleeping(window.localStorage.getItem(cacheKey) === "1");
+    setCheckingActive(true);
+  }, [cacheKey]);
+
+  useEffect(() => { load(); }, [activeChild?.id]);
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(i);
   }, []);
 
-  // Realtime: any change to this child's sleep sessions or interruptions reloads state.
+  // Realtime: react to changes in this child's sessions.
   useEffect(() => {
     if (!activeChild) return;
     const ch = supabase
@@ -91,48 +129,73 @@ export default function CurrentSleep() {
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
         () => load())
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "sleep_interruptions" },
-        () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [activeChild?.id]);
 
+  // Interruptions realtime is filtered to the *active* session only — without
+  // a filter we'd react to every other child's interruptions too. The channel
+  // is recreated when the active session changes.
+  useEffect(() => {
+    if (!active?.id) return;
+    const ch = supabase
+      .channel(`intr-${active.id}`)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "sleep_interruptions",
+          filter: `sleep_session_id=eq.${active.id}` },
+        () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [active?.id]);
+
   const startSleep = async () => {
-    if (!activeChild || !user) return;
-    const { data: settings } = await supabase
-      .from("child_settings").select("night_start_time,night_end_time").eq("child_id", activeChild.id).single();
-    const startTime = new Date();
-    const type = settings ? inferSleepType(startTime, settings.night_start_time, settings.night_end_time) : "day";
-    // Prevent overlap with any existing record for this child
-    const { data: overlap } = await supabase.rpc("sleep_overlaps", {
-      _child_id: activeChild.id,
-      _start: startTime.toISOString(),
-      _end: new Date(startTime.getTime() + 60_000).toISOString(),
-      _exclude_id: null,
-    });
-    if (overlap === true) { toast.error(t("sleep.overlap")); return; }
-    const { error } = await supabase.from("sleep_sessions").insert({
-      child_id: activeChild.id,
-      start_time: startTime.toISOString(),
-      sleep_type: type,
-      created_by_user_id: user.id,
-    });
-    if (error) toast.error(error.message); else load();
+    if (starting || !activeChild || !user) return;
+    setStarting(true);
+    try {
+      const startTime = new Date();
+      const type = settings ? inferSleepType(startTime, settings.night_start_time, settings.night_end_time) : "day";
+      // Prevent overlap with any existing record for this child
+      const { data: overlap } = await supabase.rpc("sleep_overlaps", {
+        _child_id: activeChild.id,
+        _start: startTime.toISOString(),
+        _end: new Date(startTime.getTime() + 60_000).toISOString(),
+        _exclude_id: null,
+      });
+      if (overlap === true) { toast.error(t("sleep.overlap")); return; }
+      const { error } = await supabase.from("sleep_sessions").insert({
+        child_id: activeChild.id,
+        start_time: startTime.toISOString(),
+        sleep_type: type,
+        created_by_user_id: user.id,
+      });
+      if (error) toast.error(error.message); else load();
+    } finally {
+      setStarting(false);
+    }
   };
 
-  // Wake Up: instead of silently saving, open a confirmation modal where the user
-  // can edit start, end, interruptions, place, settling, and comment.
+  // Wake Up: build the draft entirely in local state — no DB write until
+  // the user confirms. This prevents the previous "write + rollback on cancel"
+  // pattern that could leave the DB inconsistent on browser crash.
   const wakeUp = async () => {
     if (!active) return;
-    const endIso = new Date().toISOString();
-    // Auto-close any open interruption at sleepEndTime (acts as draft persisted in DB so the
-    // edit modal can load it). On cancel we restore it back to "active".
-    if (interruption) {
-      await supabase.from("sleep_interruptions")
-        .update({ end_time: endIso }).eq("id", interruption.id);
-    }
-    setConfirmWake({ ...active, end_time: endIso });
+    const endTime = new Date();
+    const endIso = endTime.toISOString();
+    // Fetch the full interruptions list for the current session so we can
+    // build a complete draft (we need settling_method_id which load() omits).
+    const { data: intrs } = await supabase
+      .from("sleep_interruptions")
+      .select("id,start_time,end_time,settling_method_id")
+      .eq("sleep_session_id", active.id)
+      .order("start_time");
+    const draftIntrs: DraftInterruption[] = (intrs ?? []).map((r: any) => ({
+      id: r.id,
+      start_time: new Date(r.start_time),
+      // Close any open interruption at the wake-up time (draft only).
+      end_time: r.end_time ? new Date(r.end_time) : endTime,
+      settling_method_id: r.settling_method_id,
+    }));
+    setConfirmWake({ session: { ...active, end_time: endIso }, interruptions: draftIntrs });
   };
 
   // FSM transitions for the pause/resume button.
@@ -201,14 +264,9 @@ export default function CurrentSleep() {
     else { setStopIntrDraft(null); load(); }
   };
 
-  // If user cancels wake-up, restore the auto-closed interruption.
-  const cancelWake = async () => {
-    if (interruption?.id) {
-      await supabase.from("sleep_interruptions")
-        .update({ end_time: null }).eq("id", interruption.id);
-    }
+  // Cancel wake-up: just discard the local draft — nothing to roll back.
+  const cancelWake = () => {
     setConfirmWake(null);
-    load();
   };
 
   const beginEditStart = () => {
@@ -235,10 +293,28 @@ export default function CurrentSleep() {
 
   return (
     <section className="px-4 max-w-md mx-auto w-full">
-      {loading ? (
-        <Card className="p-8 text-center shadow-card border-border/50 mt-4 flex items-center justify-center gap-2 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin" />
-        </Card>
+      {checkingActive ? (
+        // Skeleton uses the last-known sleep state from localStorage so the
+        // background color matches what the resolved card will be — avoids
+        // a flash from white → blue (or vice versa) when the query returns.
+        optimisticSleeping ? (
+          <Card className="p-8 text-center bg-night text-primary-foreground shadow-glow border-0 mt-4">
+            <div className="w-20 h-20 rounded-full bg-white/10 animate-pulse mx-auto mb-4" />
+            <div className="h-7 bg-white/10 animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
+            <div className="h-4 bg-white/10 animate-pulse rounded w-1/2 mx-auto mb-4" />
+            <div className="h-12 bg-white/10 animate-pulse rounded-lg w-2/3 mx-auto my-4" />
+            <div className="h-14 bg-white/10 animate-pulse rounded-xl w-full mb-2" />
+            <div className="h-10 bg-white/10 animate-pulse rounded-xl w-full" />
+          </Card>
+        ) : (
+          <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
+            <div className="w-20 h-20 rounded-full bg-primary/10 animate-pulse mx-auto mb-4" />
+            <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
+            <div className="h-4 bg-muted animate-pulse rounded w-1/2 mx-auto mb-6" />
+            <div className="h-14 bg-muted animate-pulse rounded-xl w-full mb-3" />
+            <div className="h-10 bg-muted animate-pulse rounded-xl w-full" />
+          </Card>
+        )
       ) : !active ? (
         <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
           <div className="inline-flex w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-4">
@@ -246,7 +322,7 @@ export default function CurrentSleep() {
           </div>
           <h2 className="font-display text-2xl font-semibold mb-2">{t("sleep.awake", { name: activeChild.name })}</h2>
           <p className="text-muted-foreground text-sm mb-6">{t("sleep.readyWhen")}</p>
-          <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep} disabled={!canStart}>
+          <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep} disabled={!canStart || starting}>
             <Moon className="w-5 h-5 mr-2" /> {t("sleep.startSleep")}
           </Button>
           {canStart && <Dialog open={showManual} onOpenChange={setShowManual}>
@@ -255,7 +331,9 @@ export default function CurrentSleep() {
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{t("sleep.addSleep")}</DialogTitle></DialogHeader>
-              <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
+              <Suspense fallback={null}>
+                <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
+              </Suspense>
             </DialogContent>
           </Dialog>}
         </Card>
@@ -283,6 +361,16 @@ export default function CurrentSleep() {
             </button>
           )}
           <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
+          {intrStats.count > 0 && (
+            <div className="text-sm opacity-80 mb-3">
+              {t("sleep.interruptionsCount", { count: intrStats.count })}
+              {!interruption && intrStats.lastEnd && (
+                <> · {t("sleep.lastWokeAgo", {
+                  duration: formatDuration(Math.max(0, Math.round((now.getTime() - new Date(intrStats.lastEnd).getTime()) / 60000))),
+                })}</>
+              )}
+            </div>
+          )}
           {interruption && (
             <div className="bg-white/10 rounded-xl px-4 py-2 mb-4 text-sm">
               {editingIntrStart ? (
@@ -363,12 +451,15 @@ export default function CurrentSleep() {
             })}</DialogTitle>
           </DialogHeader>
           {confirmWake && (
-            <SleepForm
-              mode="edit"
-              sessionId={confirmWake.id}
-              initial={confirmWake}
-              onDone={() => { setConfirmWake(null); load(); }}
-            />
+            <Suspense fallback={null}>
+              <SleepForm
+                mode="edit"
+                sessionId={confirmWake.session.id}
+                initial={confirmWake.session}
+                initialInterruptions={confirmWake.interruptions}
+                onDone={() => { setConfirmWake(null); load(); }}
+              />
+            </Suspense>
           )}
         </DialogContent>
       </Dialog>

@@ -30,7 +30,7 @@ type Member = {
 export default function Settings() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { activeChild, refresh } = useChildren();
+  const { activeChild, refresh, refreshSettings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
   const isAdmin = canEditChild(role);
@@ -101,38 +101,59 @@ export default function Settings() {
       .eq("child_id", activeChild.id)
       .is("redeemed_at", null).is("revoked_at", null)
       .order("created_at", { ascending: false });
-    const [se, p, m, inv, links, roles, profs] = await Promise.all([
-      supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
-      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-      invitesQuery,
-      supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
-      supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
-      supabase.from("profiles").select("id,display_name"),
-    ]);
-    setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
-    setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
-    const roleMap = new Map((roles.data ?? []).map((r: any) => [r.user_id, r.role]));
-    const profMap = new Map((profs.data ?? []).map((p: any) => [p.id, p.display_name]));
-    setMembers((links.data ?? []).map((l: any) => ({
-      user_id: l.user_id,
-      display_name: profMap.get(l.user_id) ?? null,
-      role: roleMap.get(l.user_id) ?? "user",
-    })));
+    try {
+      const [se, p, m, inv, links, roles, profs] = await Promise.all([
+        supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
+        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
+        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+        invitesQuery,
+        supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
+        supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
+        supabase.from("profiles").select("id,display_name"),
+      ]);
+      setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
+      setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
+      const roleMap = new Map((roles.data ?? []).map((r: any) => [r.user_id, r.role]));
+      const profMap = new Map((profs.data ?? []).map((p: any) => [p.id, p.display_name]));
+      setMembers((links.data ?? []).map((l: any) => ({
+        user_id: l.user_id,
+        display_name: profMap.get(l.user_id) ?? null,
+        role: roleMap.get(l.user_id) ?? "user",
+      })));
+    } catch (e) {
+      console.error("[Settings] load failed", e);
+      toast.error(t("common.loadFailed"));
+    }
   };
   useEffect(() => { load(); }, [activeChild]);
 
   const saveSettings = async () => {
-    if (!activeChild) return;
-    const { error } = await supabase.from("child_settings").update({
+    if (!activeChild || !s) return;
+    // Optimistic lock: include updated_at in WHERE so we detect concurrent
+    // edits by another family member. If 0 rows are affected, the DB row
+    // was updated after we loaded — reload and warn instead of silently
+    // overwriting.
+    const { data, error } = await supabase.from("child_settings").update({
       night_start_time: s.night_start_time,
       night_end_time: s.night_end_time,
       split_night_sleep_by_date: s.split_night_sleep_by_date,
       show_sleep_place: s.show_sleep_place,
       show_falling_asleep_method: s.show_falling_asleep_method,
       show_interruptions: s.show_interruptions,
-    }).eq("child_id", activeChild.id);
-    if (error) toast.error(error.message); else toast.success(t("common.saved"));
+    })
+      .eq("child_id", activeChild.id)
+      .eq("updated_at", s.updated_at)
+      .select("updated_at")
+      .maybeSingle();
+    if (error) { toast.error(error.message); return; }
+    if (!data) {
+      toast.error(t("settings.conflict"));
+      load();
+      return;
+    }
+    setS({ ...s, updated_at: data.updated_at });
+    toast.success(t("common.saved"));
+    refreshSettings();
   };
 
   const saveChild = async () => {
@@ -191,7 +212,19 @@ export default function Settings() {
     else { toast.success(t("common.deleted")); await refresh(); navigate("/"); }
   };
 
-  if (!activeChild || !s) return null;
+  if (!activeChild || !s) return (
+    <main className="min-h-screen bg-hero p-4">
+      <div className="max-w-md mx-auto py-4">
+        <div className="h-8 w-24 bg-muted animate-pulse rounded-lg mb-4" />
+        <div className="h-10 w-40 bg-muted animate-pulse rounded-lg mb-6" />
+        {[120, 180, 96, 140, 96].map((h, i) => (
+          <div key={i} className="bg-card rounded-xl shadow-card mb-4" style={{ height: h }}>
+            <div className="h-full bg-muted/50 animate-pulse rounded-xl" />
+          </div>
+        ))}
+      </div>
+    </main>
+  );
 
   // Viewers cannot edit any settings — show a read-only minimal screen.
   if (isViewer) {

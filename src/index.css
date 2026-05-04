@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
-
 @layer base {
   :root {
     /* Soft warm cream */
@@ -26,11 +24,11 @@
     --secondary: 140 28% 88%;
     --secondary-foreground: 150 30% 25%;
 
-    --muted: 36 30% 93%;
+    --muted: 258 30% 95%;
     --muted-foreground: 260 12% 45%;
 
-    --accent: 28 60% 88%;
-    --accent-foreground: 24 50% 28%;
+    --accent: 258 42% 95%;
+    --accent-foreground: 258 25% 28%;
 
     --destructive: 0 70% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -57,7 +55,7 @@
     --shadow-card: 0 2px 12px -4px hsl(258 30% 40% / 0.08);
     --shadow-glow: 0 8px 32px -8px hsl(258 60% 70% / 0.4);
 
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -78,6 +76,11 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, a, [role="button"] {
+    touch-action: manipulation;
   }
   h1, h2, h3, .font-display {
     font-family: 'Fraunces', Georgia, serif;

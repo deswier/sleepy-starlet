@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
@@ -11,7 +11,9 @@ import { startOfDay, addDays, subDays, format, startOfWeek } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
 import { iconForMethod } from "@/lib/method-icons";
-import SleepDetail from "@/components/sleep/SleepDetail";
+import { toast } from "sonner";
+
+const SleepDetail = lazy(() => import("@/components/sleep/SleepDetail"));
 
 const HOURS = 24;
 const ROW_PX = 22; // height per hour
@@ -29,11 +31,22 @@ export default function Heatmap() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { activeChild } = useChildren();
+  const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [interruptions, setInterruptions] = useState<InterruptionLite[]>([]);
+  const [loading, setLoading] = useState(true);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
-  // Anchor = a date inside the displayed week.
-  const [anchor, setAnchor] = useState<Date>(startOfDay(new Date()));
+  // Anchor = a date inside the displayed week. Initialize from ?anchor= so
+  // callers (Analytics → "Open diagram") can land on the same week the user
+  // was viewing.
+  const [anchor, setAnchor] = useState<Date>(() => {
+    const a = searchParams.get("anchor");
+    if (a) {
+      const d = startOfDay(new Date(a));
+      if (!isNaN(d.getTime())) return d;
+    }
+    return startOfDay(new Date());
+  });
 
   const locale = i18n.language?.startsWith("ru") ? ru : enUS;
   // Week starts Monday for ru, Sunday for en — match user expectation.
@@ -47,36 +60,36 @@ export default function Heatmap() {
 
   useEffect(() => {
     if (!activeChild) return;
-    (async () => {
-      const since = subDays(weekStart, 2).toISOString();
-      const until = addDays(weekStart, 9).toISOString();
-      const { data } = await supabase
-        .from("sleep_sessions").select("*")
+    setLoading(true);
+    const since = subDays(weekStart, 2).toISOString();
+    const until = addDays(weekStart, 9).toISOString();
+    Promise.all([
+      supabase.from("sleep_sessions").select("*")
         .eq("child_id", activeChild.id)
         .gte("start_time", since)
         .lt("start_time", until)
-        .order("start_time");
-      const sess = (data ?? []) as SleepSession[];
-      setSessions(sess);
-      // Load interruptions only for the visible sleep sessions, joined with method name.
-      if (sess.length > 0) {
-        const ids = sess.map((s) => s.id);
-        const { data: ints } = await supabase
-          .from("sleep_interruptions")
-          .select("id, sleep_session_id, start_time, settling_method_id, settling_methods(name)")
-          .in("sleep_session_id", ids);
-        setInterruptions(((ints ?? []) as any[]).map((r) => ({
+        .order("start_time"),
+      supabase.from("sleep_interruptions")
+        .select("id, sleep_session_id, start_time, settling_method_id, settling_methods(name)")
+        .gte("start_time", since)
+        .lt("start_time", until),
+    ])
+      .then(([{ data: sessData }, { data: intData }]) => {
+        setSessions((sessData ?? []) as SleepSession[]);
+        setInterruptions(((intData ?? []) as any[]).map((r) => ({
           id: r.id,
           sleep_session_id: r.sleep_session_id,
           start_time: r.start_time,
           settling_method_id: r.settling_method_id,
           settling_method_name: r.settling_methods?.name ?? null,
         })));
-      } else {
-        setInterruptions([]);
-      }
-    })();
-  }, [activeChild, weekStart.getTime()]);
+      })
+      .catch((e) => {
+        console.error("[Heatmap] load failed", e);
+        toast.error(t("common.loadFailed"));
+      })
+      .finally(() => setLoading(false));
+  }, [activeChild?.id, weekStart.getTime()]);
 
   // For each visible day, compute the sleep blocks clipped to that calendar day.
   // A sleep that crosses midnight is split between adjacent days.
@@ -176,6 +189,18 @@ export default function Heatmap() {
         </div>
 
         <Card className="p-3 shadow-card">
+          {loading && (
+            <div className="flex pl-10 gap-1" style={{ height: GRID_HEIGHT + 32 }}>
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="flex-1 flex flex-col gap-1 pt-6">
+                  <div className="h-3 bg-muted animate-pulse rounded mb-2" />
+                  <div className="flex-1 bg-muted/60 animate-pulse rounded-md" />
+                </div>
+              ))}
+            </div>
+          )}
+          {!loading && (
+          <>
           {/* Day-of-week / date headers */}
           <div className="flex pl-10 mb-1">
             {days.map((d, i) => {
@@ -263,13 +288,17 @@ export default function Heatmap() {
               </div>
             </div>
           </div>
+          </>
+          )}
         </Card>
         {openSession && (
-          <SleepDetail
-            session={openSession}
-            onClose={() => setOpenSession(null)}
-            onChange={() => { /* re-fetch on close not necessary; week effect handles changes */ }}
-          />
+          <Suspense fallback={null}>
+            <SleepDetail
+              session={openSession}
+              onClose={() => setOpenSession(null)}
+              onChange={() => { /* re-fetch on close not necessary; week effect handles changes */ }}
+            />
+          </Suspense>
         )}
       </div>
     </main>

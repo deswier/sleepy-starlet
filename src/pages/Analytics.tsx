@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   formatDuration, sessionDuration, SleepSession,
   ageInMonthsAt, wakeWindowForAge,
@@ -35,96 +38,62 @@ export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT):
   const { h: nsH, m: nsM } = parseHM(night.start);
   const startMin = start.getHours() * 60 + start.getMinutes();
   const nsMin = nsH * 60 + nsM;
-  // If session started in the evening (>= night start, before midnight) and
-  // it actually ends past midnight (or is still ongoing), bucket to end day.
+  // Evening night sleep (started after night_start, before midnight):
+  // - ongoing → pre-attribute to next day (it will end there)
+  // - completed and crossed midnight → attribute to end day
   if (startMin >= nsMin && startMin >= 12 * 60) {
-    const end = s.end_time ? new Date(s.end_time) : new Date();
+    if (!s.end_time) return startOfDay(addDays(start, 1));
+    const end = new Date(s.end_time);
     if (!isSameDay(start, end)) return startOfDay(end);
   }
   return startOfDay(start);
 }
 
-// Minutes a sleep session contributes to its bucketed day (full duration).
-function sleepMinutesOnDay(
-  s: SleepSession,
-  day: Date,
-  now: Date,
-  night: NightWindow = DEFAULT_NIGHT,
-): number {
-  if (!isSameDay(sessionDay(s, night), day)) return 0;
-  const start = new Date(s.start_time);
-  const end = s.end_time ? new Date(s.end_time) : now;
-  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-}
-
-// Minutes of any sleep session that overlap the [day 00:00, dayEnd] window.
-// Used for "total wake" so we never subtract more sleep than what physically
-// elapsed since 00:00 of the chosen day.
-function sleepMinutesIntersectingDay(
-  sessions: SleepSession[],
-  day: Date,
-  dayEnd: Date,
-): number {
-  const dayStart = startOfDay(day).getTime();
-  const dayEndMs = dayEnd.getTime();
-  let total = 0;
-  for (const s of sessions) {
-    const start = new Date(s.start_time).getTime();
-    const end = s.end_time ? new Date(s.end_time).getTime() : dayEndMs;
-    const ovStart = Math.max(start, dayStart);
-    const ovEnd = Math.min(end, dayEndMs);
-    if (ovEnd > ovStart) total += Math.round((ovEnd - ovStart) / 60000);
-  }
-  return total;
-}
-
-// Continuous night-sleep duration for a date: longest night session that
-// belongs to this date (per sessionDay rules above).
-function nightSleepForDate(
-  sessions: SleepSession[],
-  day: Date,
-  night: NightWindow = DEFAULT_NIGHT,
-): number {
-  let best = 0;
-  for (const s of sessions) {
-    if (s.sleep_type !== "night" || !s.end_time) continue;
-    if (!isSameDay(sessionDay(s, night), day)) continue;
-    const ss = new Date(s.start_time).getTime();
-    const ee = new Date(s.end_time).getTime();
-    best = Math.max(best, Math.round((ee - ss) / 60000));
-  }
-  return best;
-}
 
 export default function Analytics() {
   const navigate = useNavigate();
-  const { activeChild } = useChildren();
+  const { activeChild, settings } = useChildren();
   const { t } = useTranslation();
-  const [sessions, setSessions] = useState<SleepSession[]>([]);
-  const [night, setNight] = useState<NightWindow>(DEFAULT_NIGHT);
+  const night: NightWindow = {
+    start: settings?.night_start_time?.slice(0, 5) ?? DEFAULT_NIGHT.start,
+    end: settings?.night_end_time?.slice(0, 5) ?? DEFAULT_NIGHT.end,
+  };
+  const splitByDate = !!settings?.split_night_sleep_by_date;
   const [loading, setLoading] = useState(true);
+  const [initialDaySessions, setInitialDaySessions] = useState<SleepSession[]>([]);
+  const [tab, setTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "day";
+    const v = localStorage.getItem("analytics.tab");
+    return v === "week" || v === "day" ? v : "day";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("analytics.tab", tab); } catch {}
+  }, [tab]);
 
   useEffect(() => {
     if (!activeChild) return;
     setLoading(true);
+
+    const today = startOfDay(new Date());
+
+    // Today's sessions — spinner only until this finishes.
     (async () => {
-      const since = subDays(new Date(), 60).toISOString();
-      const [{ data }, { data: cs }] = await Promise.all([
-        supabase.from("sleep_sessions").select("*")
-          .eq("child_id", activeChild.id).gte("start_time", since)
-          .order("start_time"),
-        supabase.from("child_settings")
-          .select("night_start_time,night_end_time")
-          .eq("child_id", activeChild.id).single(),
-      ]);
-      setSessions((data ?? []) as SleepSession[]);
-      if (cs) setNight({
-        start: (cs.night_start_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.start,
-        end: (cs.night_end_time as string)?.slice(0, 5) ?? DEFAULT_NIGHT.end,
-      });
-      setLoading(false);
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", activeChild.id)
+          .gte("start_time", subDays(today, 1).toISOString())
+          .lt("start_time", addDays(today, 1).toISOString())
+          .order("start_time");
+        if (error) throw error;
+        setInitialDaySessions((data ?? []) as SleepSession[]);
+      } catch (e) {
+        console.error("[Analytics] day load failed", e);
+        toast.error(t("common.loadFailed"));
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [activeChild]);
+  }, [activeChild?.id]);
 
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
@@ -134,22 +103,19 @@ export default function Analytics() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("analytics.title")}</h2>
-        <Button variant="ghost" size="sm" onClick={() => navigate("/heatmap")}>
-          <Grid3x3 className="w-4 h-4 mr-1" /> {t("analytics.openHeatmap")}
-        </Button>
       </div>
       {loading ? (
         <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
         </Card>
       ) : (
-      <Tabs defaultValue="day">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="grid grid-cols-2 w-full mb-4">
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView sessions={sessions} birthDate={activeChild.birth_date} night={night} /></TabsContent>
-        <TabsContent value="week"><WeekView sessions={sessions} birthDate={activeChild.birth_date} night={night} /></TabsContent>
+        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} initialSessions={initialDaySessions} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
       </Tabs>
       )}
     </section>
@@ -157,9 +123,60 @@ export default function Analytics() {
 }
 
 // ---------- DAY ----------
-function DayView({ sessions, birthDate, night }: { sessions: SleepSession[]; birthDate: string | null; night: NightWindow }) {
+function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean; initialSessions: SleepSession[] }) {
   const { t } = useTranslation();
-  const [day, setDay] = useState<Date>(startOfDay(new Date()));
+  const navigate = useNavigate();
+  const dayKey = `analytics.day.${childId}`;
+  const [day, setDay] = useState<Date>(() => {
+    try {
+      const v = localStorage.getItem(dayKey);
+      if (v) {
+        const d = startOfDay(new Date(v));
+        const today = startOfDay(new Date());
+        if (!isNaN(d.getTime()) && d.getTime() <= today.getTime()) return d;
+      }
+    } catch {}
+    return startOfDay(new Date());
+  });
+  useEffect(() => {
+    try { localStorage.setItem(dayKey, format(day, "yyyy-MM-dd")); } catch {}
+  }, [day, dayKey]);
+  const today = startOfDay(new Date());
+  const isTodaySelected = isSameDay(day, today);
+  // Only reuse the preloaded "today" sessions when the persisted day IS today.
+  const [sessions, setSessions] = useState<SleepSession[]>(
+    isTodaySelected ? initialSessions : []
+  );
+  const [loadingDay, setLoadingDay] = useState(!isTodaySelected);
+  const isInitialRender = useRef(true);
+
+  useEffect(() => {
+    // Skip the first effect ONLY if the initial day is today (sessions already preloaded).
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      if (isSameDay(day, startOfDay(new Date()))) return;
+    }
+    let cancelled = false;
+    setLoadingDay(true);
+    const since = subDays(startOfDay(day), 1).toISOString();
+    const until = addDays(startOfDay(day), 1).toISOString();
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", childId)
+          .gte("start_time", since)
+          .lt("start_time", until)
+          .order("start_time");
+        if (cancelled) return;
+        if (error) { console.error("[DayView] load failed", error); return; }
+        setSessions((data ?? []) as SleepSession[]);
+      } finally {
+        if (!cancelled) setLoadingDay(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childId, day]);
+
   const now = new Date();
   const isCurrentDay = isSameDay(day, startOfDay(now));
   // For today, only count time that has already elapsed (cap at "now").
@@ -168,54 +185,125 @@ function DayView({ sessions, birthDate, night }: { sessions: SleepSession[]; bir
     ? Math.max(0, Math.round((now.getTime() - startOfDay(day).getTime()) / 60000))
     : 24 * 60;
 
-  // Sleeps whose start_time is on the chosen day (used for nap counts and WW).
+  // Sleeps attributed to the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
-    () => sessions.filter((s) => isSameDay(sessionDay(s, night), day)).sort(
-      (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-    ),
-    [sessions, day, night]
+    () => sessions.filter((s) => {
+      const bucket = splitByDate ? startOfDay(new Date(s.start_time)) : sessionDay(s, night);
+      return isSameDay(bucket, day);
+    }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()),
+    [sessions, day, night, splitByDate]
   );
 
-  const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, day, now, night), 0);
-  const dayEnd = isCurrentDay ? now : addDays(startOfDay(day), 1);
-  const sleepWithinDay = sleepMinutesIntersectingDay(sessions, day, dayEnd);
-  const totalWake = Math.max(0, dayElapsedMin - sleepWithinDay);
-  const nightSleep = nightSleepForDate(sessions, day, night);
+  const { totalSleep, nightSleep, totalSleepInWindow } = useMemo(() => {
+    const nowMs = now.getTime();
+    const dayMs = startOfDay(day).getTime();
+    const dayStartMs = dayMs;
+    const dayEndMs = isCurrentDay ? nowMs : dayStartMs + 24 * 60 * 60 * 1000;
 
-  const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
-  const napDurations = naps.map((s) => sessionDuration(s, now));
-  const napsCount = naps.length;
-  const avgNap = napsCount ? Math.round(napDurations.reduce((a, b) => a + b, 0) / napsCount) : 0;
-  const minNap = napsCount ? Math.min(...napDurations) : 0;
-  const maxNap = napsCount ? Math.max(...napDurations) : 0;
+    let totalSleep = 0;
+    let nightSleep = 0;
+    // Sleep clipped to [dayStart, dayEnd] — used for wake-time only.
+    // In splitByDate mode this equals totalSleep; in night-window mode a night
+    // session may start before midnight so its full duration overstates the
+    // sleep that actually fell within the calendar day.
+    let totalSleepInWindow = 0;
 
-  // Wake windows between consecutive sleeps that started today.
-  const wws: number[] = [];
-  for (let i = 1; i < startedToday.length; i++) {
-    const prev = startedToday[i - 1];
-    if (!prev.end_time) continue;
-    const d = differenceInMinutes(new Date(startedToday[i].start_time), new Date(prev.end_time));
-    if (d >= 0 && d < 12 * 60) wws.push(d);
-  }
-  // Today only: include the in-progress wake window (since the last
-  // completed sleep ended) up to "now". Future WW time is never counted.
-  if (isCurrentDay && startedToday.length > 0) {
-    const last = startedToday[startedToday.length - 1];
-    if (last.end_time) {
-      const elapsed = differenceInMinutes(now, new Date(last.end_time));
-      if (elapsed > 0 && elapsed < 12 * 60) wws.push(elapsed);
+    for (const s of sessions) {
+      const startMs = new Date(s.start_time).getTime();
+      const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
+
+      if (splitByDate) {
+        // Physical overlap with calendar day boundary.
+        const ovStart = Math.max(startMs, dayStartMs);
+        const ovEnd = Math.min(endMs, dayEndMs);
+        if (ovEnd > ovStart) {
+          const mins = Math.round((ovEnd - ovStart) / 60000);
+          totalSleep += mins;
+          totalSleepInWindow += mins;
+        }
+        if (s.sleep_type === "night" && s.end_time && startOfDay(new Date(startMs)).getTime() === dayMs)
+          nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
+      } else {
+        // Full duration of sessions attributed to this day by the night window.
+        if (sessionDay(s, night).getTime() !== dayMs) continue;
+        const fullMins = Math.round((endMs - startMs) / 60000);
+        totalSleep += fullMins;
+        if (s.sleep_type === "night" && s.end_time)
+          nightSleep = Math.max(nightSleep, fullMins);
+        // Clip to calendar day for accurate wake-time accounting.
+        const ovStart = Math.max(startMs, dayStartMs);
+        const ovEnd = Math.min(endMs, dayEndMs);
+        if (ovEnd > ovStart) totalSleepInWindow += Math.round((ovEnd - ovStart) / 60000);
+      }
     }
-  }
-  const avgWW = wws.length ? Math.round(wws.reduce((a, b) => a + b, 0) / wws.length) : 0;
-  const minWW = wws.length ? Math.min(...wws) : 0;
-  const maxWW = wws.length ? Math.max(...wws) : 0;
+
+    return { totalSleep, nightSleep, totalSleepInWindow };
+  }, [sessions, day, night, splitByDate, isCurrentDay]);
+
+  const totalWake = Math.max(0, dayElapsedMin - totalSleepInWindow);
+
+  const { napsCount, avgNap, minNap, maxNap } = useMemo(() => {
+    const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
+    const durations = naps.map((s) => sessionDuration(s, now));
+    const count = naps.length;
+    return {
+      napsCount: count,
+      avgNap: count ? Math.round(durations.reduce((a, b) => a + b, 0) / count) : 0,
+      minNap: count ? Math.min(...durations) : 0,
+      maxNap: count ? Math.max(...durations) : 0,
+    };
+  }, [startedToday]);
+
+  const { wws, avgWW, minWW, maxWW } = useMemo(() => {
+    const windows: number[] = [];
+    for (let i = 1; i < startedToday.length; i++) {
+      const prev = startedToday[i - 1];
+      if (!prev.end_time) continue;
+      const d = Math.round(
+        (new Date(startedToday[i].start_time).getTime() - new Date(prev.end_time).getTime()) / 60000
+      );
+      if (d >= 0 && d < 12 * 60) windows.push(d);
+    }
+    // Today only: include the last wake window, capped at the night sleep start if it has
+    // already begun (sessionDay puts it on tomorrow so it's absent from startedToday).
+    if (isCurrentDay && startedToday.length > 0) {
+      const last = startedToday[startedToday.length - 1];
+      if (last.end_time) {
+        const nightStub = sessions.find(
+          (s) => s.sleep_type === "night" && !s.end_time &&
+            isSameDay(startOfDay(new Date(s.start_time)), day) &&
+            !isSameDay(sessionDay(s, night), day)
+        );
+        const endpoint = nightStub ? new Date(nightStub.start_time).getTime() : now.getTime();
+        const elapsed = Math.round((endpoint - new Date(last.end_time).getTime()) / 60000);
+        if (elapsed > 0 && elapsed < 12 * 60) windows.push(elapsed);
+      }
+    }
+    return {
+      wws: windows,
+      avgWW: windows.length ? Math.round(windows.reduce((a, b) => a + b, 0) / windows.length) : 0,
+      minWW: windows.length ? Math.min(...windows) : 0,
+      maxWW: windows.length ? Math.max(...windows) : 0,
+    };
+  }, [startedToday, isCurrentDay, sessions, night, day]);
 
   const norm = ageNorm(birthDate, day);
+
+  if (loadingDay) {
+    return (
+      <>
+       <DayPicker day={day} setDay={setDay} />
+        <Card className="p-8 text-center text-muted-foreground shadow-card flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+        </Card>
+      </>
+    );
+  }
 
   if (totalSleep === 0 && napsCount === 0) {
     return (
       <>
-        <DayPicker day={day} setDay={setDay} />
+       <DayPicker day={day} setDay={setDay} />
         <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
       </>
     );
@@ -288,60 +376,245 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ sessions, birthDate, night }: { sessions: SleepSession[]; birthDate: string | null; night: NightWindow }) {
+function WeekView({ childId, birthDate, night, splitByDate }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const now = new Date();
   const today = startOfDay(now);
 
-  // Last 7 fully-completed days: yesterday .. yesterday-6. Today excluded.
+  // weekOffset: 0 = last 7 completed days (yesterday..-6), 1 = the 7 before that, etc.
+  const offsetKey = `analytics.weekOffset.${childId}`;
+  const excludedKey = `analytics.weekExcluded.${childId}`;
+  const [weekOffset, setWeekOffset] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem(offsetKey);
+      const n = v ? parseInt(v, 10) : 0;
+      return Number.isFinite(n) && n >= 0 && n < 52 ? n : 0;
+    } catch { return 0; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(offsetKey, String(weekOffset)); } catch {}
+  }, [weekOffset, offsetKey]);
+  const [sessions, setSessions] = useState<SleepSession[]>([]);
+  const [loadingWeek, setLoadingWeek] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Days the user has manually excluded from the average (by date key yyyy-MM-dd).
+  const [excludedMap, setExcludedMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const v = localStorage.getItem(excludedKey);
+      return v ? JSON.parse(v) : {};
+    } catch { return {}; }
+  });
+  const weekKey = String(weekOffset);
+  const excludedKeys = useMemo(
+    () => new Set(excludedMap[weekKey] ?? []),
+    [excludedMap, weekKey]
+  );
+  const setExcludedKeys = (updater: (prev: Set<string>) => Set<string>) => {
+    setExcludedMap((prev) => {
+      const next = { ...prev };
+      const set = updater(new Set(next[weekKey] ?? []));
+      if (set.size === 0) delete next[weekKey];
+      else next[weekKey] = Array.from(set);
+      try { localStorage.setItem(excludedKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const days = useMemo(() => {
     const arr: Date[] = [];
-    for (let i = 1; i <= 7; i++) arr.push(subDays(today, i));
+    const base = 1 + weekOffset * 7;
+    for (let i = 0; i < 7; i++) arr.push(subDays(today, base + i));
     return arr.reverse();
-  }, [today.getTime()]);
+  }, [today.getTime(), weekOffset]);
 
-  const perDay = days.map((d) => {
-    const startedThat = sessions.filter((s) => isSameDay(sessionDay(s, night), d) && s.end_time)
-      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-    const totalSleep = sessions.reduce((a, s) => a + sleepMinutesOnDay(s, d, now, night), 0);
-    const totalWake = Math.max(0, 24 * 60 - totalSleep);
-    const nightSleep = nightSleepForDate(sessions, d, night);
-    const naps = startedThat.filter((s) => s.sleep_type === "day");
-    const napDurations = naps.map((s) => sessionDuration(s, now));
-    const wws: number[] = [];
-    for (let i = 1; i < startedThat.length; i++) {
-      const prev = startedThat[i - 1];
-      if (!prev.end_time) continue;
-      const diff = differenceInMinutes(new Date(startedThat[i].start_time), new Date(prev.end_time));
-      if (diff >= 0 && diff < 12 * 60) wws.push(diff);
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingWeek(true);
+    const since = subDays(days[0], 2).toISOString();
+    const until = addDays(days[days.length - 1], 2).toISOString();
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", childId)
+          .gte("start_time", since)
+          .lt("start_time", until)
+          .order("start_time");
+        if (cancelled) return;
+        if (error) throw error;
+        setSessions((data ?? []) as SleepSession[]);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("[WeekView] load failed", e);
+          toast.error(t("common.loadFailed"));
+        }
+      } finally {
+        if (!cancelled) setLoadingWeek(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childId, weekOffset]);
+
+  const perDay = useMemo(() => {
+    // Parse night-window string once instead of once per session per day.
+    const { h: nsH, m: nsM } = parseHM(night.start);
+    const nsMin = nsH * 60 + nsM;
+    const nowMs = now.getTime();
+
+    // Single pre-computation pass: resolve timestamps + bucketed day for every session.
+    const ext = sessions.map((s) => {
+      const startMs = new Date(s.start_time).getTime();
+      const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
+      let dayMs: number;
+      if (s.sleep_type !== "night" || splitByDate) {
+        dayMs = startOfDay(new Date(startMs)).getTime();
+      } else {
+        const start = new Date(startMs);
+        const startMin = start.getHours() * 60 + start.getMinutes();
+        if (startMin >= nsMin && startMin >= 12 * 60) {
+          if (!s.end_time) {
+            dayMs = startOfDay(start).getTime() + 24 * 60 * 60 * 1000;
+          } else {
+            const startDay = startOfDay(start).getTime();
+            const endDay = startOfDay(new Date(endMs)).getTime();
+            dayMs = endDay !== startDay ? endDay : startDay;
+          }
+        } else {
+          dayMs = startOfDay(new Date(startMs)).getTime();
+        }
+      }
+      return { s, startMs, endMs, dayMs };
+    });
+
+    // Group by day for O(1) per-day lookup instead of O(n) filter per day.
+    const byDay = new Map<number, typeof ext>();
+    for (const e of ext) {
+      const bucket = byDay.get(e.dayMs);
+      if (bucket) bucket.push(e);
+      else byDay.set(e.dayMs, [e]);
     }
-    return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
-  });
 
-  const withData = perDay.filter((d) => d.totalSleep > 0 || d.napsCount > 0);
-  if (withData.length === 0) {
+    return days.map((d) => {
+      const dMs = d.getTime();
+      const forDay = byDay.get(dMs) ?? [];
+      const completed = forDay.filter((e) => e.s.end_time)
+        .sort((a, b) => a.startMs - b.startMs);
+
+      const dayStartMs = dMs;
+      const dayEndMs = dMs + 24 * 60 * 60 * 1000;
+      let totalSleep = 0;
+      if (splitByDate) {
+        for (const e of ext) {
+          const ovStart = Math.max(e.startMs, dayStartMs);
+          const ovEnd = Math.min(e.endMs, dayEndMs);
+          if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
+        }
+      } else {
+        // Full duration of sessions attributed to this day by the night window.
+        for (const e of forDay) totalSleep += Math.round((e.endMs - e.startMs) / 60000);
+      }
+      const totalWake = Math.max(0, 24 * 60 - totalSleep);
+
+      let nightSleep = 0;
+      for (const e of forDay) {
+        if (e.s.sleep_type === "night" && e.s.end_time) {
+          nightSleep = Math.max(nightSleep, Math.round((e.endMs - e.startMs) / 60000));
+        }
+      }
+
+      const naps = completed.filter((e) => e.s.sleep_type === "day");
+      const napDurations = naps.map((e) => Math.round((e.endMs - e.startMs) / 60000));
+
+      const wws: number[] = [];
+      for (let i = 1; i < completed.length; i++) {
+        const diff = Math.round((completed[i].startMs - completed[i - 1].endMs) / 60000);
+        if (diff >= 0 && diff < 12 * 60) wws.push(diff);
+      }
+
+      return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
+    });
+  }, [sessions, days, night, splitByDate]);
+
+  const openHeatmap = () => {
+    // Heatmap uses startOfWeek(anchor); pass any day from the displayed range
+    // and let it snap to the locale-defined week. The user wants ALL data for
+    // the visible week regardless of which day chips are deselected.
+    navigate(`/heatmap?anchor=${format(days[Math.floor(days.length / 2)], "yyyy-MM-dd")}`);
+  };
+
+  const picker = (
+    <WeekPicker
+      days={days}
+      offset={weekOffset}
+      setOffset={setWeekOffset}
+      open={pickerOpen}
+      setOpen={setPickerOpen}
+      t={t}
+      onOpenHeatmap={openHeatmap}
+    />
+  );
+
+  if (loadingWeek) {
     return (
-      <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      <div className="space-y-3">
+        {picker}
+        <Card className="p-5 shadow-card border-border/50 space-y-3">
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-16 bg-muted animate-pulse rounded-xl" />
+          <div className="h-24 bg-muted animate-pulse rounded-xl" />
+          <div className="h-24 bg-muted animate-pulse rounded-xl" />
+        </Card>
+      </div>
     );
   }
 
+  // Days that physically have records.
+  const dayHasData = perDay.map((d) => d.totalSleep > 0 || d.napsCount > 0);
+  const anyData = dayHasData.some(Boolean);
+  if (!anyData) {
+    return (
+      <div className="space-y-3">
+        {picker}
+        <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      </div>
+    );
+  }
+
+  const dayKey = (d: Date) => format(d, "yyyy-MM-dd");
+  // Active = has data AND not manually excluded.
+  const activeFlags = perDay.map((d, i) => dayHasData[i] && !excludedKeys.has(dayKey(days[i])));
+  const daysWithData = perDay.filter((_, i) => activeFlags[i]);
+
+  const toggleDay = (i: number) => {
+    if (!dayHasData[i]) return;
+    const key = dayKey(days[i]);
+    setExcludedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
   const avg = (arr: number[]) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
 
-  const avgTotalSleep = avg(perDay.map((d) => d.totalSleep));
-  const avgTotalWake = avg(perDay.map((d) => d.totalWake));
-  const avgNightSleep = avg(perDay.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
+  const avgTotalSleep = avg(daysWithData.map((d) => d.totalSleep));
+  const avgTotalWake = avg(daysWithData.map((d) => d.totalWake));
+  const avgNightSleep = avg(daysWithData.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
 
-  const allWWs = perDay.flatMap((d) => d.wws);
+  const allWWs = daysWithData.flatMap((d) => d.wws);
   const avgWW = avg(allWWs);
   const minWW = allWWs.length ? Math.min(...allWWs) : 0;
   const maxWW = allWWs.length ? Math.max(...allWWs) : 0;
 
-  const napCounts = perDay.map((d) => d.napsCount);
-  const avgNapsCount = Math.round((napCounts.reduce((a, b) => a + b, 0) / napCounts.length) * 10) / 10;
-  const minNapsCount = Math.min(...napCounts);
-  const maxNapsCount = Math.max(...napCounts);
+  const napCounts = daysWithData.map((d) => d.napsCount);
+  const avgNapsCount = napCounts.length
+    ? Math.round((napCounts.reduce((a, b) => a + b, 0) / napCounts.length) * 10) / 10
+    : 0;
+  const minNapsCount = napCounts.length ? Math.min(...napCounts) : 0;
+  const maxNapsCount = napCounts.length ? Math.max(...napCounts) : 0;
 
-  const allNapDur = perDay.flatMap((d) => d.napDurations);
+  const allNapDur = daysWithData.flatMap((d) => d.napDurations);
   const avgNap = avg(allNapDur);
   const minNap = allNapDur.length ? Math.min(...allNapDur) : 0;
   const maxNap = allNapDur.length ? Math.max(...allNapDur) : 0;
@@ -351,7 +624,19 @@ function WeekView({ sessions, birthDate, night }: { sessions: SleepSession[]; bi
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">{t("analytics.weekIgnoresToday")}</p>
+      {picker}
+      <DayChips
+        days={days}
+        hasData={dayHasData}
+        active={activeFlags}
+        onToggle={toggleDay}
+        t={t}
+      />
+
+      {daysWithData.length === 0 ? (
+        <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
+      ) : (
+      <>
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
@@ -394,11 +679,117 @@ function WeekView({ sessions, birthDate, night }: { sessions: SleepSession[]; bi
           <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgNapsCount, norm.napsCount)}</p>
         )}
       </Card>
+      </>
+      )}
     </div>
   );
 }
 
+function DayChips({
+  days, hasData, active, onToggle, t,
+}: {
+  days: Date[]; hasData: boolean[]; active: boolean[];
+  onToggle: (i: number) => void;
+  t: (k: string, o?: any) => string;
+}) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="flex flex-nowrap gap-1 w-full">
+        {days.map((d, i) => {
+          const isActive = active[i];
+          const disabled = !hasData[i];
+          const chip = (
+            <button
+              key={i}
+              type="button"
+              disabled={disabled}
+              onClick={() => onToggle(i)}
+              className={
+                "flex-1 min-w-0 px-1 py-1 rounded-full text-[11px] leading-tight font-medium border transition-colors text-center tabular-nums " +
+                (disabled
+                  ? "bg-muted/40 text-muted-foreground/60 border-border/40 cursor-not-allowed line-through"
+                  : isActive
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted")
+              }
+            >
+              {format(d, "dd.MM")}
+            </button>
+          );
+          if (disabled) {
+            return (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild><span className="flex-1 min-w-0">{chip}</span></TooltipTrigger>
+                <TooltipContent>{t("analytics.noDataForDay")}</TooltipContent>
+              </Tooltip>
+            );
+          }
+          return chip;
+        })}
+      </div>
+    </TooltipProvider>
+  );
+}
+
 // ---------- helpers ----------
+function WeekPicker({
+  days, offset, setOffset, open, setOpen, t, onOpenHeatmap,
+}: {
+  days: Date[]; offset: number; setOffset: (n: number) => void;
+  open: boolean; setOpen: (b: boolean) => void;
+  t: (k: string, o?: any) => string;
+  onOpenHeatmap?: () => void;
+}) {
+  const from = days[0];
+  const to = days[days.length - 1];
+  const label = t("analytics.weekRange", { from: format(from, "dd.MM"), to: format(to, "dd.MM") });
+
+  // Build 12 selectable weeks starting from offset 0 (most recent).
+  const today = startOfDay(new Date());
+  const options: { offset: number; from: Date; to: Date }[] = [];
+  for (let i = 0; i < 12; i++) {
+    const base = 1 + i * 7;
+    const wTo = subDays(today, base);
+    const wFrom = subDays(today, base + 6);
+    options.push({ offset: i, from: wFrom, to: wTo });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+    <div className="flex items-center gap-2">
+      <Button variant="ghost" size="icon" onClick={() => setOffset(offset + 1)}>
+        <ChevronLeft className="w-4 h-4" />
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="flex-1 font-normal">{label}</Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-1 max-h-72 overflow-y-auto" align="center">
+          {options.map((o) => (
+            <Button
+              key={o.offset}
+              variant={o.offset === offset ? "secondary" : "ghost"}
+              className="w-full justify-start font-normal"
+              onClick={() => { setOffset(o.offset); setOpen(false); }}
+            >
+              {format(o.from, "dd.MM")} – {format(o.to, "dd.MM")}
+            </Button>
+          ))}
+        </PopoverContent>
+      </Popover>
+      <Button variant="ghost" size="icon" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
+        <ChevronRight className="w-4 h-4" />
+      </Button>
+      {onOpenHeatmap && (
+        <Button variant="ghost" size="icon" onClick={onOpenHeatmap} title={t("analytics.openHeatmap")} aria-label={t("analytics.openHeatmap")}>
+          <Grid3x3 className="w-4 h-4" />
+        </Button>
+      )}
+    </div>
+    </div>
+  );
+}
+
 function ageNorm(birthDate: string | null, at: Date) {
   if (!birthDate) return null;
   const months = ageInMonthsAt(birthDate, at);
@@ -424,13 +815,14 @@ function normLabel(
   value: number,
   norm: { min: number; max: number },
 ): string {
+  const isDuration = norm.max >= 30;
   if (value >= norm.min && value <= norm.max) {
     return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.withinNorm")}`;
   }
   if (value < norm.min) {
-    return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.below", { value: humanDelta(norm.min - value) })}`;
+    return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.below", { value: humanDelta(norm.min - value, isDuration) })}`;
   }
-  return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.above", { value: humanDelta(value - norm.max) })}`;
+  return `${t("analytics.norm")}: ${formatRange(norm)} · ${t("analytics.above", { value: humanDelta(value - norm.max, isDuration) })}`;
 }
 
 function formatRange(n: { min: number; max: number }): string {
@@ -438,8 +830,8 @@ function formatRange(n: { min: number; max: number }): string {
   if (n.max >= 30) return `${formatDuration(n.min)}–${formatDuration(n.max)}`;
   return `${n.min}–${n.max}`;
 }
-function humanDelta(v: number): string {
-  if (v >= 30) return formatDuration(Math.round(v));
+function humanDelta(v: number, isDuration = false): string {
+  if (isDuration) return formatDuration(Math.max(1, Math.round(v)));
   return Math.round(v * 10) / 10 + "";
 }
 

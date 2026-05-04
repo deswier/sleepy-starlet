@@ -27,12 +27,14 @@ export const formatDuration = (minutes: number): string => {
 
 export const sessionDuration = (s: SleepSession, now = new Date()): number => {
   const end = s.end_time ? new Date(s.end_time) : now;
-  return differenceInMinutes(end, new Date(s.start_time));
+  return Math.round((end.getTime() - new Date(s.start_time).getTime()) / 60000);
 };
 
 export const wakeWindowMinutes = (prev: SleepSession, current: SleepSession): number | null => {
   if (!prev.end_time) return null;
-  return differenceInMinutes(new Date(current.start_time), new Date(prev.end_time));
+  return Math.round(
+    (new Date(current.start_time).getTime() - new Date(prev.end_time).getTime()) / 60000
+  );
 };
 
 export const wwStatus = (
@@ -71,16 +73,6 @@ export const inferSleepType = (
   return minutes >= nsMin || minutes < neMin ? "night" : "day";
 };
 
-export const groupByDay = (sessions: SleepSession[]) => {
-  const groups: { date: Date; sessions: SleepSession[] }[] = [];
-  for (const s of sessions) {
-    const d = startOfDay(new Date(s.start_time));
-    const last = groups[groups.length - 1];
-    if (last && isSameDay(last.date, d)) last.sessions.push(s);
-    else groups.push({ date: d, sessions: [s] });
-  }
-  return groups;
-};
 
 export const formatTime = (iso: string) => format(new Date(iso), "HH:mm");
 
@@ -91,14 +83,6 @@ export const fmtDateTime = (d: Date | string) =>
   format(typeof d === "string" ? new Date(d) : d, "dd.MM.yy HH:mm", { locale: dfLocale() });
 export const fmtWeekday = (d: Date) => format(d, "EEEE, dd.MM.yy", { locale: dfLocale() });
 
-// Date input formatting for native datetime-local (still ISO-like for the input value)
-export const toDateTimeLocalValue = (d: Date): string => {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-// Display format dd.MM.yy HH:mm
-export const formatDateTimeDisplay = (d: Date): string => format(d, "dd.MM.yy HH:mm");
 
 // Compute child's age in whole months from a birth date string
 export const ageInMonths = (birthDate: string | null | undefined): number | null => {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
@@ -31,18 +31,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
       if (s?.user) syncLanguageFromProfile(s.user.id);
     });
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      lastSeenUserId.current = s?.user?.id ?? null;
-      setSession(s);
-      setUser(s?.user ?? null);
-      setLoading(false);
-      if (s?.user) syncLanguageFromProfile(s.user.id);
-    });
     return () => subscription.unsubscribe();
   }, []);
 
+  const signOut = useCallback(async () => {
+    clearLastRoute();
+    // Clear app-managed caches so the next account on a shared device sees a clean slate.
+    // (Supabase handles its own auth tokens via auth.signOut.)
+    try {
+      localStorage.removeItem("children_cache_v1");
+      localStorage.removeItem("active_child_id");
+    } catch { /* ignore quota / private-mode errors */ }
+    await supabase.auth.signOut();
+  }, []);
+
   return (
-    <Ctx.Provider value={{ user, session, loading, signOut: async () => { clearLastRoute(); await supabase.auth.signOut(); } }}>
+    <Ctx.Provider value={{ user, session, loading, signOut }}>
       {children}
     </Ctx.Provider>
   );

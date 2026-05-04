@@ -17,13 +17,6 @@ import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import InterruptionsEditor, { DraftInterruption, validateInterruptions } from "./InterruptionsEditor";
 
-interface Settings {
-  night_start_time: string;
-  night_end_time: string;
-  show_sleep_place?: boolean;
-  show_falling_asleep_method?: boolean;
-  show_interruptions?: boolean;
-}
 
 interface Props {
   mode: "manual" | "edit";
@@ -32,15 +25,20 @@ interface Props {
   onDone: () => void;
   /** Default calendar day for a new manual entry (time defaults preserved). */
   defaultDate?: Date;
+  /**
+   * Pre-populated interruptions — skips the DB fetch when the caller already
+   * has them (e.g. the wake-up confirmation modal that builds a draft in
+   * local state to avoid modifying the DB before the user confirms).
+   */
+  initialInterruptions?: DraftInterruption[];
 }
 
-export default function SleepForm({ mode, sessionId, initial, onDone, defaultDate }: Props) {
+export default function SleepForm({ mode, sessionId, initial, onDone, defaultDate, initialInterruptions }: Props) {
   const { t } = useTranslation();
-  const { activeChild } = useChildren();
+  const { activeChild, settings } = useChildren();
   const { user } = useAuth();
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
-  const [settings, setSettings] = useState<Settings | null>(null);
 
   const now = new Date();
   const computeDefaults = () => {
@@ -68,25 +66,23 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
   const [comment, setComment] = useState(initial?.comment ?? "");
   const [busy, setBusy] = useState(false);
   const [typeManuallySet, setTypeManuallySet] = useState(mode === "edit");
-  const [interruptions, setInterruptions] = useState<DraftInterruption[]>([]);
+  const [interruptions, setInterruptions] = useState<DraftInterruption[]>(initialInterruptions ?? []);
 
   useEffect(() => {
     if (!activeChild) return;
-    (async () => {
-      const [p, m, s] = await Promise.all([
-        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("child_settings").select("night_start_time,night_end_time,show_sleep_place,show_falling_asleep_method,show_interruptions").eq("child_id", activeChild.id).single(),
-      ]);
+    Promise.all([
+      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
+      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+    ]).then(([p, m]) => {
       setPlaces(p.data ?? []);
       setMethods(m.data ?? []);
-      if (s.data) setSettings(s.data);
-    })();
-  }, [activeChild]);
+    });
+  }, [activeChild?.id]);
 
-  // Load existing interruptions when editing.
+  // Load interruptions from DB when editing, unless the caller pre-populated
+  // them via initialInterruptions (skip the round-trip in that case).
   useEffect(() => {
-    if (mode !== "edit" || !sessionId) return;
+    if (mode !== "edit" || !sessionId || initialInterruptions) return;
     (async () => {
       const { data } = await supabase
         .from("sleep_interruptions")
@@ -173,28 +169,19 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
       savedId = data?.id ?? null;
     }
 
-    // Sync interruptions
+    // Sync interruptions atomically via RPC — single transaction, no N+1.
+    // Replaces: fetch existing ids → delete missing → loop upsert (non-atomic).
     if (savedId) {
-      const { data: existing } = await supabase
-        .from("sleep_interruptions").select("id").eq("sleep_session_id", savedId);
-      const keepIds = new Set(interruptions.filter((i) => i.id).map((i) => i.id!));
-      const toDelete = (existing ?? []).map((r: any) => r.id).filter((id: string) => !keepIds.has(id));
-      if (toDelete.length) {
-        await supabase.from("sleep_interruptions").delete().in("id", toDelete);
-      }
-      for (const it of interruptions) {
-        const row = {
-          sleep_session_id: savedId,
+      const { error: syncErr } = await supabase.rpc("sync_session_interruptions", {
+        _session_id: savedId,
+        _interruptions: interruptions.map((it) => ({
+          id: it.id ?? null,
           start_time: it.start_time.toISOString(),
           end_time: it.end_time ? it.end_time.toISOString() : null,
-          settling_method_id: it.settling_method_id,
-        };
-        if (it.id) {
-          await supabase.from("sleep_interruptions").update(row).eq("id", it.id);
-        } else {
-          await supabase.from("sleep_interruptions").insert({ ...row, created_by_user_id: user.id });
-        }
-      }
+          settling_method_id: it.settling_method_id ?? null,
+        })),
+      });
+      if (syncErr) { setBusy(false); toast.error(syncErr.message); return; }
     }
     setBusy(false);
     toast.success(mode === "edit" ? t("sleep.updated") : t("sleep.sleepAdded"));
