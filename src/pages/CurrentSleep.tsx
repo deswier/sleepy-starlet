@@ -47,6 +47,7 @@ export default function CurrentSleep() {
     return window.localStorage.getItem(cacheKey) === "1";
   });
   const [now, setNow] = useState(new Date());
+  const [starting, setStarting] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState<Date>(new Date());
@@ -148,24 +149,29 @@ export default function CurrentSleep() {
   }, [active?.id]);
 
   const startSleep = async () => {
-    if (!activeChild || !user) return;
-    const startTime = new Date();
-    const type = settings ? inferSleepType(startTime, settings.night_start_time, settings.night_end_time) : "day";
-    // Prevent overlap with any existing record for this child
-    const { data: overlap } = await supabase.rpc("sleep_overlaps", {
-      _child_id: activeChild.id,
-      _start: startTime.toISOString(),
-      _end: new Date(startTime.getTime() + 60_000).toISOString(),
-      _exclude_id: null,
-    });
-    if (overlap === true) { toast.error(t("sleep.overlap")); return; }
-    const { error } = await supabase.from("sleep_sessions").insert({
-      child_id: activeChild.id,
-      start_time: startTime.toISOString(),
-      sleep_type: type,
-      created_by_user_id: user.id,
-    });
-    if (error) toast.error(error.message); else load();
+    if (starting || !activeChild || !user) return;
+    setStarting(true);
+    try {
+      const startTime = new Date();
+      const type = settings ? inferSleepType(startTime, settings.night_start_time, settings.night_end_time) : "day";
+      // Prevent overlap with any existing record for this child
+      const { data: overlap } = await supabase.rpc("sleep_overlaps", {
+        _child_id: activeChild.id,
+        _start: startTime.toISOString(),
+        _end: new Date(startTime.getTime() + 60_000).toISOString(),
+        _exclude_id: null,
+      });
+      if (overlap === true) { toast.error(t("sleep.overlap")); return; }
+      const { error } = await supabase.from("sleep_sessions").insert({
+        child_id: activeChild.id,
+        start_time: startTime.toISOString(),
+        sleep_type: type,
+        created_by_user_id: user.id,
+      });
+      if (error) toast.error(error.message); else load();
+    } finally {
+      setStarting(false);
+    }
   };
 
   // Wake Up: build the draft entirely in local state — no DB write until
@@ -316,7 +322,7 @@ export default function CurrentSleep() {
           </div>
           <h2 className="font-display text-2xl font-semibold mb-2">{t("sleep.awake", { name: activeChild.name })}</h2>
           <p className="text-muted-foreground text-sm mb-6">{t("sleep.readyWhen")}</p>
-          <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep} disabled={!canStart}>
+          <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep} disabled={!canStart || starting}>
             <Moon className="w-5 h-5 mr-2" /> {t("sleep.startSleep")}
           </Button>
           {canStart && <Dialog open={showManual} onOpenChange={setShowManual}>

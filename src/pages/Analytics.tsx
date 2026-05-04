@@ -194,7 +194,7 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
     [sessions, day, night, splitByDate]
   );
 
-  const { totalSleep, nightSleep } = useMemo(() => {
+  const { totalSleep, nightSleep, totalSleepInWindow } = useMemo(() => {
     const nowMs = now.getTime();
     const dayMs = startOfDay(day).getTime();
     const dayStartMs = dayMs;
@@ -202,6 +202,11 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
 
     let totalSleep = 0;
     let nightSleep = 0;
+    // Sleep clipped to [dayStart, dayEnd] — used for wake-time only.
+    // In splitByDate mode this equals totalSleep; in night-window mode a night
+    // session may start before midnight so its full duration overstates the
+    // sleep that actually fell within the calendar day.
+    let totalSleepInWindow = 0;
 
     for (const s of sessions) {
       const startMs = new Date(s.start_time).getTime();
@@ -211,22 +216,31 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
         // Physical overlap with calendar day boundary.
         const ovStart = Math.max(startMs, dayStartMs);
         const ovEnd = Math.min(endMs, dayEndMs);
-        if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
+        if (ovEnd > ovStart) {
+          const mins = Math.round((ovEnd - ovStart) / 60000);
+          totalSleep += mins;
+          totalSleepInWindow += mins;
+        }
         if (s.sleep_type === "night" && s.end_time && startOfDay(new Date(startMs)).getTime() === dayMs)
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
       } else {
         // Full duration of sessions attributed to this day by the night window.
         if (sessionDay(s, night).getTime() !== dayMs) continue;
-        totalSleep += Math.round((endMs - startMs) / 60000);
+        const fullMins = Math.round((endMs - startMs) / 60000);
+        totalSleep += fullMins;
         if (s.sleep_type === "night" && s.end_time)
-          nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
+          nightSleep = Math.max(nightSleep, fullMins);
+        // Clip to calendar day for accurate wake-time accounting.
+        const ovStart = Math.max(startMs, dayStartMs);
+        const ovEnd = Math.min(endMs, dayEndMs);
+        if (ovEnd > ovStart) totalSleepInWindow += Math.round((ovEnd - ovStart) / 60000);
       }
     }
 
-    return { totalSleep, nightSleep };
+    return { totalSleep, nightSleep, totalSleepInWindow };
   }, [sessions, day, night, splitByDate, isCurrentDay]);
 
-  const totalWake = Math.max(0, dayElapsedMin - totalSleep);
+  const totalWake = Math.max(0, dayElapsedMin - totalSleepInWindow);
 
   const { napsCount, avgNap, minNap, maxNap } = useMemo(() => {
     const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
