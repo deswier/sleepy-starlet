@@ -130,14 +130,16 @@ export default function Heatmap() {
       if (!isDraggingHoriz.current) return;
     }
 
-    applyTranslate(baseTranslatePx() + dx);
+    const colW = colWidthRef.current || 1;
+    // Clamp dx so the anchor cannot exceed the effective right boundary.
+    // dx < 0 = dragging left = going to newer dates; minDx caps that direction.
+    const minDx = (dragStartAnchorMs.current - effectiveMaxAnchorMsRef.current) / 86400000 * colW;
+    const clampedDx = Math.max(dx, minDx);
+
+    applyTranslate(baseTranslatePx() + clampedDx);
 
     if (rangeLabelRef.current) {
-      const colW = colWidthRef.current || 1;
-      const newMs = Math.min(
-        dragStartAnchorMs.current - Math.round(dx / colW) * 86400000,
-        effectiveMaxAnchorMsRef.current,
-      );
+      const newMs = dragStartAnchorMs.current - Math.round(clampedDx / colW) * 86400000;
       const first = startOfDay(new Date(newMs));
       const last = addDays(first, VISIBLE - 1);
       rangeLabelRef.current.textContent =
