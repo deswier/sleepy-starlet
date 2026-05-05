@@ -539,7 +539,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
     // Heatmap uses startOfWeek(anchor); pass any day from the displayed range
     // and let it snap to the locale-defined week. The user wants ALL data for
     // the visible week regardless of which day chips are deselected.
-    navigate(`/heatmap?anchor=${format(days[Math.floor(days.length / 2)], "yyyy-MM-dd")}`);
+    navigate(`/heatmap?anchor=${format(days[0], "yyyy-MM-dd")}`);
   };
 
   const picker = (
