@@ -107,6 +107,9 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeChild || !user) return;
+    const submitNow = new Date();
+    if (start > submitNow) { toast.error(t("sleep.startNotFuture")); return; }
+    if (end > submitNow) { toast.error(t("sleep.endNotFuture")); return; }
     if (end <= start) { toast.error(t("sleep.endAfterStart")); return; }
     const intrErr = validateInterruptions(interruptions, start, end);
     if (intrErr) {

@@ -70,6 +70,7 @@ const ru = {
     startedAt: "Уснул(а) в {{time}}",
     endAfterStart: "Конец должен быть позже начала",
     startNotFuture: "Начало не может быть в будущем",
+    endNotFuture: "Конец не может быть в будущем",
     overlap: "Сон пересекается с уже существующей записью",
     sleepAdded: "Сон добавлен", updated: "Обновлено",
     sleepsCount: "{{count}} сон",

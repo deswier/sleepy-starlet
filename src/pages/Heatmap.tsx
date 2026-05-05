@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import { SleepSession } from "@/lib/sleep-utils";
-import { startOfDay, addDays, subDays, format, startOfWeek } from "date-fns";
+import { startOfDay, addDays, subDays, format } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
 import { iconForMethod } from "@/lib/method-icons";
@@ -16,11 +16,12 @@ import { toast } from "sonner";
 const SleepDetail = lazy(() => import("@/components/sleep/SleepDetail"));
 
 const HOURS = 24;
-const ROW_PX = 22; // height per hour
+const ROW_PX = 22;
 const GRID_HEIGHT = HOURS * ROW_PX;
-// Minimum vertical gap (in % of day) before two icons are considered overlapping
-// and grouped into a cluster. ~14 minutes works well at ROW_PX=22.
 const ICON_OVERLAP_PCT = 1.0;
+const VISIBLE = 7;
+const BUFFER = 14; // extra days rendered off-screen on each side
+const TOTAL = BUFFER + VISIBLE + BUFFER; // 35
 
 type InterruptionLite = {
   id: string; sleep_session_id: string; start_time: string;
@@ -35,34 +36,153 @@ export default function Heatmap() {
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [interruptions, setInterruptions] = useState<InterruptionLite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasFetched, setHasFetched] = useState(false);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
-  // Anchor = a date inside the displayed week. Initialize from ?anchor= so
-  // callers (Analytics → "Open diagram") can land on the same week the user
-  // was viewing.
-  const [anchor, setAnchor] = useState<Date>(() => {
+
+  const today = startOfDay(new Date());
+  // Hard ceiling: last visible day = today.
+  const hardMaxAnchorMs = today.getTime() - (VISIBLE - 1) * 86400000;
+
+  const [anchor, setAnchorState] = useState<Date>(() => {
     const a = searchParams.get("anchor");
     if (a) {
       const d = startOfDay(new Date(a));
       if (!isNaN(d.getTime())) return d;
     }
-    return startOfDay(new Date());
+    // Default: yesterday + 6 past days (matches Analytics weekOffset=0).
+    return subDays(today, 7);
   });
 
-  const locale = i18n.language?.startsWith("ru") ? ru : enUS;
-  // Week starts Monday for ru, Sunday for en — match user expectation.
-  const weekStartsOn: 0 | 1 = i18n.language?.startsWith("ru") ? 1 : 0;
+  // Effective right boundary: the anchor that puts the last day with data
+  // as the rightmost visible column (but never past today).
+  // Stored in a ref so drag-move closures always see the current value.
+  const effectiveMaxAnchorMsRef = useRef(hardMaxAnchorMs);
 
-  const weekStart = useMemo(() => startOfWeek(anchor, { weekStartsOn }), [anchor, weekStartsOn]);
-  const days = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
-    [weekStart],
+  const setAnchor = (d: Date) => {
+    const ms = Math.min(d.getTime(), effectiveMaxAnchorMsRef.current);
+    setAnchorState(startOfDay(new Date(ms)));
+  };
+
+  const locale = i18n.language?.startsWith("ru") ? ru : enUS;
+
+  const renderStart = useMemo(() => subDays(anchor, BUFFER), [anchor]);
+  const allDays = useMemo(
+    () => Array.from({ length: TOTAL }, (_, i) => addDays(renderStart, i)),
+    [renderStart],
   );
 
+  // ── drag refs ────────────────────────────────────────────────────────────
+  const trackRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const rangeLabelRef = useRef<HTMLDivElement>(null);
+  const dragContainerRef = useRef<HTMLDivElement>(null);
+  const colWidthRef = useRef(0);
+  const dragStartX = useRef<number | null>(null);
+  const dragStartY = useRef<number | null>(null);
+  const dragStartAnchorMs = useRef(anchor.getTime());
+  const isDraggingHoriz = useRef(false);
+
+  const measureColWidth = () => {
+    if (trackRef.current?.parentElement)
+      colWidthRef.current = trackRef.current.parentElement.offsetWidth / VISIBLE;
+  };
+
+  const applyTranslate = (px: number) => {
+    if (trackRef.current) trackRef.current.style.transform = `translateX(${px}px)`;
+    if (headerRef.current) headerRef.current.style.transform = `translateX(${px}px)`;
+  };
+
+  const baseTranslatePx = () => -BUFFER * colWidthRef.current;
+
+  // Measure + apply base once the grid is mounted; re-run on resize.
+  useLayoutEffect(() => {
+    if (!hasFetched) return;
+    measureColWidth();
+    applyTranslate(baseTranslatePx());
+    const onResize = () => { measureColWidth(); applyTranslate(baseTranslatePx()); };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasFetched]);
+
+  useLayoutEffect(() => {
+    measureColWidth();
+    applyTranslate(baseTranslatePx());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor]);
+
+  // ── drag handlers ────────────────────────────────────────────────────────
+  const startDrag = (clientX: number, clientY: number) => {
+    dragStartX.current = clientX;
+    dragStartY.current = clientY;
+    dragStartAnchorMs.current = anchor.getTime();
+    isDraggingHoriz.current = false;
+  };
+
+  const moveDrag = (clientX: number, clientY: number) => {
+    if (dragStartX.current === null) return;
+    const dx = clientX - dragStartX.current;
+    const dy = clientY - (dragStartY.current ?? clientY);
+
+    if (!isDraggingHoriz.current) {
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      isDraggingHoriz.current = Math.abs(dx) >= Math.abs(dy);
+      if (!isDraggingHoriz.current) return;
+    }
+
+    const colW = colWidthRef.current || 1;
+    // Clamp dx so the anchor cannot exceed the effective right boundary.
+    // dx < 0 = dragging left = going to newer dates; minDx caps that direction.
+    const minDx = (dragStartAnchorMs.current - effectiveMaxAnchorMsRef.current) / 86400000 * colW;
+    const clampedDx = Math.max(dx, minDx);
+
+    applyTranslate(baseTranslatePx() + clampedDx);
+
+    if (rangeLabelRef.current) {
+      const newMs = dragStartAnchorMs.current - Math.round(clampedDx / colW) * 86400000;
+      const first = startOfDay(new Date(newMs));
+      const last = addDays(first, VISIBLE - 1);
+      rangeLabelRef.current.textContent =
+        `${format(first, "d MMM", { locale })} – ${format(last, "d MMM", { locale })}`;
+    }
+  };
+
+  const endDrag = (clientX: number) => {
+    if (dragStartX.current === null) return;
+    const dx = clientX - dragStartX.current;
+    dragStartX.current = null;
+    dragStartY.current = null;
+    if (!isDraggingHoriz.current) { isDraggingHoriz.current = false; return; }
+    isDraggingHoriz.current = false;
+    const colW = colWidthRef.current || 1;
+    setAnchor(new Date(dragStartAnchorMs.current - Math.round(dx / colW) * 86400000));
+  };
+
+  // Non-passive touchmove to prevent page scroll while swiping horizontally.
+  // Runs after hasFetched so dragContainerRef is guaranteed to be in the DOM.
+  useEffect(() => {
+    if (!hasFetched) return;
+    const el = dragContainerRef.current;
+    if (!el) return;
+    const onTM = (e: TouchEvent) => {
+      if (dragStartX.current === null) return;
+      const touch = e.touches[0];
+      moveDrag(touch.clientX, touch.clientY);
+      if (isDraggingHoriz.current) e.preventDefault();
+    };
+    el.addEventListener("touchmove", onTM, { passive: false });
+    return () => el.removeEventListener("touchmove", onTM);
+  // moveDrag only uses refs — stable across renders
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasFetched]);
+
+  // ── data fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeChild) return;
-    setLoading(true);
-    const since = subDays(weekStart, 2).toISOString();
-    const until = addDays(weekStart, 9).toISOString();
+    if (!hasFetched) setLoading(true);
+    const since = subDays(renderStart, 1).toISOString();
+    const until = addDays(renderStart, TOTAL + 1).toISOString();
+    let cancelled = false;
     Promise.all([
       supabase.from("sleep_sessions").select("*")
         .eq("child_id", activeChild.id)
@@ -75,6 +195,7 @@ export default function Heatmap() {
         .lt("start_time", until),
     ])
       .then(([{ data: sessData }, { data: intData }]) => {
+        if (cancelled) return;
         setSessions((sessData ?? []) as SleepSession[]);
         setInterruptions(((intData ?? []) as any[]).map((r) => ({
           id: r.id,
@@ -85,19 +206,35 @@ export default function Heatmap() {
         })));
       })
       .catch((e) => {
-        console.error("[Heatmap] load failed", e);
-        toast.error(t("common.loadFailed"));
+        if (!cancelled) {
+          console.error("[Heatmap] load failed", e);
+          toast.error(t("common.loadFailed"));
+        }
       })
-      .finally(() => setLoading(false));
-  }, [activeChild?.id, weekStart.getTime()]);
+      .finally(() => {
+        if (!cancelled) { setLoading(false); setHasFetched(true); }
+      });
+    return () => { cancelled = true; };
+  }, [activeChild?.id, renderStart.getTime()]);
 
-  // For each visible day, compute the sleep blocks clipped to that calendar day.
-  // A sleep that crosses midnight is split between adjacent days.
+  // Update the effective right boundary whenever sessions change.
+  useEffect(() => {
+    if (!sessions.length) {
+      effectiveMaxAnchorMsRef.current = hardMaxAnchorMs;
+      return;
+    }
+    const lastDayMs = Math.max(...sessions.map((s) => startOfDay(new Date(s.start_time)).getTime()));
+    // Anchor that puts the last data day as the rightmost visible column.
+    const dataBasedMax = lastDayMs - (VISIBLE - 1) * 86400000;
+    effectiveMaxAnchorMsRef.current = Math.min(hardMaxAnchorMs, dataBasedMax);
+  }, [sessions]);
+
+  // ── sleep blocks ─────────────────────────────────────────────────────────
   const blocksPerDay = useMemo(() => {
     const now = new Date();
-    return days.map((day) => {
+    return allDays.map((day) => {
       const dayStart = startOfDay(day).getTime();
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      const dayEnd = dayStart + 86400000;
       const out: { topPct: number; heightPct: number; type: "day" | "night"; sessionId: string }[] = [];
       for (const s of sessions) {
         const start = new Date(s.start_time).getTime();
@@ -105,35 +242,34 @@ export default function Heatmap() {
         const lo = Math.max(start, dayStart);
         const hi = Math.min(end, dayEnd);
         if (hi <= lo) continue;
-        const topPct = ((lo - dayStart) / (24 * 60 * 60 * 1000)) * 100;
-        const heightPct = ((hi - lo) / (24 * 60 * 60 * 1000)) * 100;
-        out.push({ topPct, heightPct, type: s.sleep_type, sessionId: s.id });
+        out.push({
+          topPct: ((lo - dayStart) / 86400000) * 100,
+          heightPct: ((hi - lo) / 86400000) * 100,
+          type: s.sleep_type,
+          sessionId: s.id,
+        });
       }
       return out;
     });
-  }, [sessions, days]);
+  }, [sessions, allDays]);
 
-  // Group interruptions per visible day; only those with a settling method are drawn.
-  // Icons whose vertical positions are within ICON_OVERLAP_PCT of each other are clustered.
   const interruptionsPerDay = useMemo(() => {
-    return days.map((day) => {
+    return allDays.map((day) => {
       const dayStart = startOfDay(day).getTime();
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+      const dayEnd = dayStart + 86400000;
       const items = interruptions
-        .filter((i) => i.settling_method_id) // skip if no method
+        .filter((i) => i.settling_method_id)
         .map((i) => {
-          const t = new Date(i.start_time).getTime();
-          if (t < dayStart || t >= dayEnd) return null;
-          // The session this interruption belongs to (so taps open it).
+          const ts = new Date(i.start_time).getTime();
+          if (ts < dayStart || ts >= dayEnd) return null;
           const session = sessions.find((s) => s.id === i.sleep_session_id);
           if (!session) return null;
-          // Skip if the corresponding sleep block on this day doesn't include this point.
           const sStart = new Date(session.start_time).getTime();
-          const sEnd = (session.end_time ? new Date(session.end_time).getTime() : Date.now());
-          if (t < sStart || t > sEnd) return null;
+          const sEnd = session.end_time ? new Date(session.end_time).getTime() : Date.now();
+          if (ts < sStart || ts > sEnd) return null;
           return {
             id: i.id,
-            topPct: ((t - dayStart) / (24 * 60 * 60 * 1000)) * 100,
+            topPct: ((ts - dayStart) / 86400000) * 100,
             name: i.settling_method_name,
             session,
           };
@@ -142,7 +278,6 @@ export default function Heatmap() {
 
       items.sort((a, b) => a.topPct - b.topPct);
 
-      // Cluster items whose vertical positions are within ICON_OVERLAP_PCT.
       const clusters: { topPct: number; items: typeof items; session: SleepSession }[] = [];
       for (const it of items) {
         const last = clusters[clusters.length - 1];
@@ -154,19 +289,18 @@ export default function Heatmap() {
       }
       return clusters;
     });
-  }, [interruptions, sessions, days]);
+  }, [interruptions, sessions, allDays]);
 
-  // Time axis labels at 00:00, 06:00, 12:00, 18:00, 24:00.
   const timeMarks = [0, 6, 12, 18, 24];
 
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
   }
 
-  const today = startOfDay(new Date());
-  const canGoNext = addDays(weekStart, 7) <= today;
-
-  const rangeLabel = `${format(days[0], "d MMM", { locale })} – ${format(days[6], "d MMM", { locale })}`;
+  const canGoNext = anchor.getTime() < effectiveMaxAnchorMsRef.current;
+  const rangeLabel = `${format(anchor, "d MMM", { locale })} – ${format(addDays(anchor, VISIBLE - 1), "d MMM", { locale })}`;
+  // Percentage-based fallback transform (used before useLayoutEffect fires).
+  const pctTransform = `translateX(-${(BUFFER / TOTAL) * 100}%)`;
 
   return (
     <main className="min-h-screen bg-hero p-4">
@@ -178,20 +312,21 @@ export default function Heatmap() {
         <p className="text-xs text-muted-foreground mb-4">{t("analytics.heatmapHelp")}</p>
 
         <div className="flex items-center justify-between mb-3">
-          <Button variant="ghost" size="icon" onClick={() => setAnchor(subDays(weekStart, 7))}>
+          <Button variant="ghost" size="icon" onClick={() => setAnchor(subDays(anchor, 7))}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <div className="text-sm font-medium">{rangeLabel}</div>
+          <div ref={rangeLabelRef} className="text-sm font-medium">{rangeLabel}</div>
           <Button variant="ghost" size="icon" disabled={!canGoNext}
-            onClick={() => setAnchor(addDays(weekStart, 7))}>
+            onClick={() => setAnchor(addDays(anchor, 7))}>
             <ChevronRight className="w-4 h-4" />
           </Button>
         </div>
 
-        <Card className="p-3 shadow-card">
-          {loading && (
+        <Card className="p-3 shadow-card overflow-hidden">
+          {/* Initial loading skeleton */}
+          {loading && !hasFetched && (
             <div className="flex pl-10 gap-1" style={{ height: GRID_HEIGHT + 32 }}>
-              {Array.from({ length: 7 }).map((_, i) => (
+              {Array.from({ length: VISIBLE }).map((_, i) => (
                 <div key={i} className="flex-1 flex flex-col gap-1 pt-6">
                   <div className="h-3 bg-muted animate-pulse rounded mb-2" />
                   <div className="flex-1 bg-muted/60 animate-pulse rounded-md" />
@@ -199,104 +334,143 @@ export default function Heatmap() {
               ))}
             </div>
           )}
-          {!loading && (
-          <>
-          {/* Day-of-week / date headers */}
-          <div className="flex pl-10 mb-1">
-            {days.map((d, i) => {
-              const isToday = d.getTime() === today.getTime();
-              return (
-                <div key={i} className="flex-1 text-center">
-                  <div className={`text-[10px] uppercase tracking-wide ${isToday ? "text-primary font-semibold" : "text-muted-foreground"}`}>
-                    {format(d, "EEE", { locale })}
-                  </div>
-                  <div className={`text-xs ${isToday ? "text-primary font-semibold" : ""}`}>
-                    {format(d, "d")}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Grid: time axis + 7 day columns */}
-          <div className="flex" style={{ height: GRID_HEIGHT }}>
-            {/* Time axis */}
-            <div className="relative w-10 select-none" style={{ height: GRID_HEIGHT }}>
-              {timeMarks.map((h) => (
-                <div key={h}
-                  className="absolute right-1 text-[10px] text-muted-foreground leading-none"
-                  style={{ top: `${(h / 24) * 100}%`, transform: "translateY(-50%)" }}>
-                  {h === 24 ? "00:00" : `${String(h).padStart(2, "0")}:00`}
-                </div>
-              ))}
-            </div>
-
-            {/* Day columns */}
-            <div className="flex-1 relative">
-              {/* Horizontal grid lines at every 6h */}
-              {timeMarks.map((h) => (
-                <div key={h} className="absolute left-0 right-0 border-t border-border/60"
-                  style={{ top: `${(h / 24) * 100}%` }} />
-              ))}
-
-              <div className="flex h-full">
-                {days.map((d, di) => (
-                  <div key={di} className="flex-1 relative border-l border-border/40 first:border-l-0">
-                    {blocksPerDay[di].map((b, bi) => (
+          {hasFetched && (
+            <div
+              ref={dragContainerRef}
+              className="select-none"
+              onTouchStart={(e) => startDrag(e.touches[0].clientX, e.touches[0].clientY)}
+              onTouchEnd={(e) => endDrag(e.changedTouches[0].clientX)}
+              onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
+              onMouseMove={(e) => { if (dragStartX.current !== null) moveDrag(e.clientX, e.clientY); }}
+              onMouseUp={(e) => { if (dragStartX.current !== null) endDrag(e.clientX); }}
+              onMouseLeave={(e) => { if (dragStartX.current !== null) endDrag(e.clientX); }}
+              style={{ cursor: "grab" }}
+            >
+              {/* Scrollable day headers */}
+              <div className="pl-10 mb-1 overflow-hidden">
+                <div
+                  ref={headerRef}
+                  className="flex"
+                  style={{
+                    width: `${(TOTAL / VISIBLE) * 100}%`,
+                    transform: pctTransform,
+                    willChange: "transform",
+                  }}
+                >
+                  {allDays.map((d, i) => {
+                    const isToday = d.getTime() === today.getTime();
+                    return (
                       <div
-                        key={bi}
-                        className="absolute left-[10%] right-[10%] rounded-md"
-                        style={{
-                          top: `${b.topPct}%`,
-                          height: `${b.heightPct}%`,
-                          background: b.type === "night"
-                            ? "hsl(var(--primary) / 0.85)"
-                            : "hsl(var(--primary) / 0.55)",
-                        }}
-                        onClick={() => {
-                          const sess = sessions.find((s) => s.id === b.sessionId);
-                          if (sess) setOpenSession(sess);
-                        }}
-                        role="button"
-                      />
+                        key={i}
+                        className="text-center flex-shrink-0"
+                        style={{ width: `${100 / TOTAL}%` }}
+                      >
+                        <div className={`text-[10px] uppercase tracking-wide ${isToday ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                          {format(d, "EEE", { locale })}
+                        </div>
+                        <div className={`text-xs ${isToday ? "text-primary font-semibold" : ""}`}>
+                          {format(d, "d")}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Grid: fixed time axis + draggable columns */}
+              <div className="flex" style={{ height: GRID_HEIGHT }}>
+                {/* Time axis — never moves */}
+                <div className="relative w-10 flex-shrink-0" style={{ height: GRID_HEIGHT }}>
+                  {timeMarks.map((h) => (
+                    <div key={h}
+                      className="absolute right-1 text-[10px] text-muted-foreground leading-none"
+                      style={{ top: `${(h / 24) * 100}%`, transform: "translateY(-50%)" }}>
+                      {h === 24 ? "00:00" : `${String(h).padStart(2, "0")}:00`}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Clipping container for day columns */}
+                <div className="flex-1 overflow-hidden relative">
+                  {/* Horizontal grid lines — static */}
+                  {timeMarks.map((h) => (
+                    <div key={h}
+                      className="absolute left-0 right-0 border-t border-border/60 z-10 pointer-events-none"
+                      style={{ top: `${(h / 24) * 100}%` }} />
+                  ))}
+
+                  {/* Track: all TOTAL columns, translated to show BUFFER offset */}
+                  <div
+                    ref={trackRef}
+                    className="flex h-full absolute top-0 left-0"
+                    style={{
+                      width: `${(TOTAL / VISIBLE) * 100}%`,
+                      transform: pctTransform,
+                      willChange: "transform",
+                    }}
+                  >
+                    {allDays.map((d, di) => (
+                      <div
+                        key={di}
+                        className="h-full relative border-l border-border/40 first:border-l-0 flex-shrink-0"
+                        style={{ width: `${100 / TOTAL}%` }}
+                      >
+                        {blocksPerDay[di].map((b, bi) => (
+                          <div
+                            key={bi}
+                            className="absolute left-[10%] right-[10%] rounded-md"
+                            style={{
+                              top: `${b.topPct}%`,
+                              height: `${b.heightPct}%`,
+                              background: b.type === "night"
+                                ? "hsl(var(--primary) / 0.85)"
+                                : "hsl(var(--primary) / 0.55)",
+                            }}
+                            onClick={() => {
+                              const sess = sessions.find((s) => s.id === b.sessionId);
+                              if (sess) setOpenSession(sess);
+                            }}
+                            role="button"
+                          />
+                        ))}
+                        {interruptionsPerDay[di].map((cl, ci) => {
+                          const vis = cl.items.slice(0, 2);
+                          const extra = cl.items.length - vis.length;
+                          return (
+                            <button
+                              key={ci}
+                              type="button"
+                              aria-label="open sleep"
+                              className="absolute left-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background z-20"
+                              style={{ top: `${cl.topPct}%`, transform: "translate(-50%, -50%)" }}
+                              onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
+                            >
+                              {vis.map((it) => {
+                                const Icon = iconForMethod(it.name);
+                                return <Icon key={it.id} className="w-2.5 h-2.5 text-muted-foreground" strokeWidth={2} />;
+                              })}
+                              {extra > 0 && (
+                                <span className="text-[8px] leading-none text-muted-foreground font-medium pl-0.5">+{extra}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     ))}
-                    {/* Settling-method icons at interruption points */}
-                    {interruptionsPerDay[di].map((cl, ci) => {
-                      const visible = cl.items.slice(0, 2);
-                      const extra = cl.items.length - visible.length;
-                      return (
-                        <button
-                          key={ci}
-                          type="button"
-                          aria-label="open sleep"
-                          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background"
-                          style={{ top: `${cl.topPct}%`, transform: "translate(-50%, -50%)" }}
-                          onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
-                        >
-                          {visible.map((it) => {
-                            const Icon = iconForMethod(it.name);
-                            return <Icon key={it.id} className="w-2.5 h-2.5 text-muted-foreground" strokeWidth={2} />;
-                          })}
-                          {extra > 0 && (
-                            <span className="text-[8px] leading-none text-muted-foreground font-medium pl-0.5">+{extra}</span>
-                          )}
-                        </button>
-                      );
-                    })}
                   </div>
-                ))}
+                </div>
               </div>
             </div>
-          </div>
-          </>
           )}
         </Card>
+
         {openSession && (
           <Suspense fallback={null}>
             <SleepDetail
               session={openSession}
               onClose={() => setOpenSession(null)}
-              onChange={() => { /* re-fetch on close not necessary; week effect handles changes */ }}
+              onChange={() => {}}
             />
           </Suspense>
         )}
