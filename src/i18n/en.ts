@@ -68,6 +68,7 @@ const en = {
     startedAt: "Started at {{time}}",
     endAfterStart: "End must be after start",
     startNotFuture: "Start cannot be in the future",
+    endNotFuture: "End cannot be in the future",
     overlap: "Sleep overlaps with an existing record",
     sleepAdded: "Sleep added", updated: "Updated",
     sleepsCount: "{{count}} sleep",

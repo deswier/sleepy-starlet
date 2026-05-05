@@ -40,8 +40,8 @@ export default function Heatmap() {
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
 
   const today = startOfDay(new Date());
-  // Rightmost allowed anchor: last visible day = today.
-  const maxAnchorMs = today.getTime() - (VISIBLE - 1) * 86400000;
+  // Hard ceiling: last visible day = today.
+  const hardMaxAnchorMs = today.getTime() - (VISIBLE - 1) * 86400000;
 
   const [anchor, setAnchorState] = useState<Date>(() => {
     const a = searchParams.get("anchor");
@@ -53,8 +53,13 @@ export default function Heatmap() {
     return subDays(today, 7);
   });
 
+  // Effective right boundary: the anchor that puts the last day with data
+  // as the rightmost visible column (but never past today).
+  // Stored in a ref so drag-move closures always see the current value.
+  const effectiveMaxAnchorMsRef = useRef(hardMaxAnchorMs);
+
   const setAnchor = (d: Date) => {
-    const ms = Math.min(d.getTime(), maxAnchorMs);
+    const ms = Math.min(d.getTime(), effectiveMaxAnchorMsRef.current);
     setAnchorState(startOfDay(new Date(ms)));
   };
 
@@ -131,7 +136,7 @@ export default function Heatmap() {
       const colW = colWidthRef.current || 1;
       const newMs = Math.min(
         dragStartAnchorMs.current - Math.round(dx / colW) * 86400000,
-        maxAnchorMs,
+        effectiveMaxAnchorMsRef.current,
       );
       const first = startOfDay(new Date(newMs));
       const last = addDays(first, VISIBLE - 1);
@@ -210,6 +215,18 @@ export default function Heatmap() {
     return () => { cancelled = true; };
   }, [activeChild?.id, renderStart.getTime()]);
 
+  // Update the effective right boundary whenever sessions change.
+  useEffect(() => {
+    if (!sessions.length) {
+      effectiveMaxAnchorMsRef.current = hardMaxAnchorMs;
+      return;
+    }
+    const lastDayMs = Math.max(...sessions.map((s) => startOfDay(new Date(s.start_time)).getTime()));
+    // Anchor that puts the last data day as the rightmost visible column.
+    const dataBasedMax = lastDayMs - (VISIBLE - 1) * 86400000;
+    effectiveMaxAnchorMsRef.current = Math.min(hardMaxAnchorMs, dataBasedMax);
+  }, [sessions]);
+
   // ── sleep blocks ─────────────────────────────────────────────────────────
   const blocksPerDay = useMemo(() => {
     const now = new Date();
@@ -278,7 +295,7 @@ export default function Heatmap() {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
   }
 
-  const canGoNext = anchor.getTime() < maxAnchorMs;
+  const canGoNext = anchor.getTime() < effectiveMaxAnchorMsRef.current;
   const rangeLabel = `${format(anchor, "d MMM", { locale })} – ${format(addDays(anchor, VISIBLE - 1), "d MMM", { locale })}`;
   // Percentage-based fallback transform (used before useLayoutEffect fires).
   const pctTransform = `translateX(-${(BUFFER / TOTAL) * 100}%)`;
