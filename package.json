@@ -10,9 +10,18 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cap:sync": "vite build && cap sync",
+    "cap:ios": "vite build && cap sync ios && cap open ios",
+    "cap:android": "vite build && cap sync android && cap open android",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff -f new_migration",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --linked > src/integrations/supabase/types.ts"
   },
   "dependencies": {
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
     "@hookform/resolvers": "^3.10.0",
     "@lovable.dev/cloud-auth-js": "^1.1.2",
     "@radix-ui/react-accordion": "^1.2.11",
@@ -70,6 +79,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",

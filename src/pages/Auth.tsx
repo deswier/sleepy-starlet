@@ -8,11 +8,11 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { readLastRoute } from "@/lib/last-route";
+import { getAuthRedirectUrl } from "@/lib/native";
 
 async function routePostAuth(navigate: (to: string, opts?: any) => void) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -59,7 +59,7 @@ export default function Auth() {
     e.preventDefault(); setBusy(true);
     const { error } = await supabase.auth.signUp({
       email, password,
-      options: { emailRedirectTo: window.location.origin, data: { display_name: name } },
+      options: { emailRedirectTo: getAuthRedirectUrl(), data: { display_name: name } },
     });
     if (error) { setBusy(false); toast.error(error.message); return; }
     // Persist chosen language to the profile so it follows the user across devices.
@@ -73,11 +73,14 @@ export default function Auth() {
   };
   const handleGoogle = async () => {
     setBusy(true);
-    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (result.error) { toast.error(t("auth.googleFailed")); setBusy(false); return; }
-    if (result.redirected) return; // browser will reload → useEffect handles routing
-    // Non-redirect OAuth (popup flow): route explicitly since no page reload occurs.
-    routePostAuth(navigate);
+    // Supabase's signInWithOAuth navigates the browser to Google and back. On
+    // return, detectSessionInUrl parses tokens, AuthContext picks them up via
+    // onAuthStateChange, and the routing useEffect above runs.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: getAuthRedirectUrl() },
+    });
+    if (error) { toast.error(t("auth.googleFailed")); setBusy(false); }
   };
 
   return (

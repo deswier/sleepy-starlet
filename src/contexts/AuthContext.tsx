@@ -3,6 +3,7 @@ import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
 import { clearLastRoute } from "@/lib/last-route";
+import { registerAuthDeepLinkListener } from "@/lib/native";
 
 interface AuthCtx {
   user: User | null;
@@ -31,7 +32,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
       if (s?.user) syncLanguageFromProfile(s.user.id);
     });
-    return () => subscription.unsubscribe();
+    let removeDeepLink: (() => void) | undefined;
+    registerAuthDeepLinkListener().then((off) => { removeDeepLink = off; });
+    return () => {
+      subscription.unsubscribe();
+      removeDeepLink?.();
+    };
   }, []);
 
   const signOut = useCallback(async () => {
