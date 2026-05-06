@@ -20,6 +20,10 @@ const en = {
     yourName: "Your name", createAccount: "Create account", continueGoogle: "Continue with Google",
     or: "Or", welcome: "Welcome! Setting things up…", googleFailed: "Google sign-in failed",
     signOut: "Sign out",
+    checkEmail: "Check your inbox",
+    checkEmailDesc: "We sent a confirmation link to {{email}}. Tap it to complete sign-up.",
+    checkEmailNote: "On mobile, tapping the link will open the app directly.",
+    resendHint: "No email? Check spam or try signing up again.",
   },
   child: {
     addChild: "Add child", noChild: "No child",

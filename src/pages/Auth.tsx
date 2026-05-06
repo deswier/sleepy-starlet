@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Moon } from "lucide-react";
+import { Mail, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmationSent, setConfirmationSent] = useState(false);
   // Default to device locale on first render; user can change before completing signup.
   const [language, setLanguage] = useState<"en" | "ru">(() => {
     const stored = typeof localStorage !== "undefined" ? localStorage.getItem("i18nextLng") : null;
@@ -57,12 +58,18 @@ export default function Auth() {
   };
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { emailRedirectTo: getAuthRedirectUrl(), data: { display_name: name } },
     });
     if (error) { setBusy(false); toast.error(error.message); return; }
-    // Persist chosen language to the profile so it follows the user across devices.
+    if (!data.session) {
+      // Email confirmation required — show confirmation screen, don't route.
+      setBusy(false);
+      setConfirmationSent(true);
+      return;
+    }
+    // Immediately signed in (email confirmation disabled in Supabase settings).
     try {
       const { data: { user: u } } = await supabase.auth.getUser();
       if (u) await supabase.from("profiles").update({ language }).eq("id", u.id);
@@ -82,6 +89,36 @@ export default function Auth() {
     });
     if (error) { toast.error(t("auth.googleFailed")); setBusy(false); }
   };
+
+  if (confirmationSent) {
+    return (
+      <main className="min-h-screen bg-hero flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+              <Moon className="w-8 h-8 text-primary" strokeWidth={1.5} />
+            </div>
+            <h1 className="font-display text-4xl font-semibold text-foreground">{t("app.name")}</h1>
+          </div>
+          <Card className="p-8 shadow-soft border-border/50 text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30">
+              <Mail className="w-7 h-7 text-green-600 dark:text-green-400" />
+            </div>
+            <h2 className="text-xl font-semibold">{t("auth.checkEmail")}</h2>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              {t("auth.checkEmailDesc", { email })}
+            </p>
+            <p className="text-xs text-muted-foreground/70">
+              {t("auth.checkEmailNote")}
+            </p>
+            <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
+              {t("auth.resendHint")}
+            </p>
+          </Card>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-hero flex items-center justify-center p-4">
