@@ -51,6 +51,8 @@ export default function Settings() {
   const [s, setS] = useState<any>(null);
   const [childName, setChildName] = useState<string>("");
   const [birthDate, setBirthDate] = useState<string>("");
+  const _today = new Date();
+  const todayStr = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, "0")}-${String(_today.getDate()).padStart(2, "0")}`;
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   const [newPlace, setNewPlace] = useState("");
@@ -164,6 +166,7 @@ export default function Settings() {
     if (!activeChild || !isAdmin) return;
     const name = (childName ?? "").trim();
     if (!name) return;
+    if (birthDate && birthDate > todayStr) { toast.error(t("child.birthDateFuture")); return; }
     const { error } = await supabase.from("children").update({
       name, birth_date: birthDate || null,
     }).eq("id", activeChild.id);
@@ -382,7 +385,7 @@ export default function Settings() {
           </div>
           <div className="space-y-1.5">
             <Label>{t("child.birthDate")}</Label>
-            <Input type="date" value={birthDate} disabled={!isAdmin}
+            <Input type="date" value={birthDate} max={todayStr} disabled={!isAdmin}
               onChange={(e) => setBirthDate(e.target.value)} onBlur={saveChild}
               className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
           </div>

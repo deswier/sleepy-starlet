@@ -111,6 +111,7 @@ const en = {
     photo: "Photo",
     changePhoto: "Change photo",
     removePhoto: "Remove",
+    birthDateFuture: "Date of birth cannot be in the future",
   },
   sleep: {
     awake: "{{name}} is awake", sleeping: "{{name}} is sleeping",

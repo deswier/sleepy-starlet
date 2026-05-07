@@ -107,6 +107,7 @@ const ru = {
     photo: "Фото",
     changePhoto: "Изменить фото",
     removePhoto: "Удалить",
+    birthDateFuture: "Дата рождения не может быть в будущем",
   },
   sleep: {
     awake: "{{name}} не спит", sleeping: "{{name}} спит",
