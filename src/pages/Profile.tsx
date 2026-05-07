@@ -199,7 +199,7 @@ export default function Profile() {
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("profile.title")}</h1>
@@ -227,7 +227,7 @@ export default function Profile() {
             {emailDraft && emailDraft !== user?.email && (
               <>
                 <p className="text-xs text-muted-foreground">{t("profile.changeEmailHint")}</p>
-                <Button onClick={changeEmail} variant="outline" size="sm" disabled={busy}>
+                <Button type="button" onClick={changeEmail} variant="outline" size="sm" disabled={busy}>
                   {t("profile.changeEmail")}
                 </Button>
               </>
@@ -243,7 +243,7 @@ export default function Profile() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={saveProfile} className="w-full" disabled={busy}>{t("common.save")}</Button>
+          <Button type="button" onClick={saveProfile} className="w-full" disabled={busy}>{t("common.save")}</Button>
         </Card>
 
         <Card className="p-5 shadow-card mb-4 space-y-3">
@@ -269,7 +269,7 @@ export default function Profile() {
                   <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
                 )}
               </div>
-              <Button onClick={changePassword} className="w-full"
+              <Button type="button" onClick={changePassword} className="w-full"
                 disabled={busy || !currentPassword || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
                 {t("profile.changePassword")}
               </Button>
@@ -283,7 +283,7 @@ export default function Profile() {
               {!showSetPasswordForm ? (
                 <>
                   <p className="text-sm text-muted-foreground">{t("profile.passwordLoginNotEnabled")}</p>
-                  <Button variant="outline" className="w-full" onClick={() => setShowSetPasswordForm(true)}>
+                  <Button type="button" variant="outline" className="w-full" onClick={() => setShowSetPasswordForm(true)}>
                     {t("profile.setPassword")}
                   </Button>
                 </>
@@ -303,11 +303,11 @@ export default function Profile() {
                       <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
                     )}
                   </div>
-                  <Button onClick={setPassword} className="w-full"
+                  <Button type="button" onClick={setPassword} className="w-full"
                     disabled={busy || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
                     {t("profile.setPassword")}
                   </Button>
-                  <Button variant="ghost" className="w-full" disabled={busy}
+                  <Button type="button" variant="ghost" className="w-full" disabled={busy}
                     onClick={() => { setShowSetPasswordForm(false); setNewPassword(""); setRepeatNewPassword(""); }}>
                     {t("common.cancel")}
                   </Button>
@@ -318,13 +318,13 @@ export default function Profile() {
         </Card>
 
         <Card className="p-5 shadow-card mb-4">
-          <Button variant="outline" className="w-full" onClick={() => navigate("/deleted-children")}>
+          <Button type="button" variant="outline" className="w-full" onClick={() => navigate("/deleted-children")}>
             <Archive className="w-4 h-4 mr-2" /> {t("remove.deletedChildren")}
           </Button>
         </Card>
 
         <Card className="p-5 shadow-card mb-4">
-          <Button variant="outline" className="w-full text-destructive hover:text-destructive"
+          <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive"
             onClick={openDeleteDialog} disabled={busy}>
             <Trash2 className="w-4 h-4 mr-2" /> {t("remove.deleteProfile")}
           </Button>
