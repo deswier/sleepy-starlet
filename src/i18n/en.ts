@@ -1,7 +1,7 @@
 const en = {
   app: { name: "Lullaby", tagline: "Gentle sleep tracking for your little one" },
   common: {
-    save: "Save", cancel: "Cancel", delete: "Delete", edit: "Edit",
+    save: "Save", saving: "Saving…", cancel: "Cancel", delete: "Delete", edit: "Edit",
     back: "Back", add: "Add", create: "Create", saved: "Saved", deleted: "Deleted",
     none: "— None —", select: "Select…",
     today: "Today", yesterday: "Yesterday",
@@ -37,6 +37,9 @@ const en = {
     resetPasswordTitle: "Set a new password",
     newPassword: "New password",
     passwordUpdated: "Password updated",
+    passwordResetSuccess: "Password has been changed successfully",
+    linkExpired: "Reset link has expired or is invalid.",
+    requestNewLink: "Request a new link",
     backToSignIn: "Back to sign in",
   },
   errors: {
@@ -49,6 +52,7 @@ const en = {
     tooManyRequests: "Too many attempts. Try again later.",
     userNotFound: "Account not found.",
     sameEmail: "That's already your email.",
+    linkExpired: "Reset link has expired or is invalid. Request a new one.",
     unknown: "Something went wrong. Please try again.",
   },
   remove: {

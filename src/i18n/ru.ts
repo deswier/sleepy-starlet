@@ -1,7 +1,7 @@
 const ru = {
   app: { name: "Lullaby", tagline: "Бережный трекер сна для малыша" },
   common: {
-    save: "Сохранить", cancel: "Отмена", delete: "Удалить", edit: "Изменить",
+    save: "Сохранить", saving: "Сохраняем…", cancel: "Отмена", delete: "Удалить", edit: "Изменить",
     back: "Назад", add: "Добавить", create: "Создать", saved: "Сохранено", deleted: "Удалено",
     none: "— Нет —", select: "Выбрать…",
     today: "Сегодня", yesterday: "Вчера",
@@ -36,6 +36,9 @@ const ru = {
     resetPasswordTitle: "Новый пароль",
     newPassword: "Новый пароль",
     passwordUpdated: "Пароль обновлён",
+    passwordResetSuccess: "Пароль успешно изменен",
+    linkExpired: "Срок действия ссылки истёк или ссылка некорректна.",
+    requestNewLink: "Запросить новую ссылку",
     backToSignIn: "Вернуться ко входу",
   },
   errors: {
@@ -48,6 +51,7 @@ const ru = {
     tooManyRequests: "Слишком много попыток. Попробуйте позже.",
     userNotFound: "Аккаунт не найден.",
     sameEmail: "Это уже ваш email.",
+    linkExpired: "Срок действия ссылки истёк или она некорректна. Запросите новую.",
     unknown: "Что-то пошло не так. Повторите попытку.",
   },
   remove: {

@@ -22,6 +22,8 @@ export function authErrorMessage(error: unknown, t: TFunction): string {
     case "user_not_found":               return t("errors.userNotFound");
     case "same_password":
     case "email_change_unchanged":       return t("errors.sameEmail");
+    case "otp_expired":
+    case "invalid_token":                return t("errors.linkExpired");
   }
 
   const m = (err.message ?? "").toLowerCase();
@@ -32,6 +34,7 @@ export function authErrorMessage(error: unknown, t: TFunction): string {
   if (m.includes("invalid email") || m.includes("invalid format")) return t("errors.invalidEmail");
   if (m.includes("rate limit") || err.status === 429) return t("errors.tooManyRequests");
   if (m.includes("user not found")) return t("errors.userNotFound");
+  if (m.includes("expired") || m.includes("invalid token") || m.includes("auth session missing")) return t("errors.linkExpired");
   if (m.includes("fetch")) return t("errors.networkError");
 
   if (err.message) console.warn("[auth-errors] unmapped:", err.message);

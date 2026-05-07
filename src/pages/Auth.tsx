@@ -105,14 +105,22 @@ export default function Auth() {
 
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return; // guard against double submit
     if (password !== repeatPassword) { toast.error(t("auth.passwordMismatch")); return; }
     setBusy(true);
-    const { error } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (error) { toast.error(authErrorMessage(error, t)); return; }
-    toast.success(t("auth.passwordUpdated"));
-    // After reset, drop the recovery query param and let routing kick in.
-    navigate("/auth", { replace: true });
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) { toast.error(authErrorMessage(error, t)); return; }
+      toast.success(t("auth.passwordResetSuccess"));
+      // Reuse post-login routing so the user lands wherever a normal sign-in
+      // would (home or /child/new). If the recovery session somehow ended,
+      // routePostAuth itself falls back to /auth — never stuck here.
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (u) await routePostAuth(navigate);
+      else navigate("/auth", { replace: true });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleGoogle = async () => {
@@ -128,6 +136,34 @@ export default function Auth() {
   };
 
   if (isResetMode) {
+    // Recovery link without a recovery session = expired or already-used link.
+    // Don't show the password form: it would just fail on submit; surface the
+    // problem clearly and offer to request a fresh link.
+    if (!loading && !user) {
+      return (
+        <main className="min-h-screen bg-hero flex items-center justify-center p-4">
+          <div className="w-full max-w-md">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+                <Moon className="w-8 h-8 text-primary" strokeWidth={1.5} />
+              </div>
+              <h1 className="font-display text-4xl font-semibold text-foreground">{t("app.name")}</h1>
+            </div>
+            <Card className="p-6 shadow-soft border-border/50 space-y-4 text-center">
+              <h2 className="text-xl font-semibold">{t("auth.linkExpired")}</h2>
+              <Button className="w-full"
+                onClick={() => { navigate("/auth", { replace: true }); setForgotMode(true); }}>
+                {t("auth.requestNewLink")}
+              </Button>
+              <Button variant="ghost" className="w-full"
+                onClick={() => navigate("/auth", { replace: true })}>
+                {t("auth.backToSignIn")}
+              </Button>
+            </Card>
+          </div>
+        </main>
+      );
+    }
     return (
       <main className="min-h-screen bg-hero flex items-center justify-center p-4">
         <div className="w-full max-w-md">
@@ -156,7 +192,7 @@ export default function Auth() {
               </div>
               <Button type="submit" className="w-full"
                 disabled={busy || password.length < 6 || passwordMismatch || repeatPassword.length === 0}>
-                {t("common.save")}
+                {busy ? t("common.saving") : t("common.save")}
               </Button>
             </form>
           </Card>
