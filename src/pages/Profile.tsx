@@ -12,6 +12,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import ImageCropDialog from "@/components/ImageCropDialog";
+import { PasswordInput } from "@/components/PasswordInput";
+import { RequiredMark } from "@/components/RequiredMark";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { getAuthRedirectUrl } from "@/lib/native";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -31,8 +35,12 @@ export default function Profile() {
   const [name, setName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
+  const [emailDraft, setEmailDraft] = useState("");
+  useEffect(() => { if (user?.email) setEmailDraft(user.email); }, [user?.email]);
   const [newPassword, setNewPassword] = useState("");
+  const [repeatNewPassword, setRepeatNewPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const passwordMismatch = repeatNewPassword.length > 0 && repeatNewPassword !== newPassword;
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
@@ -61,7 +69,8 @@ export default function Profile() {
       language,
     }).eq("id", user.id);
     setBusy(false);
-    if (error) toast.error(error.message); else { toast.success(t("common.saved")); i18n.changeLanguage(language); }
+    if (error) toast.error(authErrorMessage(error, t));
+    else { toast.success(t("common.saved")); i18n.changeLanguage(language); }
   };
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -76,7 +85,7 @@ export default function Profile() {
     const path = `${user.id}/avatar-${Date.now()}.jpg`;
     setBusy(true);
     const up = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" });
-    if (up.error) { toast.error(up.error.message); setBusy(false); return; }
+    if (up.error) { toast.error(authErrorMessage(up.error, t)); setBusy(false); return; }
     const { data } = supabase.storage.from("avatars").getPublicUrl(path);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", user.id);
     setAvatarUrl(data.publicUrl);
@@ -84,13 +93,30 @@ export default function Profile() {
     toast.success(t("common.saved"));
   };
 
+  const changeEmail = async () => {
+    if (!emailDraft || !user || emailDraft === user.email) return;
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser(
+      { email: emailDraft },
+      { emailRedirectTo: getAuthRedirectUrl() },
+    );
+    setBusy(false);
+    if (error) toast.error(authErrorMessage(error, t));
+    else toast.success(t("profile.emailChangeSent"));
+  };
+
   const changePassword = async () => {
     if (!newPassword || newPassword.length < 6) { toast.error("min 6"); return; }
+    if (newPassword !== repeatNewPassword) { toast.error(t("auth.passwordMismatch")); return; }
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setBusy(false);
-    if (error) toast.error(error.message);
-    else { setNewPassword(""); toast.success(t("profile.passwordChanged")); }
+    if (error) toast.error(authErrorMessage(error, t));
+    else {
+      setNewPassword("");
+      setRepeatNewPassword("");
+      toast.success(t("profile.passwordChanged"));
+    }
   };
 
   const openDeleteDialog = async () => {
@@ -156,8 +182,17 @@ export default function Profile() {
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
           </div>
           <div className="space-y-1.5">
-            <Label>{t("profile.email")}</Label>
-            <Input value={user?.email ?? ""} disabled />
+            <Label htmlFor="email">{t("profile.email")}</Label>
+            <Input id="email" type="email" autoComplete="email"
+              value={emailDraft} onChange={(e) => setEmailDraft(e.target.value)} />
+            {emailDraft && emailDraft !== user?.email && (
+              <>
+                <p className="text-xs text-muted-foreground">{t("profile.changeEmailHint")}</p>
+                <Button onClick={changeEmail} variant="outline" size="sm" disabled={busy}>
+                  {t("profile.changeEmail")}
+                </Button>
+              </>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>{t("common.language")}</Label>
@@ -175,10 +210,21 @@ export default function Profile() {
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">{t("profile.changePassword")}</h3>
           <div className="space-y-1.5">
-            <Label>{t("profile.newPassword")}</Label>
-            <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={6} />
+            <Label htmlFor="newPw"><RequiredMark />{t("profile.newPassword")}</Label>
+            <PasswordInput id="newPw" autoComplete="new-password" minLength={6}
+              value={newPassword} onChange={setNewPassword} />
           </div>
-          <Button onClick={changePassword} className="w-full" disabled={busy || newPassword.length < 6}>
+          <div className="space-y-1.5">
+            <Label htmlFor="newPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
+            <PasswordInput id="newPw2" autoComplete="new-password" minLength={6}
+              aria-invalid={passwordMismatch}
+              value={repeatNewPassword} onChange={setRepeatNewPassword} />
+            {passwordMismatch && (
+              <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
+            )}
+          </div>
+          <Button onClick={changePassword} className="w-full"
+            disabled={busy || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
             {t("profile.changePassword")}
           </Button>
         </Card>

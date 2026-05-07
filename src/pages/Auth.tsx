@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Mail, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/PasswordInput";
+import { RequiredMark } from "@/components/RequiredMark";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +15,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { readLastRoute } from "@/lib/last-route";
 import { getAuthRedirectUrl } from "@/lib/native";
+import { authErrorMessage } from "@/lib/auth-errors";
 
 async function routePostAuth(navigate: (to: string, opts?: any) => void) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -29,12 +32,21 @@ async function routePostAuth(navigate: (to: string, opts?: any) => void) {
 export default function Auth() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isResetMode = searchParams.get("mode") === "reset";
   const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [repeatPassword, setRepeatPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  // Forgot-password flow has its own two-step state: request screen, then
+  // "we sent a link" screen. The PASSWORD_RECOVERY return is handled by URL
+  // ?mode=reset (set by AuthContext when the recovery event fires).
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const passwordMismatch = repeatPassword.length > 0 && repeatPassword !== password;
   // Default to device locale on first render; user can change before completing signup.
   const [language, setLanguage] = useState<"en" | "ru">(() => {
     const stored = typeof localStorage !== "undefined" ? localStorage.getItem("i18nextLng") : null;
@@ -44,25 +56,28 @@ export default function Auth() {
   useEffect(() => { if (i18n.language !== language) i18n.changeLanguage(language); }, [language]); // eslint-disable-line
 
   // Single routing point: fires when AuthContext resolves `user` after any
-  // sign-in method. Removing explicit routePostAuth calls from handlers
-  // eliminates the double child_users query that happened on password sign-in
-  // (handler fired immediately, then useEffect fired on the re-render).
-  useEffect(() => { if (!loading && user) routePostAuth(navigate); }, [user, loading, navigate]);
+  // sign-in method. In recovery mode the user has a (temporary) session but
+  // must set a password first — don't auto-route them home.
+  useEffect(() => {
+    if (!loading && user && !isResetMode) routePostAuth(navigate);
+  }, [user, loading, navigate, isResetMode]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
-    if (error) toast.error(error.message);
+    if (error) toast.error(authErrorMessage(error, t));
     // Routing handled by the useEffect above once user state updates.
   };
   const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault(); setBusy(true);
+    e.preventDefault();
+    if (password !== repeatPassword) { toast.error(t("auth.passwordMismatch")); return; }
+    setBusy(true);
     const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { emailRedirectTo: getAuthRedirectUrl(), data: { display_name: name } },
     });
-    if (error) { setBusy(false); toast.error(error.message); return; }
+    if (error) { setBusy(false); toast.error(authErrorMessage(error, t)); return; }
     if (!data.session) {
       // Email confirmation required — show confirmation screen, don't route.
       setBusy(false);
@@ -78,6 +93,28 @@ export default function Auth() {
     toast.success(t("auth.welcome"));
     // Routing handled by useEffect above.
   };
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault(); setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: getAuthRedirectUrl(),
+    });
+    setBusy(false);
+    if (error) { toast.error(authErrorMessage(error, t)); return; }
+    setResetEmailSent(true);
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password !== repeatPassword) { toast.error(t("auth.passwordMismatch")); return; }
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (error) { toast.error(authErrorMessage(error, t)); return; }
+    toast.success(t("auth.passwordUpdated"));
+    // After reset, drop the recovery query param and let routing kick in.
+    navigate("/auth", { replace: true });
+  };
+
   const handleGoogle = async () => {
     setBusy(true);
     // Supabase's signInWithOAuth navigates the browser to Google and back. On
@@ -89,6 +126,105 @@ export default function Auth() {
     });
     if (error) { toast.error(t("auth.googleFailed")); setBusy(false); }
   };
+
+  if (isResetMode) {
+    return (
+      <main className="min-h-screen bg-hero flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+              <Moon className="w-8 h-8 text-primary" strokeWidth={1.5} />
+            </div>
+            <h1 className="font-display text-4xl font-semibold text-foreground">{t("app.name")}</h1>
+          </div>
+          <Card className="p-6 shadow-soft border-border/50">
+            <h2 className="text-xl font-semibold mb-4">{t("auth.resetPasswordTitle")}</h2>
+            <form onSubmit={handleResetSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="newPw"><RequiredMark />{t("auth.newPassword")}</Label>
+                <PasswordInput id="newPw" autoComplete="new-password" required minLength={6}
+                  value={password} onChange={setPassword} />
+              </div>
+              <div>
+                <Label htmlFor="newPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
+                <PasswordInput id="newPw2" autoComplete="new-password" required minLength={6}
+                  aria-invalid={passwordMismatch}
+                  value={repeatPassword} onChange={setRepeatPassword} />
+                {passwordMismatch && (
+                  <p className="text-xs text-destructive mt-1">{t("auth.passwordMismatch")}</p>
+                )}
+              </div>
+              <Button type="submit" className="w-full"
+                disabled={busy || password.length < 6 || passwordMismatch || repeatPassword.length === 0}>
+                {t("common.save")}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      </main>
+    );
+  }
+
+  if (resetEmailSent) {
+    return (
+      <main className="min-h-screen bg-hero flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+              <Moon className="w-8 h-8 text-primary" strokeWidth={1.5} />
+            </div>
+            <h1 className="font-display text-4xl font-semibold text-foreground">{t("app.name")}</h1>
+          </div>
+          <Card className="p-8 shadow-soft border-border/50 text-center space-y-4">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30">
+              <Mail className="w-7 h-7 text-green-600 dark:text-green-400" />
+            </div>
+            <h2 className="text-xl font-semibold">{t("auth.resetEmailSent")}</h2>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              {t("auth.resetEmailSentDesc", { email })}
+            </p>
+            <Button variant="ghost" onClick={() => { setResetEmailSent(false); setForgotMode(false); }}
+              className="w-full">
+              {t("auth.backToSignIn")}
+            </Button>
+          </Card>
+        </div>
+      </main>
+    );
+  }
+
+  if (forgotMode) {
+    return (
+      <main className="min-h-screen bg-hero flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+              <Moon className="w-8 h-8 text-primary" strokeWidth={1.5} />
+            </div>
+            <h1 className="font-display text-4xl font-semibold text-foreground">{t("app.name")}</h1>
+          </div>
+          <Card className="p-6 shadow-soft border-border/50">
+            <h2 className="text-xl font-semibold mb-1">{t("auth.forgotPasswordTitle")}</h2>
+            <p className="text-sm text-muted-foreground mb-4">{t("auth.forgotPasswordDesc")}</p>
+            <form onSubmit={handleForgot} className="space-y-4">
+              <div>
+                <Label htmlFor="femail"><RequiredMark />{t("auth.email")}</Label>
+                <Input id="femail" type="email" autoComplete="email" required
+                  value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <Button type="submit" className="w-full" disabled={busy || !email}>
+                {t("auth.sendResetLink")}
+              </Button>
+              <Button type="button" variant="ghost" className="w-full"
+                onClick={() => setForgotMode(false)}>
+                {t("auth.backToSignIn")}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      </main>
+    );
+  }
 
   if (confirmationSent) {
     return (
@@ -147,22 +283,54 @@ export default function Auth() {
             </TabsList>
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">
-                <div><Label htmlFor="email">{t("auth.email")}</Label>
-                  <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-                <div><Label htmlFor="pw">{t("auth.password")}</Label>
-                  <Input id="pw" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+                <div>
+                  <Label htmlFor="email"><RequiredMark />{t("auth.email")}</Label>
+                  <Input id="email" type="email" autoComplete="email" required
+                    value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="pw"><RequiredMark />{t("auth.password")}</Label>
+                  <PasswordInput id="pw" autoComplete="current-password" required
+                    value={password} onChange={setPassword} />
+                </div>
                 <Button type="submit" className="w-full" disabled={busy}>{t("auth.signIn")}</Button>
+                <button type="button"
+                  onClick={() => setForgotMode(true)}
+                  className="w-full text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline">
+                  {t("auth.forgotPassword")}
+                </button>
               </form>
             </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
-                <div><Label htmlFor="name">{t("auth.yourName")}</Label>
-                  <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} /></div>
-                <div><Label htmlFor="email2">{t("auth.email")}</Label>
-                  <Input id="email2" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-                <div><Label htmlFor="pw2">{t("auth.password")}</Label>
-                  <Input id="pw2" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-                <Button type="submit" className="w-full" disabled={busy}>{t("auth.createAccount")}</Button>
+                <div>
+                  <Label htmlFor="name"><RequiredMark />{t("auth.yourName")}</Label>
+                  <Input id="name" autoComplete="name" required
+                    value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="email2"><RequiredMark />{t("auth.email")}</Label>
+                  <Input id="email2" type="email" autoComplete="email" required
+                    value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="pw2"><RequiredMark />{t("auth.password")}</Label>
+                  <PasswordInput id="pw2" autoComplete="new-password" required minLength={6}
+                    value={password} onChange={setPassword} />
+                </div>
+                <div>
+                  <Label htmlFor="pw3"><RequiredMark />{t("auth.repeatPassword")}</Label>
+                  <PasswordInput id="pw3" autoComplete="new-password" required minLength={6}
+                    aria-invalid={passwordMismatch}
+                    value={repeatPassword} onChange={setRepeatPassword} />
+                  {passwordMismatch && (
+                    <p className="text-xs text-destructive mt-1">{t("auth.passwordMismatch")}</p>
+                  )}
+                </div>
+                <Button type="submit" className="w-full"
+                  disabled={busy || passwordMismatch || repeatPassword.length === 0}>
+                  {t("auth.createAccount")}
+                </Button>
               </form>
             </TabsContent>
           </Tabs>
