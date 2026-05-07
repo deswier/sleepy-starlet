@@ -112,12 +112,9 @@ export default function Auth() {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) { toast.error(authErrorMessage(error, t)); return; }
       toast.success(t("auth.passwordResetSuccess"));
-      // Reuse post-login routing so the user lands wherever a normal sign-in
-      // would (home or /child/new). If the recovery session somehow ended,
-      // routePostAuth itself falls back to /auth — never stuck here.
-      const { data: { user: u } } = await supabase.auth.getUser();
-      if (u) await routePostAuth(navigate);
-      else navigate("/auth", { replace: true });
+      // Navigate unconditionally — RequireAuth and Index.tsx already handle
+      // the unauthenticated and no-children cases.
+      navigate("/", { replace: true });
     } finally {
       setBusy(false);
     }
