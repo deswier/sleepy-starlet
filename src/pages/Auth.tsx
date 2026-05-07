@@ -17,18 +17,6 @@ import { readLastRoute } from "@/lib/last-route";
 import { getAuthRedirectUrl } from "@/lib/native";
 import { authErrorMessage } from "@/lib/auth-errors";
 
-async function routePostAuth(navigate: (to: string, opts?: any) => void) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) { navigate("/auth", { replace: true }); return; }
-  const { data } = await supabase.from("child_users").select("child_id").eq("user_id", user.id).limit(1);
-  if (data && data.length > 0) {
-    const last = readLastRoute(user.id);
-    navigate(last?.path || "/", { replace: true });
-  } else {
-    navigate("/child/new", { replace: true });
-  }
-}
-
 export default function Auth() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -58,8 +46,13 @@ export default function Auth() {
   // Single routing point: fires when AuthContext resolves `user` after any
   // sign-in method. In recovery mode the user has a (temporary) session but
   // must set a password first — don't auto-route them home.
+  // Index.tsx handles the no-children → /child/new redirect; we only need
+  // to restore the last visited route if one exists.
   useEffect(() => {
-    if (!loading && user && !isResetMode) routePostAuth(navigate);
+    if (!loading && user && !isResetMode) {
+      const last = readLastRoute(user.id);
+      navigate(last?.path || "/", { replace: true });
+    }
   }, [user, loading, navigate, isResetMode]);
 
   const handleSignIn = async (e: React.FormEvent) => {
