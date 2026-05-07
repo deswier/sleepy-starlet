@@ -10,25 +10,219 @@ PWA for tracking infant sleep (naps, night sleep, wake windows). Russian + Engli
 - **Dexie** (IndexedDB) for the offline mutation queue → see `src/lib/offline-queue.ts`.
 - **Tailwind + shadcn/ui** (Radix primitives in `src/components/ui/`).
 - **react-router-dom v6**, **i18next** (en/ru), **date-fns**, **sonner** (toasts), **lucide-react** (icons).
-- **`@lovable.dev/cloud-auth-js`** wraps Google OAuth (do not bypass; redirect flow is project-specific).
+- **Capacitor 6** for iOS/Android wrapping (`capacitor.config.ts`, `src/lib/native.ts`).
+- Google OAuth via `supabase.auth.signInWithOAuth` directly — **not** the Lovable wrapper.
 
 ## Domain model
 
 The whole app is per-child. A user is linked to N children via `child_users`; each link gets a row in `child_user_roles` with one of: `viewer`, `user`, `admin`.
 
 Core tables (see `supabase/migrations/`):
-- `children`, `child_users`, `child_user_roles`, `child_settings`
+- `children` — includes `status` (`active` | `deleted`), `deleted_at`, `deleted_by_user_id`, `deletion_scheduled_at`
+- `child_users`, `child_user_roles`, `child_settings`
 - `sleep_sessions` (`start_time`, nullable `end_time` = ongoing, `sleep_type` enum `day|night`)
 - `sleep_interruptions` (per session, nullable `end_time` = ongoing)
 - `sleep_places`, `settling_methods` (per child, defaulted via `handle_new_child` trigger)
-- `child_invites` (6-char codes), `wake_window_rules`, `profiles`
+- `child_invites` (6-char codes), `invite_attempts` (cooldown enforcement), `wake_window_rules`
+- `profiles` — `display_name`, `avatar_url`, `language` (`en`|`ru`), `time_format` (`system`|`h12`|`h24`)
 
 Key invariants:
-- A child is created **only via the `create_child_with_link` RPC** (direct INSERT was removed in `20260503100000_security_hardening.sql`). The RPC creates the link in the same tx; trigger seeds settings + default places/methods.
+- A child is created **only via the `create_child_with_link` RPC** (direct INSERT blocked by RLS). The RPC creates the link in the same tx; trigger seeds settings + default places/methods.
 - Interruption sync goes through `sync_session_interruptions(_session_id, _interruptions jsonb)` RPC — atomic delete-missing + upsert. Don't loop client-side.
-- `sleep_overlaps` RPC checks for overlapping sessions before insert.
-- `redeem_child_invite` enforces a per-user/device cooldown via `invite_attempts` table.
+- `sleep_overlaps` RPC checks for overlapping sessions before insert/update.
+- `redeem_child_invite` enforces a per-user/device cooldown via `invite_attempts`.
 - All RPCs are `SECURITY DEFINER SET search_path = public` and gate access via `user_has_child_access` / `has_child_role` / `user_has_session_access`.
+- `ChildContext` always filters `status = 'active'` — soft-deleted children are invisible to the app.
+- A child must always have at least one owner (`admin` role). Profile deletion is blocked if the user is the sole owner of any child.
+
+## Roles and permissions
+
+| Role | Can start/end sleep | Can edit own sleep | Can edit any sleep | Can manage members/settings |
+|---|---|---|---|---|
+| `admin` | ✓ | ✓ | ✓ | ✓ |
+| `user` | ✓ | ✓ | ✗ | ✗ |
+| `viewer` | ✗ | ✗ | ✗ | ✗ |
+
+- `canCreateSleep(role)` — `admin` or `user`
+- `canEditOwnSleep(role)` — `admin` or `user`
+- `canEditAnySleep(role)` — `admin` only
+- `canEditChild(role)` — `admin` only
+- `canManageMembers(role)` — `admin` only
+
+## Sleep state machine
+
+```
+[awake]
+  └─ startSleep() ──────────────────────────────► [sleeping]
+                                                        │
+                                            toggleInterruption() (pause)
+                                                        │
+                                                        ▼
+                                              [sleeping + interruption active]
+                                                        │
+                                            toggleInterruption() (resume)
+                                            → opens stop-interruption modal
+                                                        │
+                                                        ▼
+                                                   [sleeping]
+                                                        │
+                                                    wakeUp()
+                                                        │
+                                                        ▼
+                                            [wake-up confirmation modal]
+                                            (draft only — no DB write yet)
+                                                        │
+                                              SleepForm confirm
+                                                        │
+                                                        ▼
+                                                   [awake]
+```
+
+Key rules:
+- `wakeUp()` builds a local draft (session + interruptions). Nothing is written to DB until the user confirms via `SleepForm`. Cancel discards the draft with no rollback needed.
+- `startSleep()` runs `sleep_overlaps` RPC before INSERT. If overlap → toast error, abort.
+- Interruptions do **not** split a session. Session duration is `end - start` regardless of interruptions.
+- An interruption's start must be within `[session.start_time, session.end_time]`. Interruptions must not overlap each other.
+- Only one active (no `end_time`) sleep session is allowed per child at a time.
+
+## Wake window logic
+
+- Computed from `birthDate` → `ageInMonths` → `wakeWindowForAge(months)` → `{min, max}` minutes.
+- Displayed as a colored bar in History between sessions.
+- Status: `"good"` if `ww >= min && ww <= max`, else `"warn"`.
+- The ongoing wake window (after last completed sleep, today) is projected in real time.
+- Night window (`night_start_time` / `night_end_time` from `child_settings`) determines whether a sleep is classified as `day` or `night`.
+
+## Deletion and restoration flows
+
+### Soft-delete a child (admin only)
+1. `soft_delete_child(child_id)` RPC: sets `status = 'deleted'`, `deleted_at`, `deletion_scheduled_at = now() + 30 days`.
+2. Child disappears from all participants' lists immediately (ChildContext filters `status = active`).
+3. Data can be restored within 30 days via `restore_child(child_id)` RPC.
+4. `purge_expired_children()` RPC hard-deletes children past the 30-day window.
+
+### Leave a child (non-admin, or admin where other admins exist)
+1. `leave_child(child_id)` RPC removes the caller's `child_users` + `child_user_roles` row.
+2. Other participants are unaffected.
+
+### Delete profile (user account)
+Scenarios checked by `account_deletion_check()` RPC before showing the dialog:
+- **blocked** — user is sole admin of a child that has other participants. Must assign another admin or delete the child first.
+- **solo** — user is sole participant of a child. After deletion, that child cannot be restored.
+- **ownerWithOthers** — user is admin but other admins exist. Other admins keep access.
+- **default** — no children affected.
+
+`delete-account` Edge Function calls `auth.admin.deleteUser` with the service role. Client always signs out after invoking it.
+
+## Routing and auth flows
+
+### Post-login routing
+```
+AuthContext onAuthStateChange (user set)
+  → Auth.tsx useEffect fires
+  → readLastRoute(user.id) from localStorage
+  → navigate(last.path || "/")
+  → Index.tsx:
+      children.length === 0 → /child/new
+      else → render home
+```
+- `readLastRoute` returns `null` if the stored path is `/auth` or `/child/new`.
+- Query params are stripped before the EXCLUDED set check (so `/auth?mode=reset` is excluded).
+
+### Password reset flow
+```
+Auth.tsx "Forgot password?" → handleForgot() → resetPasswordForEmail(email)
+  → "reset email sent" screen
+
+User clicks link in email
+  → Supabase redirects to app URL with recovery token in hash
+  → AuthContext onAuthStateChange fires PASSWORD_RECOVERY
+  → navigate("/auth?mode=reset")
+  → Auth.tsx renders reset form (isResetMode = true)
+
+handleResetSubmit() → updateUser({ password })
+  → navigate("/", { replace: true })   ← unconditional, no getUser() race
+  → RequireAuth + Index.tsx handle the rest
+```
+
+### Provider-aware password management (Profile page)
+- Detect providers: `user.app_metadata.providers` + `user.identities[].provider`.
+- `hasPasswordProvider` = any provider is `"email"` or `"password"`.
+- `hasGoogleProvider` = any provider is `"google"` or `"google.com"`.
+- **Email/password users**: change password form with current-password re-auth via `signInWithPassword()` before `updateUser({ password })`.
+- **Google-only users**: "Set password" toggle shows new + repeat fields, calls `updateUser({ password })` to link the email provider.
+- Forgot password link in the change-password section sends a reset email to the user's own address.
+
+### Email confirmation flow
+- After `signUp()`, if `data.session` is `null`, show a "check your inbox" screen instead of routing.
+- On mobile, the confirmation link opens the app via deep link.
+
+## Time and duration formatting
+
+All time display goes through centralized helpers in `src/lib/sleep-utils.ts`.  
+**Never format time or duration inline in components.**
+
+### Duration — `formatDuration(minutes, locale?)`
+- Reads `i18n.language` automatically when `locale` is omitted.
+- Format: `0m`, `15m`, `1h`, `1h05m`, `5h15m` (EN) / `0м`, `15м`, `1ч`, `1ч05м`, `5ч15м` (RU).
+- Minutes are zero-padded when hours are present: `1h05m` not `1h5m`.
+- Returns `0m`/`0м` for < 1 minute (not `<1m`).
+- **Never** format durations as clock time (`HH:mm`).
+
+### Clock time — `formatClockTime(date, locale, timeFormat)`
+- `timeFormat` is `"system" | "h12" | "h24"` from the user's profile.
+- `system`: detects via `navigator.language` (device preference, not app display language) using `Intl.DateTimeFormat.formatToParts` looking for a `dayPeriod` part.
+- Renders via `Intl.DateTimeFormat` with `hour12` flag — never with `date-fns format("HH:mm")`.
+
+### Date + time — `fmtDateTime(date, locale, timeFormat)`
+- Date part: `dd.MM.yy` (date-fns, locale-aware).
+- Time part: `formatClockTime(...)`.
+
+### Date only — `fmtDate(d)`, `fmtWeekday(d)`
+- No timeFormat dependency. Use as-is.
+
+### `useTimeFormat()` hook
+Use in components instead of importing formatting functions directly:
+```ts
+const { fmtTime, fmtDateTime, fmtDuration } = useTimeFormat();
+```
+Reads `timeFormat` from `AuthContext` and locale from `i18n`. Any change to either triggers a re-render.
+
+**Do not** call `formatClockTime` / `fmtDateTime` directly from components — always go through the hook.
+
+`formatDuration` may be called directly from module-level helpers (e.g., Analytics) since it auto-reads `i18n.language` at call time.
+
+### Time format preference
+- Stored in `profiles.time_format` (`system` | `h12` | `h24`), default `system`.
+- Loaded by `AuthContext.syncLanguageFromProfile` alongside language.
+- Exposed as `timeFormat` + `setTimeFormat` on `AuthContext`.
+- User edits in Profile page; saved together with language on "Save".
+
+## Localization rules
+
+- Add every new string to **both** `src/i18n/en.ts` and `src/i18n/ru.ts`.
+- Never hardcode user-visible strings. Never display raw i18n keys.
+- Plurals: `_other` / `_few` / `_many` suffixes per i18next rules.
+- Gendered text (e.g. `sleep.wakeUp`, `sleep.startedAt`): use `context: "male" | "female" | "other"` derived from `child.gender`.
+- All places/methods stored in English in DB; translate at render time via `localizePlace()` / `localizeMethod()`.
+- Duration suffixes: `h`/`m` (EN), `ч`/`м` (RU). Clock separator: locale-agnostic via `Intl`.
+
+Namespaces in i18n files: `app`, `common`, `auth`, `child`, `sleep`, `history`, `analytics`, `settings`, `defaults`, `conflicts`, `profile`, `remove`, `errors`.
+
+## Validation rules
+
+- **Birth date**: must be ≤ today. Compare as `YYYY-MM-DD` strings (local date, no timezone shift). Compute today as `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`. Set `max={todayStr}` on date inputs. No minimum date restriction.
+- **Sleep start/end**: neither can be in the future. End must be after start.
+- **Interruption bounds**: must be within session `[start_time, end_time]`. Interruptions must not overlap.
+- **Password**: minimum 6 characters.
+
+## UI constraints
+
+- Every `<Button>` that is **not** inside a `<form>` element must have `type="button"`. Omitting this causes browsers to treat it as `type="submit"` and associate it with nearby unformed inputs via implicit form context.
+- `RequiredMark` (`<span className="text-destructive mr-0.5">*</span>`) on every required field label.
+- `PasswordInput` with eye-toggle for all password fields; toggle button is `tabIndex={-1}` (keyboard tab skips it).
+- Do not write to DB before a confirmation modal commits (see `wakeUp` pattern in `CurrentSleep.tsx`).
+- Show loading state for async operations; disable submit buttons during requests; prevent double-submit.
 
 ## Directory layout
 
@@ -37,87 +231,97 @@ src/
   App.tsx                 routes + lazy pages + QueryClientProvider
   main.tsx                bootstrap
   contexts/
-    AuthContext.tsx       supabase auth wrapper; signOut clears
-                          children_cache_v1 + active_child_id
-    ChildContext.tsx      central state: list, activeChild, settings,
-                          role, refresh, refreshSettings.
-                          Caches list in localStorage keyed by userId.
+    AuthContext.tsx       supabase auth wrapper; exposes user, session,
+                          loading, timeFormat, setTimeFormat, signOut.
+                          Loads language + time_format from profile on
+                          auth state change. Registers Capacitor deep link
+                          listener for native auth callbacks.
+    ChildContext.tsx      central state: list (status=active only),
+                          activeChild, settings, role, refresh,
+                          refreshSettings. Caches list in localStorage.
   hooks/
     useChildRole.ts       thin wrapper over ChildContext.role
-                          (kept for import-path compat)
     use-mobile.tsx, use-toast.ts
   lib/
-    sleep-utils.ts        pure domain (formatDuration, sessionDuration,
-                          inferSleepType, wakeWindowForAge, ageInMonthsAt)
+    sleep-utils.ts        pure domain: formatDuration, formatClockTime,
+                          fmtDateTime, fmtDate, fmtWeekday, sessionDuration,
+                          inferSleepType, wakeWindowForAge, ageInMonthsAt,
+                          wwThresholdsAt, wwStatus. Exports TimeFormat type.
+    use-time-format.ts    useTimeFormat() hook; centralises fmtTime,
+                          fmtDateTime, fmtDuration with locale + timeFormat
+                          from context.
     offline-queue.ts      Dexie-backed mutation queue + conflict store
                           + flush() on online event
-    last-route.ts         per-user route persistence
+    auth-errors.ts        authErrorMessage(error, t) — maps Supabase error
+                          codes to localized strings.
+    last-route.ts         per-user route persistence. Excludes /auth* and
+                          /child/new. Strips query params before exclusion
+                          check.
+    native.ts             Capacitor helpers: isNative(), getAuthRedirectUrl(),
+                          NATIVE_AUTH_REDIRECT, registerAuthDeepLinkListener()
     device-id.ts          stable client id for invite cooldown
     localize-default.ts   localizes seeded place/method names
     method-icons.tsx      lucide icon mapping
     utils.ts              shadcn cn() helper
   i18n/
     index.ts              i18next setup (LanguageDetector + localStorage)
-    en.ts, ru.ts          flat namespaces: app, common, auth, child,
-                          sleep, history, analytics, settings, defaults,
-                          conflicts, profile
+    en.ts, ru.ts          flat namespaces (see Localization rules)
   integrations/
     supabase/client.ts    auto-generated; keep as-is
     supabase/types.ts     auto-generated DB types
-    lovable/index.ts      Google OAuth wrapper
   components/
     AppShell.tsx          header + bottom nav (3 tabs)
     RequireAuth.tsx       gate; redirects to /auth
-    RouteTracker.tsx      writes last-route on every nav
+    RouteTracker.tsx      writes last-route on every nav (skips /auth*, /child/new)
     SyncStatus.tsx        offline / pending / conflicts banner
-    DateTimeField.tsx     reusable date+time input
+    DateTimeField.tsx     date picker + HH:mm input (always 24h for the
+                          <input type="time"> — user-facing display uses
+                          formatClockTime separately)
     ImageCropDialog.tsx   avatar crop
+    PasswordInput.tsx     password field with eye-toggle (type="button"
+                          on toggle, tabIndex={-1})
+    RequiredMark.tsx      red asterisk for required labels
     NavLink.tsx
     sleep/
       SleepForm.tsx       create/edit sleep session + interruptions.
                           Lazy-loaded everywhere (dialog-only).
-                          Reads settings from ChildContext;
-                          uses sync_session_interruptions RPC.
-      SleepDetail.tsx     read-only view; one Supabase join (place +
-                          method + creator + interruptions)
+      SleepDetail.tsx     read-only view; one Supabase join.
       InterruptionsEditor.tsx  list editor + validateInterruptions()
     ui/                   shadcn/ui primitives — don't edit
   pages/
-    Index.tsx             "/" — wraps CurrentSleep in AppShell
-    CurrentSleep.tsx      home; start/wake; pause/resume interruption.
-                          Two realtime channels: sessions filtered by
-                          child_id, interruptions filtered by active
-                          sleep_session_id. Wake-up draft is local-only
-                          until user confirms (no DB write on open).
-    History.tsx           per-day list. Uses useQuery + invalidate on
-                          realtime. Day navigation cached.
-    Analytics.tsx         Day/Week tabs. Exports `sessionDay` and
-                          `NightWindow` (consumed by History.tsx).
-                          Week tab `forceMount`-ed so its data is
-                          ready when user switches.
-    Heatmap.tsx           7-day grid view + interruption icons
+    Index.tsx             "/" — redirects to /child/new if no children
+    CurrentSleep.tsx      home; start/wake/pause/resume.
+    History.tsx           per-day list. TanStack Query + realtime.
+    Analytics.tsx         Day/Week tabs. Exports sessionDay + NightWindow.
+    Heatmap.tsx           7-day sleep grid
     Settings.tsx          child config + members + invites.
-                          saveSettings uses optimistic lock on
-                          updated_at — surfaces conflict via toast.
-    Auth.tsx              sign-in/up + Google. Single routing point
-                          via useEffect on user state.
+                          saveSettings uses optimistic lock on updated_at.
+    Auth.tsx              sign-in/up/forgot/reset + Google OAuth.
+                          Single routing point post-login.
     NewChild.tsx          create child or redeem invite
-    Profile.tsx, Conflicts.tsx, NotFound.tsx
-  test/                   vitest setup; almost empty (improvement target)
+    Profile.tsx           user profile: name, email, language, timeFormat,
+                          photo, change/set password, delete account.
+    DeletedChildren.tsx   admin view of soft-deleted children + restore.
+    Conflicts.tsx         offline sync conflict resolution
+    NotFound.tsx
+  test/
 supabase/
-  config.toml             local CLI config
-  migrations/             dated SQL migrations — apply via Supabase CLI
+  config.toml
+  migrations/             timestamped SQL migrations
+  functions/
+    delete-account/       Edge Function; calls auth.admin.deleteUser
+                          with service role key.
 public/                   PWA manifest + icons
-vite.config.ts            manual chunks: vendor-react, vendor-supabase,
-                          vendor-radix, vendor-query, vendor-date-fns,
-                          vendor-lucide, vendor-dexie, vendor-i18n
+vite.config.ts            manual chunks
+vercel.json               SPA rewrite rule (all routes → index.html)
+capacitor.config.ts       appId: "app.lullaby", webDir: "dist"
 ```
 
 ## Conventions
 
-**Data fetching.** Read `settings`, `role`, `activeChild`, `children` **only from `ChildContext`** — they are already shared. Never re-query `child_settings`, `child_user_roles`, or `child_users` on a page.
+**Data fetching.** Read `settings`, `role`, `activeChild`, `children` **only from `ChildContext`**. Never re-query `child_settings`, `child_user_roles`, or `child_users` on a page.
 
-**Race safety.** Every effect that writes state from a network response uses a `cancelled` ref so a slow previous response doesn't overwrite newer data:
+**Race safety.** Every effect that writes state from a network response uses a `cancelled` ref:
 ```ts
 useEffect(() => {
   let cancelled = false;
@@ -127,74 +331,97 @@ useEffect(() => {
 ```
 For new code prefer `useQuery` (see `History.tsx`).
 
-**Error handling.** Loading state must always exit. Use `.catch(...).finally(() => setLoading(false))` on chained `Promise.all`. `try/finally` for awaited multi-step flows. Show `toast.error(t("common.loadFailed"))` for read failures.
+**Error handling.** Loading state must always exit. Use `.catch(...).finally(() => setLoading(false))` on chained `Promise.all`. `try/finally` for awaited multi-step flows. Show `toast.error(t("common.loadFailed"))` for read failures. Use `authErrorMessage(error, t)` from `src/lib/auth-errors.ts` for all Supabase auth errors.
 
-**Realtime.** One channel per `(activeChild.id)` named `sleep-${id}`. Always pass `filter: child_id=eq.${id}` (or `sleep_session_id=eq.${id}` for interruptions of an active session). Unfiltered subs reload on every other family's edits.
+**Realtime.** One channel per `(activeChild.id)` named `sleep-${id}`. Always pass `filter: child_id=eq.${id}` (or `sleep_session_id=eq.${id}` for interruptions). Unfiltered subs reload on every other family's edits.
 
-**i18n.** Add new strings to **both** `src/i18n/en.ts` and `src/i18n/ru.ts`. Plurals via i18next `_other`/`_few`/`_many` suffixes. Gendered strings (e.g. `sleep.startedAt`) use `context: "male" | "female" | "other"` derived from `child.gender`.
+**Comments.** Lead with WHY, not WHAT. Prefer no comment over an obvious one.
 
-**Comments.** Lead with WHY, not WHAT. The codebase prefers no comment over an obvious one. Keep them short.
-
-**Types.** `as any` is tolerated for Supabase joins (typed weakly by the SDK) but should otherwise be avoided.
+**Types.** `as any` is tolerated for Supabase joins (typed weakly by the SDK) but avoid elsewhere.
 
 **Lazy loading.** `SleepForm` and `SleepDetail` are dialog-only — always import via `lazy()` and wrap in `<Suspense fallback={null}>`.
 
+**Buttons.** Every `<Button>` not inside a `<form>` must have `type="button"`. Omitting causes browsers to fire implicit form submission when unformed inputs are on the same page.
+
 ## RLS / security rules
 
-- `profiles` SELECT is restricted to self + members of shared children (since `20260503100000`). Don't relax.
-- `children` INSERT requires the RPC; `child_users.UPDATE` cannot change `child_id` / `user_id` (trigger).
-- TEXT columns have CHECK constraints (length, `^https?://` for URLs). When adding a new user-input column, add a constraint.
+- `profiles` SELECT restricted to self + members of shared children.
+- `children` INSERT requires the RPC.
+- `child_users.UPDATE` cannot change `child_id` / `user_id` (trigger enforced).
+- TEXT columns have CHECK constraints (length, `^https?://` for URLs). Add constraints on new user-input columns.
+- Edge Functions that need admin access use the service role key from environment — never expose it to the browser.
+
+## Critical invariants
+
+- A child must always have at least one admin. Profile deletion is blocked if the user would leave any child without an owner.
+- Interruptions must not overlap within a session.
+- Interruption start and end must be within the parent session's time range.
+- Only one active (no `end_time`) session is allowed per child.
+- Never write to the DB before a confirmation modal (wake-up confirmation is draft-only until `SleepForm` commits).
+- `ChildContext` must always filter `status = 'active'`; soft-deleted children are never shown.
+- Birth date cannot be in the future (validated before save and via `max` on the date input).
+- Auth redirect URL for native: `app.lullaby://auth/callback`. Use `getAuthRedirectUrl()` everywhere — never hardcode.
 
 ## How to run / build / test
 
 ```sh
-bun install                  # bun.lockb is the canonical lockfile here
+bun install                  # bun.lockb is the canonical lockfile
 bun run dev                  # Vite dev on :8080
 bun run build                # production build (esnext target)
-bun run build:dev            # dev-mode build (keeps componentTagger)
 bun run lint                 # eslint flat config
 bun run test                 # vitest run
 bun run test:watch           # vitest watch
+bun run db:push              # supabase db push (apply migrations)
+bun run db:types             # regenerate src/integrations/supabase/types.ts
 ```
 
-Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` in `.env` (no `.env.example` yet).
+Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` in `.env` (see `.env.example`).
 
-Migrations: `supabase db push` from the project root (requires Supabase CLI + linked project). Migrations are timestamped — keep ordering monotonic.
-
-Tests: only `src/test/example.test.ts` is meaningful right now. Pure functions to cover first: `sleep-utils.*`, `Analytics.sessionDay`, `InterruptionsEditor.validateInterruptions`, `offline-queue.applyMutation`, `last-route.*`.
+Migrations: timestamped, monotonic. Apply via `supabase db push`. Never edit applied migrations.
 
 ## Things to avoid
 
-- **Two lockfiles.** `bun.lockb` and `package-lock.json` both exist; prefer `bun.lockb`. Don't run `npm install` (will desync).
-- Don't fetch `child_settings`, `settling_methods` (when only IDs are needed), `child_user_roles`, or `child_users` on individual pages — they live in `ChildContext` or are loaded once in dialog forms.
-- Don't write to DB before a confirmation modal commits (see `wakeUp` pattern in `CurrentSleep.tsx`).
-- Don't run `Promise.all` on read queries without `.catch` — loading state will hang on transient failures.
+- **Two lockfiles.** `bun.lockb` is canonical. Don't run `npm install`.
+- Don't fetch `child_settings`, `child_user_roles`, or `child_users` on individual pages — they live in `ChildContext`.
+- Don't write to DB before a confirmation modal commits.
+- Don't run `Promise.all` on read queries without `.catch` — loading state will hang.
 - Don't add unfiltered realtime channels.
-- Don't loop client-side INSERT/UPDATE/DELETE on related rows — write an RPC (see `sync_session_interruptions`).
-- Don't bypass `localizePlace` / `localizeMethod` when rendering seeded names — defaults are stored in English in DB and translated at render time.
-- `react-i18next` is set up; never hardcode strings shown to users.
+- Don't loop client-side INSERT/UPDATE/DELETE on related rows — write an RPC.
+- Don't bypass `localizePlace` / `localizeMethod` when rendering seeded names.
+- Don't hardcode user-visible strings — always use `t("key")`.
+- Don't use `toISOString()` or `toLocaleDateString()` for date-only comparisons — compute `YYYY-MM-DD` from local date parts to avoid timezone shift.
+- Don't format duration as `HH:mm` — use `formatDuration()`.
+- Don't call `formatClockTime` / `fmtDateTime` directly from components — use `useTimeFormat()` hook.
+- Don't omit `type="button"` on `<Button>` components outside `<form>` elements.
+- Don't embed the Supabase service role key in client-side code.
 
 ## Common tasks
 
 **Add a new field to child_settings:**
-1. New migration: `ALTER TABLE child_settings ADD COLUMN ...` + length/range CHECK.
-2. Extend `ChildSettings` type in `src/contexts/ChildContext.tsx` and add the column to both `select(...)` calls (initial effect + `refreshSettings`).
-3. If user-editable, extend the `Settings.tsx` form (it does its own `select("*")` so no schema change needed there).
+1. New migration: `ALTER TABLE child_settings ADD COLUMN ...` + CHECK constraint.
+2. Extend `ChildSettings` type in `ChildContext.tsx`; add column to both `select(...)` calls.
+3. If user-editable, extend `Settings.tsx` form.
 4. Add i18n keys to `en.ts` + `ru.ts`.
 
 **Add a new page:**
-1. `src/pages/Foo.tsx`. Most pages import `useChildren()`; redirect to `/child/new` if `activeChild === null`.
-2. In `App.tsx`: `const Foo = lazy(() => import("./pages/Foo"))` + a `<Route>`. Wrap in `<RequireAuth>` and (if it should show the bottom nav) `<AppShell>`.
-3. Add a tab in `AppShell.tsx` only if it belongs to the main navigation.
+1. `src/pages/Foo.tsx`. Redirect to `/child/new` if `activeChild === null`.
+2. `App.tsx`: `const Foo = lazy(() => import("./pages/Foo"))` + `<Route>`. Wrap in `<RequireAuth>`.
+3. Add to `AppShell.tsx` nav only if it belongs in main navigation.
 
 **Add an RPC:**
 - `LANGUAGE plpgsql SECURITY DEFINER SET search_path = public`.
-- `IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;`
+- Guard: `IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;`
 - Gate by `user_has_child_access`, `has_child_role`, or `user_has_session_access`.
-- Call from JS via `supabase.rpc("name", { _arg: value })`. JSONB params accept JS objects directly.
+- Call from JS: `supabase.rpc("name", { _arg: value })`.
 
-**Add a query in a page:**
-- Prefer `useQuery({ queryKey: [domain, ...keys], queryFn })`. Invalidate via `queryClient.invalidateQueries({ queryKey: [domain] })` from realtime handlers and post-mutation callbacks.
+**Add a TanStack Query in a page:**
+- `useQuery({ queryKey: [domain, ...keys], queryFn })`.
+- Invalidate via `queryClient.invalidateQueries({ queryKey: [domain] })` from realtime handlers and post-mutation callbacks.
 - For one-off non-cached queries, use the cancel-ref pattern.
 
-**Offline write:** Use `enqueue()` from `src/lib/offline-queue.ts` when `!navigator.onLine` (see SleepForm submit). The queue auto-flushes on `online` event and surfaces conflicts to `/conflicts`.
+**Offline write:** Use `enqueue()` from `src/lib/offline-queue.ts` when `!navigator.onLine`. Queue auto-flushes on `online` event and surfaces conflicts to `/conflicts`.
+
+**Add a new time/duration display:**
+- Duration → `const { fmtDuration } = useTimeFormat()` → `fmtDuration(minutes)`.
+- Clock time → `const { fmtTime } = useTimeFormat()` → `fmtTime(isoString)`.
+- Date + time → `const { fmtDateTime } = useTimeFormat()` → `fmtDateTime(isoString)`.
