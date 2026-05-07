@@ -53,6 +53,7 @@ const ru = {
     sameEmail: "Это уже ваш email.",
     linkExpired: "Срок действия ссылки истёк или она некорректна. Запросите новую.",
     unknown: "Что-то пошло не так. Повторите попытку.",
+    wrongCurrentPassword: "Неверный текущий пароль.",
   },
   remove: {
     fromAccount: "Удалить из моего аккаунта",
@@ -242,6 +243,11 @@ const ru = {
     newEmail: "Новый email",
     changeEmailHint: "Мы отправим ссылку подтверждения на новый email.",
     emailChangeSent: "Письмо отправлено. Проверьте обе почты, чтобы завершить смену.",
+    currentPassword: "Текущий пароль",
+    setPassword: "Установить пароль",
+    passwordLoginNotEnabled: "Вход по паролю не настроен",
+    passwordSetSuccess: "Пароль успешно установлен",
+    resetPasswordSent: "Письмо для сброса пароля отправлено на вашу почту",
   },
 };
 export default ru;

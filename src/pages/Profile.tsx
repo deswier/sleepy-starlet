@@ -37,10 +37,19 @@ export default function Profile() {
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
   const [emailDraft, setEmailDraft] = useState("");
   useEffect(() => { if (user?.email) setEmailDraft(user.email); }, [user?.email]);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [repeatNewPassword, setRepeatNewPassword] = useState("");
+  const [showSetPasswordForm, setShowSetPasswordForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const passwordMismatch = repeatNewPassword.length > 0 && repeatNewPassword !== newPassword;
+
+  const providers: string[] = [
+    ...((user?.app_metadata?.providers as string[] | undefined) ?? []),
+    ...(user?.identities?.map((i) => i.provider) ?? []),
+  ];
+  const hasPasswordProvider = providers.some((p) => p === "email" || p === "password");
+  const hasGoogleProvider = providers.some((p) => p === "google" || p === "google.com");
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
@@ -106,17 +115,47 @@ export default function Profile() {
   };
 
   const changePassword = async () => {
-    if (!newPassword || newPassword.length < 6) { toast.error("min 6"); return; }
+    if (!currentPassword) return;
+    if (newPassword.length < 6) { toast.error(t("errors.weakPassword")); return; }
+    if (newPassword !== repeatNewPassword) { toast.error(t("auth.passwordMismatch")); return; }
+    if (!user?.email) return;
+    setBusy(true);
+    // Re-authenticate to verify current password before allowing the change.
+    const { error: reauthError } = await supabase.auth.signInWithPassword({ email: user.email, password: currentPassword });
+    if (reauthError) {
+      setBusy(false);
+      toast.error(t("errors.wrongCurrentPassword"));
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setBusy(false);
+    if (error) { toast.error(authErrorMessage(error, t)); return; }
+    setCurrentPassword("");
+    setNewPassword("");
+    setRepeatNewPassword("");
+    toast.success(t("auth.passwordResetSuccess"));
+  };
+
+  const setPassword = async () => {
+    if (newPassword.length < 6) { toast.error(t("errors.weakPassword")); return; }
     if (newPassword !== repeatNewPassword) { toast.error(t("auth.passwordMismatch")); return; }
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setBusy(false);
+    if (error) { toast.error(authErrorMessage(error, t)); return; }
+    setNewPassword("");
+    setRepeatNewPassword("");
+    setShowSetPasswordForm(false);
+    toast.success(t("profile.passwordSetSuccess"));
+  };
+
+  const sendForgotPassword = async () => {
+    if (!user?.email) return;
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: getAuthRedirectUrl() });
+    setBusy(false);
     if (error) toast.error(authErrorMessage(error, t));
-    else {
-      setNewPassword("");
-      setRepeatNewPassword("");
-      toast.success(t("profile.passwordChanged"));
-    }
+    else toast.success(t("profile.resetPasswordSent"));
   };
 
   const openDeleteDialog = async () => {
@@ -209,24 +248,73 @@ export default function Profile() {
 
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">{t("profile.changePassword")}</h3>
-          <div className="space-y-1.5">
-            <Label htmlFor="newPw"><RequiredMark />{t("profile.newPassword")}</Label>
-            <PasswordInput id="newPw" autoComplete="new-password" minLength={6}
-              value={newPassword} onChange={setNewPassword} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="newPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
-            <PasswordInput id="newPw2" autoComplete="new-password" minLength={6}
-              aria-invalid={passwordMismatch}
-              value={repeatNewPassword} onChange={setRepeatNewPassword} />
-            {passwordMismatch && (
-              <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
-            )}
-          </div>
-          <Button onClick={changePassword} className="w-full"
-            disabled={busy || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
-            {t("profile.changePassword")}
-          </Button>
+          {hasPasswordProvider ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="curPw"><RequiredMark />{t("profile.currentPassword")}</Label>
+                <PasswordInput id="curPw" autoComplete="current-password"
+                  value={currentPassword} onChange={setCurrentPassword} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newPw"><RequiredMark />{t("profile.newPassword")}</Label>
+                <PasswordInput id="newPw" autoComplete="new-password" minLength={6}
+                  value={newPassword} onChange={setNewPassword} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
+                <PasswordInput id="newPw2" autoComplete="new-password" minLength={6}
+                  aria-invalid={passwordMismatch}
+                  value={repeatNewPassword} onChange={setRepeatNewPassword} />
+                {passwordMismatch && (
+                  <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
+                )}
+              </div>
+              <Button onClick={changePassword} className="w-full"
+                disabled={busy || !currentPassword || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
+                {t("profile.changePassword")}
+              </Button>
+              <button type="button" onClick={sendForgotPassword} disabled={busy}
+                className="w-full text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline">
+                {t("auth.forgotPassword")}
+              </button>
+            </>
+          ) : (
+            <>
+              {!showSetPasswordForm ? (
+                <>
+                  <p className="text-sm text-muted-foreground">{t("profile.passwordLoginNotEnabled")}</p>
+                  <Button variant="outline" className="w-full" onClick={() => setShowSetPasswordForm(true)}>
+                    {t("profile.setPassword")}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="setPw"><RequiredMark />{t("profile.newPassword")}</Label>
+                    <PasswordInput id="setPw" autoComplete="new-password" minLength={6}
+                      value={newPassword} onChange={setNewPassword} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="setPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
+                    <PasswordInput id="setPw2" autoComplete="new-password" minLength={6}
+                      aria-invalid={passwordMismatch}
+                      value={repeatNewPassword} onChange={setRepeatNewPassword} />
+                    {passwordMismatch && (
+                      <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
+                    )}
+                  </div>
+                  <Button onClick={setPassword} className="w-full"
+                    disabled={busy || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
+                    {t("profile.setPassword")}
+                  </Button>
+                  <Button variant="ghost" className="w-full" disabled={busy}
+                    onClick={() => { setShowSetPasswordForm(false); setNewPassword(""); setRepeatNewPassword(""); }}>
+                    {t("common.cancel")}
+                  </Button>
+                </>
+              )}
+            </>
+          )}
         </Card>
 
         <Card className="p-5 shadow-card mb-4">

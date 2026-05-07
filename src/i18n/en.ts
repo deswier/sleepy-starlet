@@ -54,6 +54,7 @@ const en = {
     sameEmail: "That's already your email.",
     linkExpired: "Reset link has expired or is invalid. Request a new one.",
     unknown: "Something went wrong. Please try again.",
+    wrongCurrentPassword: "Current password is incorrect.",
   },
   remove: {
     fromAccount: "Remove from my account",
@@ -242,6 +243,11 @@ const en = {
     newEmail: "New email",
     changeEmailHint: "We'll send a confirmation link to your new email.",
     emailChangeSent: "Confirmation sent. Check both inboxes to complete the change.",
+    currentPassword: "Current password",
+    setPassword: "Set password",
+    passwordLoginNotEnabled: "Password login is not enabled",
+    passwordSetSuccess: "Password has been set successfully",
+    resetPasswordSent: "Password reset email has been sent to your email",
   },
 };
 export default en;
