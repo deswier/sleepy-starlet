@@ -22,6 +22,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
   const [place, setPlace] = useState<string | null>(null);
   const [method, setMethod] = useState<string | null>(null);
   const [creator, setCreator] = useState<string | null>(null);
+  const [creatorLoaded, setCreatorLoaded] = useState(false);
   const [interruptions, setInterruptions] = useState<{ start_time: string; end_time: string | null; method_name: string | null }[]>([]);
   const [editing, setEditing] = useState(false);
 
@@ -54,6 +55,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
       setPlace(d.sleep_place?.name ? localizePlace(d.sleep_place.name) : null);
       setMethod(d.settling_method?.name ? localizeMethod(d.settling_method.name) : null);
       setCreator((prof as any)?.display_name ?? null);
+      setCreatorLoaded(true);
       const intrs = (d.interruptions ?? []) as any[];
       setInterruptions(
         intrs
@@ -116,7 +118,9 @@ export default function SleepDetail({ session, onClose, onChange }: {
               </div>
             )}
             {session.comment && <Row label={t("sleep.comment")} value={session.comment} />}
-            {creator && <Row label={t("sleep.createdBy")} value={creator} />}
+            {creatorLoaded && (
+              <Row label={t("sleep.createdBy")} value={creator ?? t("remove.deletedUser")} />
+            )}
             {canEdit && (
               <div className="flex gap-2 pt-3">
                 <Button variant="outline" className="flex-1" onClick={() => setEditing(true)}>

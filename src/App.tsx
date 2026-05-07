@@ -20,6 +20,7 @@ const Settings  = lazy(() => import("./pages/Settings"));
 const Conflicts = lazy(() => import("./pages/Conflicts"));
 const Heatmap   = lazy(() => import("./pages/Heatmap"));
 const Profile   = lazy(() => import("./pages/Profile"));
+const DeletedChildren = lazy(() => import("./pages/DeletedChildren"));
 const NotFound  = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
@@ -57,6 +58,7 @@ const App = () => (
                 <Route path="/analytics" element={<RequireAuth><AppShell><Analytics /></AppShell></RequireAuth>} />
                 <Route path="/heatmap" element={<RequireAuth><Heatmap /></RequireAuth>} />
                 <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+                <Route path="/deleted-children" element={<RequireAuth><DeletedChildren /></RequireAuth>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

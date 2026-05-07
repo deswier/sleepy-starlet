@@ -116,12 +116,15 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from("child_users")
-        .select("child:children(id, name, birth_date, photo_url, gender)")
+        .select("child:children(id, name, birth_date, photo_url, gender, status)")
         .eq("user_id", user.id);
       if (error) throw error;
+      // Soft-deleted children stay in the DB for the 30-day restore window
+      // but must not appear anywhere in normal app flow — only in the
+      // dedicated "Deleted children" page.
       const kids = (data ?? [])
         .map((r: any) => r.child)
-        .filter(Boolean)
+        .filter((c: any) => c && c.status === "active")
         .sort((a: Child, b: Child) => (a.name || "").localeCompare(b.name || "") || a.id.localeCompare(b.id)) as Child[];
       setList(kids);
       const cacheData: ChildrenCache = { userId: user.id, children: kids };

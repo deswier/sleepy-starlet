@@ -25,6 +25,45 @@ const en = {
     checkEmailNote: "On mobile, tapping the link will open the app directly.",
     resendHint: "No email? Check spam or try signing up again.",
   },
+  remove: {
+    fromAccount: "Remove from my account",
+    deleteCompletely: "Delete child completely",
+    deleteProfile: "Delete profile",
+    restore: "Restore",
+    deletedUser: "Deleted user",
+
+    // Confirmation: editor/viewer leaving a child.
+    leaveTitle: "Remove this child from your account?",
+    leaveBody: "You will lose access to this child's data. Other participants will keep access.",
+
+    // Confirmation: owner leaving a child where other owners exist.
+    leaveOwnerBody: "You will no longer be the owner of this child. Other owners will keep access.",
+
+    // Confirmation: soft-delete the child completely.
+    deleteChildTitle: "Delete this child?",
+    deleteChildBody: "The child will be removed for all participants.\nData can be restored within 30 days.",
+
+    // Deleted-children page.
+    deletedChildren: "Deleted children",
+    deletedAt: "Deleted at",
+    deletedBy: "Deleted by",
+    daysLeft: "Days left: {{count}}",
+    daysLeft_one: "Days left: {{count}}",
+    daysLeft_other: "Days left: {{count}}",
+    deletedEmpty: "No deleted children.",
+    restoreFailed: "Couldn't restore.",
+
+    // Profile delete-account modal.
+    deleteProfileTitle: "Delete your profile?",
+    deleteProfileBodyDefault: "Your account and profile data will be permanently deleted.\nThis cannot be undone.",
+    deleteProfileBodyOwnerWithOthers: "You are an owner of a child. Other owners will keep access.",
+    deleteProfileBodyBlocked: "You are the only owner of this child.\n\nBefore deleting your account:\nassign another owner (via role management)\nor delete the child completely.",
+    deleteProfileBodySolo: "You are the only participant of this child.\n\nAfter deleting your account, the child cannot be restored.",
+    deleteProfileBlockedTitle: "Cannot delete profile",
+    deleteProfileGoToChild: "Open child settings",
+    deleteForever: "Delete forever",
+    deleting: "Deleting…",
+  },
   child: {
     addChild: "Add child", noChild: "No child",
     addTab: "Add", joinTab: "Join",
@@ -141,10 +180,6 @@ const en = {
     role_admin: "Owner", role_user: "Editor", role_viewer: "Viewer",
     inviteRole: "Role for this code",
     changeRole: "Change role",
-    deleteProfile: "Delete profile",
-    confirmDeleteProfile: "Delete this child profile? All data will be removed.",
-    leaveChild: "Leave this child",
-    confirmLeave: "Stop tracking this child? You can re-join with an invite code.",
     removeMember: "Remove member",
     confirmRemoveMember: "Remove this member from the family?",
     conflict: "Settings were changed by another family member. The page has been refreshed.",
