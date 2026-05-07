@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { formatDuration, formatTime, sessionDuration, SleepSession, fmtDate } from "@/lib/sleep-utils";
+import { sessionDuration, SleepSession, fmtDate } from "@/lib/sleep-utils";
+import { useTimeFormat } from "@/lib/use-time-format";
 import SleepForm from "./SleepForm";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
   session: SleepSession; onClose: () => void; onChange: () => void;
 }) {
   const { t } = useTranslation();
+  const { fmtTime, fmtDuration } = useTimeFormat();
   const { user } = useAuth();
   const { role } = useChildRole();
   const owns = session.created_by_user_id === user?.id;
@@ -87,8 +89,8 @@ export default function SleepDetail({ session, onClose, onChange }: {
         ) : (
           <div className="space-y-3 text-sm">
             <Row label={t("sleep.start")} value={fmtDate(session.start_time)} />
-            <Row label={t("sleep.time")} value={`${formatTime(session.start_time)} – ${session.end_time ? formatTime(session.end_time) : "—"}`} />
-            <Row label={t("sleep.duration")} value={formatDuration(sessionDuration(session))} />
+            <Row label={t("sleep.time")} value={`${fmtTime(session.start_time)} – ${session.end_time ? fmtTime(session.end_time) : "—"}`} />
+            <Row label={t("sleep.duration")} value={fmtDuration(sessionDuration(session))} />
             <Row label={t("sleep.type")} value={session.sleep_type === "night" ? t("sleep.night") : t("sleep.day")} />
             {place && <Row label={t("sleep.place_label")} value={place} />}
             {method && <Row label={t("sleep.settling_label")} value={method} />}
@@ -99,7 +101,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
                   {interruptions.map((i, idx) => (
                     <li key={idx} className="bg-muted/60 rounded-lg px-3 py-1.5 flex justify-between gap-2 items-center">
                       <span>
-                        {formatTime(i.start_time)} – {i.end_time ? formatTime(i.end_time) : t("sleep.ongoing")}
+                        {fmtTime(i.start_time)} – {i.end_time ? fmtTime(i.end_time) : t("sleep.ongoing")}
                       </span>
                       <span className="flex items-center gap-2">
                         {i.method_name && <span className="text-muted-foreground text-xs">{i.method_name}</span>}
@@ -107,7 +109,7 @@ export default function SleepDetail({ session, onClose, onChange }: {
                           {i.end_time
                             ? (() => {
                                 const m = Math.max(0, Math.round((new Date(i.end_time).getTime() - new Date(i.start_time).getTime()) / 60000));
-                                return m === 0 ? "0m" : formatDuration(m);
+                                return fmtDuration(m);
                               })()
                             : t("sleep.active")}
                         </span>

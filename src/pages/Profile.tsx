@@ -31,10 +31,13 @@ interface DeletionCheck {
 export default function Profile() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, timeFormat: savedTimeFormat, setTimeFormat: setCtxTimeFormat } = useAuth();
   const [name, setName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
+  const [timeFormatPref, setTimeFormatPref] = useState(savedTimeFormat);
+  // Sync if the context value loads asynchronously after mount.
+  useEffect(() => { setTimeFormatPref(savedTimeFormat); }, [savedTimeFormat]);
   const [emailDraft, setEmailDraft] = useState("");
   useEffect(() => { if (user?.email) setEmailDraft(user.email); }, [user?.email]);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -76,10 +79,11 @@ export default function Profile() {
     const { error } = await supabase.from("profiles").update({
       display_name: name.trim() || null,
       language,
+      time_format: timeFormatPref,
     }).eq("id", user.id);
     setBusy(false);
     if (error) toast.error(authErrorMessage(error, t));
-    else { toast.success(t("common.saved")); i18n.changeLanguage(language); }
+    else { toast.success(t("common.saved")); i18n.changeLanguage(language); setCtxTimeFormat(timeFormatPref); }
   };
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -240,6 +244,17 @@ export default function Profile() {
               <SelectContent>
                 <SelectItem value="en">{t("common.english")}</SelectItem>
                 <SelectItem value="ru">{t("common.russian")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("profile.timeFormat")}</Label>
+            <Select value={timeFormatPref} onValueChange={(v) => setTimeFormatPref(v as typeof timeFormatPref)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">{t("profile.timeFormatSystem")}</SelectItem>
+                <SelectItem value="h12">{t("profile.timeFormat12h")}</SelectItem>
+                <SelectItem value="h24">{t("profile.timeFormat24h")}</SelectItem>
               </SelectContent>
             </Select>
           </div>

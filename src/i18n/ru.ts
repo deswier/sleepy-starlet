@@ -249,6 +249,10 @@ const ru = {
     passwordLoginNotEnabled: "Вход по паролю не настроен",
     passwordSetSuccess: "Пароль успешно установлен",
     resetPasswordSent: "Письмо для сброса пароля отправлено на вашу почту",
+    timeFormat: "Формат времени",
+    timeFormatSystem: "Системный",
+    timeFormat12h: "12 часов",
+    timeFormat24h: "24 часа",
   },
 };
 export default ru;

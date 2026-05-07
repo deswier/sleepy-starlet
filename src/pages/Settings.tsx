@@ -17,7 +17,8 @@ import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ageInMonths, wakeWindowForAge, formatDuration, fmtDateTime } from "@/lib/sleep-utils";
+import { ageInMonths, wakeWindowForAge } from "@/lib/sleep-utils";
+import { useTimeFormat } from "@/lib/use-time-format";
 import { useTranslation } from "react-i18next";
 import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
@@ -37,6 +38,7 @@ export default function Settings() {
   const { activeChild, refresh, refreshSettings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
+  const { fmtDuration } = useTimeFormat();
   const isAdmin = canEditChild(role);
   const isViewer = role === "viewer";
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
@@ -391,7 +393,7 @@ export default function Settings() {
           </div>
           {ww && (
             <p className="text-xs text-muted-foreground">
-              {t("settings.currentWW", { min: formatDuration(ww.min), max: formatDuration(ww.max) })}
+              {t("settings.currentWW", { min: fmtDuration(ww.min), max: fmtDuration(ww.max) })}
             </p>
           )}
         </Card>

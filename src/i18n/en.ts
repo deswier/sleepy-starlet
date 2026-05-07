@@ -249,6 +249,10 @@ const en = {
     passwordLoginNotEnabled: "Password login is not enabled",
     passwordSetSuccess: "Password has been set successfully",
     resetPasswordSent: "Password reset email has been sent to your email",
+    timeFormat: "Time format",
+    timeFormatSystem: "System",
+    timeFormat12h: "12-hour",
+    timeFormat24h: "24-hour",
   },
 };
 export default en;

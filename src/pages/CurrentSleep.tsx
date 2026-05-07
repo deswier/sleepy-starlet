@@ -9,14 +9,14 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatDuration, sessionDuration, inferSleepType, SleepSession } from "@/lib/sleep-utils";
+import { sessionDuration, inferSleepType, SleepSession } from "@/lib/sleep-utils";
+import { useTimeFormat } from "@/lib/use-time-format";
 import DateTimeField from "@/components/DateTimeField";
 
 // SleepForm is only used inside dialogs — lazy-load to keep the initial bundle small.
 const SleepForm = lazy(() => import("@/components/sleep/SleepForm"));
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { fmtDateTime, formatTime } from "@/lib/sleep-utils";
 import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
 import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
@@ -28,6 +28,7 @@ export default function CurrentSleep() {
   const { activeChild, loading: childLoading, settings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
+  const { fmtTime, fmtDateTime, fmtDuration } = useTimeFormat();
   const showInterruptionFlag = settings?.show_interruptions !== false;
   const showMethodFlag = settings?.show_falling_asleep_method !== false;
   const [active, setActive] = useState<SleepSession | null>(null);
@@ -353,20 +354,20 @@ export default function CurrentSleep() {
             <button type="button" onClick={beginEditStart} disabled={!canEditActive}
               className="opacity-80 text-sm mb-1 inline-flex items-center gap-1 hover:opacity-100 disabled:cursor-default">
               {t("sleep.startedAt", {
-                time: fmtDateTime(new Date(active.start_time)),
+                time: fmtDateTime(active.start_time),
                 context: activeChild.gender === "male" ? "male"
                   : activeChild.gender === "female" ? "female" : "other",
               })}
               {canEditActive && <Pencil className="w-3 h-3" />}
             </button>
           )}
-          <p className="font-display text-4xl font-semibold my-4">{formatDuration(sessionDuration(active, now))}</p>
+          <p className="font-display text-4xl font-semibold my-4">{fmtDuration(sessionDuration(active, now))}</p>
           {intrStats.count > 0 && (
             <div className="text-sm opacity-80 mb-3">
               {t("sleep.interruptionsCount", { count: intrStats.count })}
               {!interruption && intrStats.lastEnd && (
                 <> · {t("sleep.lastWokeAgo", {
-                  duration: formatDuration(Math.max(0, Math.round((now.getTime() - new Date(intrStats.lastEnd).getTime()) / 60000))),
+                  duration: fmtDuration(Math.max(0, Math.round((now.getTime() - new Date(intrStats.lastEnd).getTime()) / 60000))),
                 })}</>
               )}
             </div>
@@ -382,7 +383,7 @@ export default function CurrentSleep() {
               ) : (
                 <button type="button" onClick={beginEditIntrStart} disabled={!canEditActive}
                   className="inline-flex items-center gap-1 hover:opacity-100 disabled:cursor-default">
-                  {t("sleep.interruptionSince", { time: formatTime(interruption.start_time) })}
+                  {t("sleep.interruptionSince", { time: fmtTime(interruption.start_time) })}
                   {canEditActive && <Pencil className="w-3 h-3" />}
                 </button>
               )}

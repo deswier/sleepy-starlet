@@ -7,7 +7,7 @@ import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
-import { formatDuration } from "@/lib/sleep-utils";
+import { useTimeFormat } from "@/lib/use-time-format";
 import { cn } from "@/lib/utils";
 
 export interface DraftInterruption {
@@ -32,6 +32,7 @@ export default function InterruptionsEditor({
   value, onChange, methods, showMethod, sleepStart, sleepEnd,
 }: Props) {
   const { t } = useTranslation();
+  const { fmtDuration } = useTimeFormat();
   const [error, setError] = useState<string | null>(null);
   const [invalidIdx, setInvalidIdx] = useState<Set<number>>(new Set());
 
@@ -99,7 +100,7 @@ export default function InterruptionsEditor({
   const durationLabel = (it: DraftInterruption): string => {
     if (!it.end_time) return t("sleep.active");
     const m = Math.max(0, Math.round((it.end_time.getTime() - it.start_time.getTime()) / 60000));
-    return m === 0 ? "0m" : formatDuration(m);
+    return fmtDuration(m);
   };
 
   return (

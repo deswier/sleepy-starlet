@@ -10,9 +10,10 @@ import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  formatDuration, formatTime, sessionDuration, wakeWindowMinutes,
+  sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
 } from "@/lib/sleep-utils";
+import { useTimeFormat } from "@/lib/use-time-format";
 import { isToday, isYesterday, startOfDay, isSameDay, addDays, subDays, format, differenceInMinutes } from "date-fns";
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import { sessionDay, type NightWindow } from "@/pages/Analytics";
@@ -223,6 +224,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
   fallbackLatestCompleted?: SleepSession | null;
 }) {
   const { t } = useTranslation();
+  const { fmtTime, fmtDuration } = useTimeFormat();
   const now = new Date();
   // Sessions arrive in DESC order (latest first) — display them that way.
   const ordered = sessions;
@@ -265,7 +267,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
             <div className="flex items-center gap-3 py-2 pl-2">
               <div className={`w-0.5 h-8 rounded-full ${projectedStatus === "warn" ? "bg-ww-warn" : "bg-ww-good"}`} />
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${projectedStatus === "warn" ? "bg-ww-warn-soft text-[hsl(var(--ww-warn))]" : "bg-ww-good-soft text-[hsl(var(--ww-good))]"}`}>
-                {t("sleep.awake_label", { duration: formatDuration(projectedWW) })}
+                {t("sleep.awake_label", { duration: fmtDuration(projectedWW) })}
               </span>
             </div>
           </div>
@@ -286,7 +288,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
               <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
                 <div className="flex items-center gap-3">
                   <span className="w-2 h-2 rounded-full bg-primary" />
-                  <span className="font-medium">{formatTime(s.start_time)}</span>
+                  <span className="font-medium">{fmtTime(s.start_time)}</span>
                   {!s.end_time && (
                     <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                       {t("sleep.ongoing")}
@@ -320,14 +322,14 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
               <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
                 <div className="flex items-center gap-3">
                   <span className={`w-2 h-2 rounded-full ${s.sleep_type === "night" ? "bg-primary" : "bg-accent"}`} />
-                  <span className="font-medium">{formatTime(s.start_time)}</span>
+                  <span className="font-medium">{fmtTime(s.start_time)}</span>
                   {!s.end_time && (
                     <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                       {t("sleep.ongoing")}
                     </span>
                   )}
                 </div>
-                <span className="text-muted-foreground text-sm">{formatDuration(sessionDuration(s, now))}</span>
+                <span className="text-muted-foreground text-sm">{fmtDuration(sessionDuration(s, now))}</span>
               </button>
               {earlier && ww !== null && ww >= 0 && (
                 <div className="flex items-center gap-3 py-2 pl-2">
@@ -344,7 +346,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
         <div className="border-t border-border mt-3 pt-3 space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{t("sleep.totalSleep")}</span>
-            <span className="font-display text-lg font-semibold">{formatDuration(totalMin)}</span>
+            <span className="font-display text-lg font-semibold">{fmtDuration(totalMin)}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{t("analytics.naps")}</span>

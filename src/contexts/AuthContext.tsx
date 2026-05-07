@@ -5,21 +5,25 @@ import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
 import { clearLastRoute } from "@/lib/last-route";
 import { registerAuthDeepLinkListener } from "@/lib/native";
+import type { TimeFormat } from "@/lib/sleep-utils";
 
 interface AuthCtx {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  timeFormat: TimeFormat;
+  setTimeFormat: (tf: TimeFormat) => void;
   signOut: () => Promise<void>;
 }
 
-const Ctx = createContext<AuthCtx>({ user: null, session: null, loading: true, signOut: async () => {} });
+const Ctx = createContext<AuthCtx>({ user: null, session: null, loading: true, timeFormat: "system", setTimeFormat: () => {}, signOut: async () => {} });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [timeFormat, setTimeFormat] = useState<TimeFormat>("system");
   const lastSeenUserId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -32,7 +36,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(s?.user ?? null);
       setSession(s);
       setLoading(false);
-      if (s?.user) syncLanguageFromProfile(s.user.id);
+      if (s?.user) syncLanguageFromProfile(s.user.id, setTimeFormat);
       // Forgot-password emails land back here with a recovery session;
       // route to the reset form so the user can set a new password.
       if (event === "PASSWORD_RECOVERY") navigate("/auth?mode=reset", { replace: true });
@@ -57,7 +61,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <Ctx.Provider value={{ user, session, loading, signOut }}>
+    <Ctx.Provider value={{ user, session, loading, timeFormat, setTimeFormat, signOut }}>
       {children}
     </Ctx.Provider>
   );
@@ -65,12 +69,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 export const useAuth = () => useContext(Ctx);
 
-async function syncLanguageFromProfile(userId: string) {
+async function syncLanguageFromProfile(userId: string, onTimeFormat: (tf: TimeFormat) => void) {
   try {
-    const { data } = await supabase.from("profiles").select("language").eq("id", userId).maybeSingle();
-    const lang = (data as { language?: string } | null)?.language;
-    if (lang && (lang === "ru" || lang === "en") && i18n.language !== lang) {
-      i18n.changeLanguage(lang);
+    const { data } = await supabase.from("profiles").select("language,time_format").eq("id", userId).maybeSingle();
+    const d = data as { language?: string; time_format?: string } | null;
+    if (d?.language && (d.language === "ru" || d.language === "en") && i18n.language !== d.language) {
+      i18n.changeLanguage(d.language);
+    }
+    if (d?.time_format && (["system", "h12", "h24"] as string[]).includes(d.time_format)) {
+      onTimeFormat(d.time_format as TimeFormat);
     }
   } catch { /* ignore */ }
 }
