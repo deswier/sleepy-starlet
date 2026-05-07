@@ -11,7 +11,7 @@ const EXCLUDED = new Set<string>(["/auth", "/child/new"]);
 
 export function saveLastRoute(path: string, userId: string | null | undefined, childId?: string | null) {
   if (!userId) return;
-  if (EXCLUDED.has(path)) return;
+  if (EXCLUDED.has(path.split("?")[0])) return;
   try {
     localStorage.setItem(KEY, JSON.stringify({ path, childId: childId ?? null }));
     localStorage.setItem(USER_KEY, userId);
@@ -25,7 +25,7 @@ export function readLastRoute(userId: string): LastRoute | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LastRoute;
-    if (!parsed?.path || EXCLUDED.has(parsed.path)) return null;
+    if (!parsed?.path || EXCLUDED.has(parsed.path.split("?")[0])) return null;
     return parsed;
   } catch { return null; }
 }
