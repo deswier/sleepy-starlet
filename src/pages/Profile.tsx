@@ -87,7 +87,7 @@ export default function Profile() {
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setPendingFile(f);
+    if (f && f.type.startsWith("image/")) setPendingFile(f);
     e.target.value = "";
   };
 
@@ -171,8 +171,11 @@ export default function Profile() {
       setDeleteBusy(false);
       return;
     }
-    await supabase.auth.signOut();
-    navigate("/auth", { replace: true });
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      navigate("/auth", { replace: true });
+    }
   };
 
   // Pick the message for the strongest applicable scenario: 4.3 > 4.4 > 4.2 > 4.1.

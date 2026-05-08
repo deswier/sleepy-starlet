@@ -1,4 +1,5 @@
 import type { TFunction } from "i18next";
+import { devWarn } from "@/lib/logger";
 
 // Maps Supabase auth errors to localized strings. Supabase v2 attaches a
 // stable `code` on AuthError; older releases (and some non-auth helpers)
@@ -37,6 +38,6 @@ export function authErrorMessage(error: unknown, t: TFunction): string {
   if (m.includes("expired") || m.includes("invalid token") || m.includes("auth session missing")) return t("errors.linkExpired");
   if (m.includes("fetch")) return t("errors.networkError");
 
-  if (err.message) console.warn("[auth-errors] unmapped:", err.message);
+  if (err.message) devWarn("[auth-errors] unmapped:", err.message);
   return t("errors.unknown");
 }

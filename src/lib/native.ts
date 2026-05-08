@@ -7,6 +7,7 @@
 import { Capacitor } from "@capacitor/core";
 import { App, type URLOpenListenerEvent } from "@capacitor/app";
 import { supabase } from "@/integrations/supabase/client";
+import { devError } from "@/lib/logger";
 
 export const NATIVE_AUTH_REDIRECT = "app.lullaby://auth/callback";
 
@@ -20,7 +21,7 @@ export async function registerAuthDeepLinkListener(): Promise<() => void> {
   const handle = await App.addListener("appUrlOpen", (event: URLOpenListenerEvent) => {
     if (!event.url.startsWith(NATIVE_AUTH_REDIRECT)) return;
     finalizeAuthFromCallbackUrl(event.url).catch((e) => {
-      console.error("auth deep-link finalize failed", e);
+      devError("auth deep-link finalize failed", e);
     });
   });
   return () => { handle.remove(); };

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -87,7 +88,7 @@ export default function Analytics() {
         if (error) throw error;
         setInitialDaySessions((data ?? []) as SleepSession[]);
       } catch (e) {
-        console.error("[Analytics] day load failed", e);
+        devError("[Analytics] day load failed", e);
         toast.error(t("common.loadFailed"));
       } finally {
         setLoading(false);
@@ -168,7 +169,7 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
           .lt("start_time", until)
           .order("start_time");
         if (cancelled) return;
-        if (error) { console.error("[DayView] load failed", error); return; }
+        if (error) { devError("[DayView] load failed", error); return; }
         setSessions((data ?? []) as SleepSession[]);
       } finally {
         if (!cancelled) setLoadingDay(false);
@@ -445,7 +446,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         setSessions((data ?? []) as SleepSession[]);
       } catch (e) {
         if (!cancelled) {
-          console.error("[WeekView] load failed", e);
+          devError("[WeekView] load failed", e);
           toast.error(t("common.loadFailed"));
         }
       } finally {

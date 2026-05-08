@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { devError } from "@/lib/logger";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -82,7 +83,7 @@ export default function Settings() {
 
   const onPickChildPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setPendingPhoto(f);
+    if (f && f.type.startsWith("image/")) setPendingPhoto(f);
     e.target.value = "";
   };
 
@@ -129,7 +130,7 @@ export default function Settings() {
         role: roleMap.get(l.user_id) ?? "user",
       })));
     } catch (e) {
-      console.error("[Settings] load failed", e);
+      devError("[Settings] load failed", e);
       toast.error(t("common.loadFailed"));
     }
   };

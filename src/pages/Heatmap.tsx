@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
@@ -207,7 +208,7 @@ export default function Heatmap() {
       })
       .catch((e) => {
         if (!cancelled) {
-          console.error("[Heatmap] load failed", e);
+          devError("[Heatmap] load failed", e);
           toast.error(t("common.loadFailed"));
         }
       })
