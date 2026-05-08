@@ -288,8 +288,12 @@ export default function CurrentSleep() {
   if (!activeChild) return null;
 
   const ownsActive = active?.created_by_user_id === user?.id;
+  // Any user/admin can stop an active sleep (wake up, pause, resume) even if
+  // they didn't start it — a partner can always end the baby's nap.
+  const canEnd = canCreateSleep(role);
+  // Editing session data (start time, interruption times via pencil) requires
+  // either having started or ended the session; admin can edit any session.
   const canEditActive = canEditAnySleep(role) || (canEditOwnSleep(role) && ownsActive);
-  const canEnd = canEditActive;
   const canStart = canCreateSleep(role);
 
   return (
