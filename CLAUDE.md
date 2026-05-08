@@ -40,16 +40,17 @@ Key invariants:
 
 ## Roles and permissions
 
-| Role | Can start/stop sleep¹ | Can edit own sleep² | Can edit any sleep | Can manage members/settings |
-|---|---|---|---|---|
-| `admin` | ✓ | ✓ | ✓ | ✓ |
-| `user` | ✓ | ✓ | ✗ | ✗ |
-| `viewer` | ✗ | ✗ | ✗ | ✗ |
+| Role | Can start/stop sleep¹ | Can edit own sleep² | Can edit any sleep | Night window / places / methods³ | Members / display / delete child |
+|---|---|---|---|---|---|
+| `admin` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `user` | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `viewer` | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 ¹ "Stop" means ending any active session (wake-up, pause, resume) — including sessions started by someone else.  
-² "Own sleep" = sessions where `created_by_user_id = user.id` (they started it) **or** `updated_by_user_id = user.id` (they ended/last-edited it). After a `user` stops someone else's sleep, `updated_by_user_id` is set to them and they gain edit rights on that session.
+² "Own sleep" = sessions where `created_by_user_id = user.id` (they started it) **or** `updated_by_user_id = user.id` (they ended/last-edited it). After a `user` stops someone else's sleep, `updated_by_user_id` is set to them and they gain edit rights on that session.  
+³ Night-window (`child_settings.night_start_time/end_time`), sleep places, and settling methods. Display toggles (`show_sleep_place` etc.), member management, and child deletion remain admin-only.
 
-- `canCreateSleep(role)` — `admin` or `user` (also used as `canEnd` — stopping any active sleep)
+- `canCreateSleep(role)` — `admin` or `user` (also used as `canEnd` — stopping any active sleep; and as `canEditFamilySettings` — night window, places, methods)
 - `canEditOwnSleep(role)` — `admin` or `user`
 - `canEditAnySleep(role)` — `admin` only
 - `canEditChild(role)` — `admin` only
@@ -365,8 +366,8 @@ For new code prefer `useQuery` (see `History.tsx`).
 - `child_invites` SELECT/UPDATE (view/revoke): **admin only**. Non-admins cannot see invite codes or revoke them, preventing a viewer from reading a pending admin-role code and redeeming it from a second account.
 - `sleep_sessions` UPDATE: admin (any session) or user (`end_time IS NULL` — can stop any active sleep; or `created_by_user_id = uid`; or `updated_by_user_id = uid`). DELETE: admin or user with `created_by`/`updated_by`.
 - `sleep_interruptions` INSERT/UPDATE/DELETE: gated by `has_session_edit_access()` (same rules as sleep_sessions UPDATE). Direct client INSERTs also require `created_by_user_id = auth.uid()`. `sync_session_interruptions` is SECURITY DEFINER and bypasses RLS.
-- `sleep_places` / `settling_methods` INSERT/UPDATE/DELETE: **admin only**.
-- `child_settings` UPDATE: **admin only**.
+- `sleep_places` / `settling_methods` INSERT/UPDATE: **admin or user**. DELETE: **admin only** — but clients never hard-delete; they soft-delete via `UPDATE deleted_at = now()`. Hard DELETE is reserved for admin housekeeping only.
+- `child_settings` UPDATE: **admin or user** (night-window fields). Display toggles are in the same row but the UI gates them with `isAdmin`.
 - TEXT columns have CHECK constraints (length, `^https?://` for URLs). `child_users.custom_relation_name` ≤ 100 chars. Add constraints on new user-input columns.
 - Edge Functions that need admin access use the service role key from environment — never expose it to the browser. `delete-account` CORS is restricted to the `SITE_URL` env var.
 
@@ -379,6 +380,7 @@ For new code prefer `useQuery` (see `History.tsx`).
 - Only one active (no `end_time`) session is allowed per child.
 - Never write to the DB before a confirmation modal (wake-up confirmation is draft-only until `SleepForm` commits).
 - `ChildContext` must always filter `status = 'active'`; soft-deleted children are never shown.
+- `sleep_places` and `settling_methods` use soft-delete (`deleted_at` column). Never hard-delete these rows — the FK `ON DELETE SET NULL` on `sleep_sessions` and `sleep_interruptions` would silently wipe place/method attribution from historical records. Set `deleted_at = now()` instead. Active-item queries must filter `deleted_at IS NULL`; `SleepDetail` JOINs deliberately skip this filter so historical names remain visible.
 - Birth date cannot be in the future (validated before save and via `max` on the date input).
 - Auth redirect URL for native: `app.lullaby://auth/callback`. Use `getAuthRedirectUrl()` everywhere — never hardcode.
 
@@ -417,6 +419,8 @@ Migrations: timestamped, monotonic. Apply via `supabase db push`. Never edit app
 - Don't INSERT directly into `child_users` — use `create_child_with_link` or `redeem_child_invite` RPC.
 - Don't INSERT directly into `child_user_roles` — the `handle_child_user_link` trigger does this automatically on `child_users` INSERT.
 - Don't DELETE from `child_users` + `child_user_roles` directly to remove a member — use `remove_child_member` RPC (atomic, admin-gated, trigger-enforced).
+- Don't hard-delete `sleep_places` / `settling_methods` rows — set `deleted_at = now()` via UPDATE. Hard DELETE would NULL historical session references silently.
+- When querying active places/methods for any dropdown or list, always filter `.is("deleted_at", null)`. Skip this filter only in `SleepDetail`-style JOINs where you want historical names to appear.
 - Don't use `console.error` / `console.warn` directly — use `devError` / `devWarn` from `src/lib/logger.ts`.
 
 ## Common tasks
