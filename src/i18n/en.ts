@@ -182,6 +182,7 @@ const en = {
     noDataForDay: "No data for this day",
     dayToggleHint: "Tap to exclude or include a day",
     weekRange: "{{from}} – {{to}}",
+    thisWeek: "Current week",
     openHeatmap: "Open diagram",
     heatmapTitle: "Sleep diagram",
     heatmapHelp: "Each column is a day of the week, the vertical axis is time of day. Blocks show actual sleep periods.",
