@@ -40,13 +40,16 @@ Key invariants:
 
 ## Roles and permissions
 
-| Role | Can start/end sleep | Can edit own sleep | Can edit any sleep | Can manage members/settings |
+| Role | Can start/stop sleep¹ | Can edit own sleep² | Can edit any sleep | Can manage members/settings |
 |---|---|---|---|---|
 | `admin` | ✓ | ✓ | ✓ | ✓ |
 | `user` | ✓ | ✓ | ✗ | ✗ |
 | `viewer` | ✗ | ✗ | ✗ | ✗ |
 
-- `canCreateSleep(role)` — `admin` or `user`
+¹ "Stop" means ending any active session (wake-up, pause, resume) — including sessions started by someone else.  
+² "Own sleep" = sessions where `created_by_user_id = user.id` (they started it) **or** `updated_by_user_id = user.id` (they ended/last-edited it). After a `user` stops someone else's sleep, `updated_by_user_id` is set to them and they gain edit rights on that session.
+
+- `canCreateSleep(role)` — `admin` or `user` (also used as `canEnd` — stopping any active sleep)
 - `canEditOwnSleep(role)` — `admin` or `user`
 - `canEditAnySleep(role)` — `admin` only
 - `canEditChild(role)` — `admin` only
@@ -341,7 +344,7 @@ For new code prefer `useQuery` (see `History.tsx`).
 
 **Error handling.** Loading state must always exit. Use `.catch(...).finally(() => setLoading(false))` on chained `Promise.all`. `try/finally` for awaited multi-step flows. Show `toast.error(t("common.loadFailed"))` for read failures. Use `authErrorMessage(error, t)` from `src/lib/auth-errors.ts` for all Supabase auth errors.
 
-**Realtime.** One channel per `(activeChild.id)` named `sleep-${id}`. Always pass `filter: child_id=eq.${id}` (or `sleep_session_id=eq.${id}` for interruptions). Unfiltered subs reload on every other family's edits.
+**Realtime.** One channel per `(activeChild.id)` named `sleep-${id}`. Always pass `filter: child_id=eq.${id}` (or `sleep_session_id=eq.${id}` for interruptions). Unfiltered subs would leak row payloads across families. `sleep_interruptions` is intentionally not subscribed in `History.tsx` — `sessionDuration` is `end − start` and is unaffected by interruptions; `SleepDetail` fetches them fresh on open.
 
 **Comments.** Lead with WHY, not WHAT. Prefer no comment over an obvious one.
 
@@ -359,7 +362,11 @@ For new code prefer `useQuery` (see `History.tsx`).
 - `child_users.UPDATE` cannot change `child_id` / `user_id` (trigger enforced).
 - `child_user_roles` INSERT blocked client-side; only the `handle_child_user_link` trigger (AFTER INSERT on `child_users`) may create role rows.
 - `child_user_roles` UPDATE/DELETE: `prevent_last_admin_removal` trigger raises if the operation would leave a shared child with no admin.
-- `child_invites` UPDATE (revoke) requires admin role.
+- `child_invites` SELECT/UPDATE (view/revoke): **admin only**. Non-admins cannot see invite codes or revoke them, preventing a viewer from reading a pending admin-role code and redeeming it from a second account.
+- `sleep_sessions` UPDATE: admin (any session) or user (`end_time IS NULL` — can stop any active sleep; or `created_by_user_id = uid`; or `updated_by_user_id = uid`). DELETE: admin or user with `created_by`/`updated_by`.
+- `sleep_interruptions` INSERT/UPDATE/DELETE: gated by `has_session_edit_access()` (same rules as sleep_sessions UPDATE). Direct client INSERTs also require `created_by_user_id = auth.uid()`. `sync_session_interruptions` is SECURITY DEFINER and bypasses RLS.
+- `sleep_places` / `settling_methods` INSERT/UPDATE/DELETE: **admin only**.
+- `child_settings` UPDATE: **admin only**.
 - TEXT columns have CHECK constraints (length, `^https?://` for URLs). `child_users.custom_relation_name` ≤ 100 chars. Add constraints on new user-input columns.
 - Edge Functions that need admin access use the service role key from environment — never expose it to the browser. `delete-account` CORS is restricted to the `SITE_URL` env var.
 
