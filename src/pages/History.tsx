@@ -300,7 +300,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
                 <div className="flex items-center gap-3 py-2 pl-2">
                   <div className={`w-0.5 h-8 rounded-full ${wwSt === "good" ? "bg-ww-good" : "bg-ww-warn"}`} />
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wwSt === "good" ? "bg-ww-good-soft text-[hsl(var(--ww-good))]" : "bg-ww-warn-soft text-[hsl(var(--ww-warn))]"}`}>
-                    {t("sleep.awake_label", { duration: formatDuration(ww) })}
+                    {t("sleep.awake_label", { duration: fmtDuration(ww) })}
                   </span>
                 </div>
               )}
@@ -335,7 +335,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
                 <div className="flex items-center gap-3 py-2 pl-2">
                   <div className={`w-0.5 h-8 rounded-full ${status === "good" ? "bg-ww-good" : "bg-ww-warn"}`} />
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${status === "good" ? "bg-ww-good-soft text-[hsl(var(--ww-good))]" : "bg-ww-warn-soft text-[hsl(var(--ww-warn))]"}`}>
-                    {t("sleep.awake_label", { duration: formatDuration(ww) })}
+                    {t("sleep.awake_label", { duration: fmtDuration(ww) })}
                   </span>
                 </div>
               )}
