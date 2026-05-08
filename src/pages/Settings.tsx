@@ -42,6 +42,8 @@ export default function Settings() {
   const { fmtDuration } = useTimeFormat();
   const isAdmin = canEditChild(role);
   const isViewer = role === "viewer";
+  // admin and user (editor) can manage night window, places and methods.
+  const canEditFamilySettings = canCreateSleep(role);
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
   const changeLanguage = async (v: "en" | "ru") => {
     setLanguage(v);
@@ -113,8 +115,8 @@ export default function Settings() {
     try {
       const [se, p, m, inv, links, roles, profs] = await Promise.all([
         supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
-        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
+        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
         invitesQuery,
         supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
         supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
@@ -489,18 +491,18 @@ export default function Settings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t("settings.nightStarts")}</Label>
-              <Input type="time" value={s.night_start_time} disabled={!isAdmin}
+              <Input type="time" value={s.night_start_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_start_time: e.target.value })}
                 className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.nightEnds")}</Label>
-              <Input type="time" value={s.night_end_time} disabled={!isAdmin}
+              <Input type="time" value={s.night_end_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_end_time: e.target.value })}
                 className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
           </div>
-          {isAdmin && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
+          {canEditFamilySettings && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
         </Card>
 
         {/* 4. Display */}
@@ -523,18 +525,21 @@ export default function Settings() {
 
         {/* 5. Sleep places */}
         <ListEditor title={t("settings.sleepPlaces")} items={places.map((p) => ({ ...p, label: localizePlace(p.name) }))}
-          canEdit={isAdmin}
+          canEdit={canEditFamilySettings}
           newValue={newPlace} setNewValue={setNewPlace} placeholder={t("settings.addNew")}
           onAdd={async () => {
             if (!newPlace.trim()) return;
             await supabase.from("sleep_places").insert({ child_id: activeChild.id, name: newPlace.trim() });
             setNewPlace(""); load();
           }}
-          onDelete={async (id) => { await supabase.from("sleep_places").delete().eq("id", id); load(); }} />
+          onDelete={async (id) => {
+            await supabase.from("sleep_places").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+            load();
+          }} />
 
         {/* 6. Settling methods */}
         <ListEditor title={t("settings.settlingMethods")} items={methods.map((m) => ({ ...m, label: localizeMethod(m.name) }))}
-          canEdit={isAdmin}
+          canEdit={canEditFamilySettings}
           renderIcon={(item: any) => {
             const Icon = iconForMethod(item.name);
             return <Icon className="w-4 h-4 text-muted-foreground shrink-0" />;
@@ -545,7 +550,10 @@ export default function Settings() {
             await supabase.from("settling_methods").insert({ child_id: activeChild.id, name: newMethod.trim() });
             setNewMethod(""); load();
           }}
-          onDelete={async (id) => { await supabase.from("settling_methods").delete().eq("id", id); load(); }} />
+          onDelete={async (id) => {
+            await supabase.from("settling_methods").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+            load();
+          }} />
 
         {/* 8. Danger zone — leave / delete child */}
         {dangerZone}

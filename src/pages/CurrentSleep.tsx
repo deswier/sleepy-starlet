@@ -72,7 +72,7 @@ export default function CurrentSleep() {
 
   useEffect(() => {
     if (!activeChild) return;
-    supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name")
+    supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name")
       .then(({ data: mList }) => setMethods(mList ?? []));
   }, [activeChild?.id]);
 
