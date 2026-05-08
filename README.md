@@ -100,11 +100,11 @@ bun run db:types      # regenerate TypeScript types from DB schema
 ## Deployment
 
 ### Vercel
-`vercel.json` contains a catch-all SPA rewrite. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel project settings.
+`vercel.json` contains a catch-all SPA rewrite and security response headers (CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`). Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel project settings.
 
 ### Supabase
 - Migrations: `supabase db push`.
-- Edge Functions: `supabase functions deploy delete-account`.
+- Edge Functions: `supabase functions deploy delete-account`. Set the `SITE_URL` secret on the function (`supabase secrets set SITE_URL=https://your-domain.com`) — used to restrict CORS to the deployed web origin.
 - Authentication → URL Configuration:
   - Site URL: production domain
   - Additional redirect URLs: `https://*.vercel.app/**`, `app.lullaby://auth/callback`
@@ -140,13 +140,18 @@ Deep link scheme: `app.lullaby`. Auth callbacks use `app.lullaby://auth/callback
 
 ### Data consistency
 - Children are created only via the `create_child_with_link` RPC — never with a direct INSERT.
+- Joining a child requires the `redeem_child_invite` RPC; direct `child_users` INSERT is blocked by RLS.
+- Role rows are created automatically by a trigger on `child_users` INSERT; direct `child_user_roles` INSERT is blocked by RLS.
+- Member removal goes through the `remove_child_member` RPC — atomic, admin-gated, and enforced by a last-admin trigger.
 - Interruptions are synced atomically via the `sync_session_interruptions` RPC.
 - Overlap detection uses the `sleep_overlaps` RPC before any session insert or edit.
 - Wake-up confirmation is a local draft — no DB write until the user confirms.
 - Settings use an optimistic lock (`updated_at`) to detect concurrent edits by family members.
 
 ### Roles and access
-- **Owner (admin)**: full control — edit any sleep, manage members, delete/restore child.
+- **Owner (admin)**: full control — edit any sleep, manage members, create/revoke invite codes, delete/restore child.
 - **Editor (user)**: start/end sleep and edit own sessions.
 - **Viewer**: read-only.
+- A child must always have at least one admin. The last admin cannot be demoted or removed while other members exist — enforced by a database trigger (`prevent_last_admin_removal`).
+- Invite code revocation requires admin role (enforced at the RLS layer, not just the UI).
 - Account deletion is blocked if the user is the sole admin of any child with other participants.
