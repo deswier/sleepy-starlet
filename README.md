@@ -1,200 +1,152 @@
+# Lullaby — Baby Sleep Tracker
 
-⏺ I'll prep everything I can in the repo so the manual steps on your end are as short as possible. Loading the task tool first.
+A progressive web app (PWA) for tracking infant sleep. Supports multiple caregivers, offline use, and both Russian and English.
 
-⏺ Bash(ls /Users/mac/IdeaProjects/sleepy-starlet/supabase/ && echo "---migrations---" && ls /Users/mac/IdeaProjects/sleepy-starlet/supabase/migrations/ && echo "---env…)                                                                                                                   
-⎿  config.toml                             
-migrations                                                                                                                                                                                                                                                                             
----migrations---                                                                                                                                                                                                                                                                       
-… +20 lines (ctrl+o to expand)
+---
 
-⏺ Bash(grep -E "VITE_|^[A-Z]" /Users/mac/IdeaProjects/sleepy-starlet/.env | sed 's/=.*/=<redacted>/' && echo "---gitignore env entries---" && grep -E "\.env" /Users/ma…)                                                                                                                   
-⎿  Error: Exit code 1                                                                                                                                                                                                                                                                     
-VITE_SUPABASE_PROJECT_ID=<redacted>                                                                                                                                                                                                                                                    
-VITE_SUPABASE_PUBLISHABLE_KEY=<redacted>                                                                                                                                                                                                                                               
-VITE_SUPABASE_URL=<redacted>                                                                                                                                                                                                                                                           
----gitignore env entries---
+## What it does
 
-⏺ Bash(cat /Users/mac/IdeaProjects/sleepy-starlet/.gitignore 2>/dev/null; echo "---"; git -C /Users/mac/IdeaProjects/sleepy-starlet ls-files .env 2>/dev/null && echo "…)                                                                                                                   
-⎿  # Logs                                                                                                                                                                                                                                                                                 
-logs                                                                                                                                                                                                                                                                                   
-*.log                                                                                                                                                                                                                                                                                  
-… +26 lines (ctrl+o to expand)
+- Record when a baby falls asleep and wakes up (one tap).
+- Track wake windows between sleeps and compare them to age-based norms.
+- Log sleep interruptions (brief wake-ups within a session) without splitting the record.
+- View history by day, weekly analytics, and a 7-day heatmap.
+- Share a child profile with family members under different roles.
+- Works offline — mutations queue locally and sync on reconnect.
 
-Searched for 1 pattern (ctrl+o to expand)
+---
 
-⏺ Audit done. Findings:
-- 16 migrations, cleanly timestamped, no hardcoded project refs in SQL
-- Supabase CLI is installed at /usr/local/bin/supabase
-- supabase/config.toml has the old project_id (Lovable's cfsnmkhtxesvudcroauj) — supabase link will update it
-- ⚠️  .env is tracked in git with real keys — needs fixing as part of this migration
+## Key features
 
-⏺ Write(.env.example)                                                                                                                                                                                                                                                                       
-⎿  Wrote 7 lines to .env.example                                                                                                                                                                                                                                                          
-1 # Copy to .env and fill in values from your Supabase project dashboard                                                                                                                                                                                                              
-2 # (Project Settings → API). The anon/publishable key is safe to expose to the                                                                                                                                                                                                     
-3 # browser; the service role key is NOT and must never go in this file.                                                                                                                                                                                                              
-4                                                                                                                                                                                                                                                                                   
-5 VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co                                                                                                                                                                                                                            
-6 VITE_SUPABASE_PUBLISHABLE_KEY=<your-anon-key>                                                                                                                                                                                                                                       
-7 VITE_SUPABASE_PROJECT_ID=<your-project-ref>
+| Feature | Details |
+|---|---|
+| Sleep tracking | Start/end sessions; auto-classify as day or night |
+| Interruptions | Log mid-sleep wake-ups; sessions remain continuous |
+| Wake windows | Age-based min/max norms; color-coded in history |
+| Family access | Invite codes; roles: Owner / Editor / Viewer |
+| Analytics | Daily and weekly stats; deviation from age norms |
+| Heatmap | 7-day drag-scrollable sleep grid |
+| Offline | Dexie mutation queue; conflict resolution screen |
+| Multi-child | Switch between children; data scoped per child |
+| Soft delete | Children and accounts can be deleted safely |
 
-⏺ Update(.gitignore)                                                                                                                                                                                                                                                                        
-⎿  File must be read first
+---
 
-Read 1 file (ctrl+o to expand)
+## Core concepts
 
-⏺ Update(.gitignore)                             
-⎿  Added 9 lines                               
-12  dist-ssr                                                                                                                                                                                                                                                                        
-13  *.local                                                                                                                                                                                                                                                                           
-14                                                                                                                                                                                                                                                                                  
-15 +# Local secrets — copy .env.example to .env and fill in values                                                                                                                                                                                                                    
-16 +.env                                                                                                                                                                                                                                                                              
-17 +.env.*                                                                                                                                                                                                                                                                            
-18 +!.env.example                                                                                                                                                                                                                                                                     
-19 +                                                                                                                                                                                                                                                                                  
-20 +# Capacitor native platforms — generated by `npx cap add`                                                                                                                                                                                                                         
-21 +ios/                                                                                                                                                                                                                                                                              
-22 +android/                                                                                                                                                                                                                                                                   
-23 +                                                                                                                                                                                                                                                                                  
-24  # Editor directories and files                                                                                                                                                                                                                                             
-25  .vscode/*                     
-26  !.vscode/extensions.json
+### Sleep session
+A record with `start_time` and nullable `end_time` (null = ongoing). Classified as `day` or `night` based on the child's night window setting. Only one active session per child at a time.
 
-⏺ Update(.gitignore)                             
-⎿  Removed 4 lines                             
-17  .env.*                                 
-18  !.env.example                      
-19                       
-20 -# Capacitor native platforms — generated by `npx cap add`                                                                                                                                                                                                                  
-21 -ios/                                                                                                                                                                                                                                                                       
-22 -android/                                                                                                                                                                                                                                                                        
-23 -                                                                                                                                                                                                                                                                                  
-20  # Editor directories and files                                                                                                                                                                                                                                                    
-21  .vscode/*                                                                                                                                                                                                                                                                         
-22  !.vscode/extensions.json
+### Interruption
+A brief wake-up within a session. Does not split the session — sleep is considered continuous. Start and end must fall within the session bounds; interruptions must not overlap each other.
 
-⏺ Update(package.json)                                                             
-⎿  Added 5 lines, removed 1 line           
-13      "test:watch": "vitest",              
-14      "cap:sync": "vite build && cap sync",
-15      "cap:ios": "vite build && cap sync ios && cap open ios",
-16 -    "cap:android": "vite build && cap sync android && cap open android"                                                                                                                                                                                                    
-16 +    "cap:android": "vite build && cap sync android && cap open android",                                                                                                                                                                                                   
-17 +    "db:push": "supabase db push",                                                                                                                                                                                                                                              
-18 +    "db:diff": "supabase db diff -f new_migration",                                                                                                                                                                                                                               
-19 +    "db:reset": "supabase db reset",                                                                                                                                                                                                                                            
-20 +    "db:types": "supabase gen types typescript --linked > src/integrations/supabase/types.ts"                                                                                                                                                                                     
-21    },                                                                     
-22    "dependencies": {                                                                                                                                                                                                                                                               
-23      "@capacitor/app": "^6.0.2",
+### Wake window
+Time elapsed between the end of one sleep and the start of the next. Compared to age-based norms derived from the child's birth date. Shown as a colored bar between sessions in the history view.
 
-⏺ All repo prep is done. Here's the runbook for the Supabase migration — the parts I can't do for you, with everything else already wired in.
+### Night window
+Configured per child (`night_start_time`, `night_end_time`). Determines day vs. night classification and how cross-midnight sessions are attributed to calendar days in analytics.
 
-Repo changes I made (recap)
+### Child / User / Role
 
-- .env.example — template with the three vars
-- .gitignore — .env and .env.* now ignored (was previously tracked)
-- package.json — new scripts: db:push, db:diff, db:reset, db:types
+- A **user** is linked to one or more **children**.
+- Each link carries a **role**: `admin` (Owner), `user` (Editor), `viewer` (Viewer).
+- A child must always have at least one `admin`.
+- All data (sessions, settings, places, methods) is scoped per child.
 
-Migration runbook
+### Soft delete
+Deleting a child sets `status = 'deleted'` and schedules hard deletion 30 days out. It disappears from all participants immediately. Admins can restore within the window via Profile → Deleted Children.
 
-1. Create the new Supabase project (~2 min)
+---
 
-1. Go to https://supabase.com/dashboard → New project.
-2. Name: e.g. lullaby-prod. Region: pick the one closest to you/your users.
-3. Set a strong database password — save it in a password manager.
-4. Wait ~1 min for provisioning.
-5. Copy from Project Settings → API:                                                                                                                                                                                                                                                      
-   - Project URL (e.g. https://abcdefgh.supabase.co)                                                                                                                                                                                                                                       
-   - anon public key (the long eyJ... JWT)        eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4eWd3YndiaHFxcm9rb25iZnlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTEwNTksImV4cCI6MjA5MzU2NzA1OX0.c7Wc-F-OZRxzVdb1XWvCcib0hS_6SOf7IKBGCsySSjU                                                                                                                                                                                                                                          
-   - Project ref (the abcdefgh part) ?? vxygwbwbhqqrokonbfyk
-publisable key sb_publishable_rSjbgVwtczFm4zrFO6jieQ_V7Mi23kf
-2. Untrack the old .env and write the new one
-   https://cfsnmkhtxesvudcroauj.supabase.co/auth/v1/callback
-# Stop tracking the old .env (it has Lovable's keys — soon irrelevant anyway)
-git rm --cached .env
+## Tech stack
 
-# Copy the template and fill in values
-cp .env.example .env
-# Then edit .env with the URL, anon key, and project ref from step 1
+- **Vite 5 + React 18 + TypeScript** (SWC)
+- **Supabase** — Postgres, RLS, Realtime, Storage, Edge Functions
+- **TanStack Query** — server state caching (History page)
+- **Dexie** — IndexedDB offline mutation queue
+- **Tailwind CSS + shadcn/ui** — Radix primitives
+- **react-router-dom v6** — client-side routing
+- **i18next** — EN/RU localization
+- **date-fns** — date arithmetic
+- **sonner** — toasts
+- **Capacitor 6** — iOS/Android wrapping
 
-Optional: rotate the old anon key in the Lovable Supabase project too, in case the repo is or becomes public — but since you're migrating off it, it'll go cold on its own.
+---
 
-3. Link the CLI to your new project and push migrations
+## Environment variables
 
-supabase login                                                                                                                                                                                                                                                                            
-supabase link --project-ref vxygwbwbhqqrokonbfyk
-# Confirms the link; updates supabase/config.toml automatically
+```env
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<anon-key>
+```
 
-bun run db:push
-# Applies all 16 migrations from supabase/migrations/ to the new project.
-# Should take ~10 seconds, no errors expected.
+Copy `.env.example` to `.env` and fill in values from Supabase → Project Settings → API.
 
-If db:push shows "remote database is up to date" without applying anything, you may need supabase migration repair — but on a fresh project this won't happen.
+---
 
-4. Regenerate Supabase TypeScript types
+## How to run
 
-bun run db:types
-# Overwrites src/integrations/supabase/types.ts with types from your new
-# project. Should be byte-identical to the existing file unless your old
-# project had drift.
+```sh
+bun install           # install dependencies (bun.lockb is canonical — do not use npm)
+bun run dev           # start dev server on :8080
+bun run build         # production build
+bun run lint          # eslint
+bun run test          # vitest
+bun run db:push       # apply Supabase migrations (requires Supabase CLI + linked project)
+bun run db:types      # regenerate TypeScript types from DB schema
+```
 
-5. Configure Google OAuth (now you can!)
+---
 
-Same steps from before, but now you actually have access to the dashboard:
-where to find  Supabase dashboard → Authentication → Providers → Google → toggle on, paste Client ID + Secret. - client id and secret
-1. Google Cloud Console → OAuth client → Authorized redirect URI:                                                                                                                                                                                                                       
-   https://<new-project-ref>.supabase.co/auth/v1/callback
-2. Supabase dashboard → Authentication → Providers → Google → toggle on, paste Client ID + Secret. - ????????
-3. Authentication → URL Configuration → site url - default is http://localhost:3000. need to change                                                                                                                                                                                                                         
-   http://localhost:8080                                                                                                                                                                                                                                                                     
-   http://localhost:8080/**                                                                                                                                                                                                                                                                
-   app.lullaby://auth/callback
-3. (Add your eventual production URL once you have one in step 6 of the bigger plan — Vercel.)
+## Deployment
 
-6. Verify locally
+### Vercel
+`vercel.json` contains a catch-all SPA rewrite. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel project settings.
 
-bun run dev
+### Supabase
+- Migrations: `supabase db push`.
+- Edge Functions: `supabase functions deploy delete-account`.
+- Authentication → URL Configuration:
+  - Site URL: production domain
+  - Additional redirect URLs: `https://*.vercel.app/**`, `app.lullaby://auth/callback`
+- Enable Google OAuth under Authentication → Providers.
 
-- Sign-up with email → should arrive at the app (and a row appears in auth.users in your new project).
-- Sign-in with Google → should redirect to Google's account picker, then back, then signed in.
-- Check Supabase dashboard → Authentication → Users to confirm rows are landing in the new project.
+### Native (iOS / Android)
+```sh
+bun run cap:ios       # build + sync + open Xcode
+bun run cap:android   # build + sync + open Android Studio
+```
+Deep link scheme: `app.lullaby`. Auth callbacks use `app.lullaby://auth/callback`.
 
-7. (Optional) Bring data over from the old project
+---
 
-If you have test data you want to keep:
-# From an env where you have the old project's connection string:
-pg_dump --data-only --no-owner --no-acl \                                                                                                                                                                                                                                                 
-"postgresql://postgres:<password>@db.cfsnmkhtxesvudcroauj.supabase.co:5432/postgres" \                                                                                                                                                                                                
-> old_data.sql
+## Important notes
 
-# Restore into new project:
-psql "postgresql://postgres:<password>@db.<new-ref>.supabase.co:5432/postgres" \                                                                                                                                                                                                          
-< old_data.sql
+### Offline behavior
+- Mutations while offline are queued in Dexie (`src/lib/offline-queue.ts`).
+- Queue flushes automatically on the `online` event.
+- Conflicts (queued change vs. server change) appear on the `/conflicts` screen.
+- The `SyncStatus` banner shows pending count and connection state.
 
-You'll need Lovable to give you the old project's password. If they don't, just start fresh — it's a sleep tracker, not financial records.
+### Localization
+- All user-visible strings live in `src/i18n/en.ts` and `src/i18n/ru.ts`. Nothing is hardcoded.
+- Gender-specific text (Russian verb agreement) uses i18next `context` derived from `child.gender`.
+- Sleep places and settling methods are stored in English in the DB; translated at render time via `localizePlace()` / `localizeMethod()`.
+- Time format preference (`system` / `12-hour` / `24-hour`) is stored per user in `profiles.time_format`.
 
-8. Done — Lovable can be cut loose
+### Time formatting
+- **Durations** (sleep length, wake windows): `5h15m` (EN) / `5ч15м` (RU). Never `HH:mm`.
+- **Clock times** (session start/end): respect the user's time format preference via the `useTimeFormat()` hook.
+- Components must use `useTimeFormat()` — never call formatting functions directly.
 
-Your app now points at a project you own. The Lovable preview will keep working too (it'll either still be talking to its old Supabase project, or you can update Lovable's env to your new one). You can decommission Lovable whenever you're ready — Vercel is the next step (option 2  
-from earlier).
-                                                                                                                                                                                                                                                                                            
----                                                                                                                                                                                                                                                                                       
-What to tell me when you're back
+### Data consistency
+- Children are created only via the `create_child_with_link` RPC — never with a direct INSERT.
+- Interruptions are synced atomically via the `sync_session_interruptions` RPC.
+- Overlap detection uses the `sleep_overlaps` RPC before any session insert or edit.
+- Wake-up confirmation is a local draft — no DB write until the user confirms.
+- Settings use an optimistic lock (`updated_at`) to detect concurrent edits by family members.
 
-After step 6, paste:
-- ✅ Email sign-up works → step done
-- ✅ Google sign-in works → step done
-- ❌ One of them errored → paste the error or the URL bar, and I'll diagnose
-
-Then we move to Vercel hosting.
-
-⏺ Repo prep complete. Run through the 8 steps when ready and ping me with results from step 6.
-
-✻ Churned for 2m 16s
-
-❯ /usage                                                                                                                                                                                                                                                                                    
-⎿  Status dialog dismissed
-
-─────────────────
+### Roles and access
+- **Owner (admin)**: full control — edit any sleep, manage members, delete/restore child.
+- **Editor (user)**: start/end sleep and edit own sessions.
+- **Viewer**: read-only.
+- Account deletion is blocked if the user is the sole admin of any child with other participants.

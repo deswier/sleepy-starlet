@@ -6,24 +6,60 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Camera } from "lucide-react";
+import { ArrowLeft, Camera, Trash2, Archive } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import ImageCropDialog from "@/components/ImageCropDialog";
+import { PasswordInput } from "@/components/PasswordInput";
+import { RequiredMark } from "@/components/RequiredMark";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { getAuthRedirectUrl } from "@/lib/native";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+interface DeletionCheck {
+  blocking: { id: string; name: string }[];
+  solo_destructive: { id: string; name: string }[];
+  unlink: { id: string; name: string }[];
+  is_blocked: boolean;
+}
 
 export default function Profile() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, timeFormat: savedTimeFormat, setTimeFormat: setCtxTimeFormat } = useAuth();
   const [name, setName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
+  const [timeFormatPref, setTimeFormatPref] = useState(savedTimeFormat);
+  // Sync if the context value loads asynchronously after mount.
+  useEffect(() => { setTimeFormatPref(savedTimeFormat); }, [savedTimeFormat]);
+  const [emailDraft, setEmailDraft] = useState("");
+  useEffect(() => { if (user?.email) setEmailDraft(user.email); }, [user?.email]);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [repeatNewPassword, setRepeatNewPassword] = useState("");
+  const [showSetPasswordForm, setShowSetPasswordForm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const passwordMismatch = repeatNewPassword.length > 0 && repeatNewPassword !== newPassword;
+
+  const providers: string[] = [
+    ...((user?.app_metadata?.providers as string[] | undefined) ?? []),
+    ...(user?.identities?.map((i) => i.provider) ?? []),
+  ];
+  const hasPasswordProvider = providers.some((p) => p === "email" || p === "password");
+  const hasGoogleProvider = providers.some((p) => p === "google" || p === "google.com");
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteCheck, setDeleteCheck] = useState<DeletionCheck | null>(null);
+  const [isOwnerAnywhere, setIsOwnerAnywhere] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -43,9 +79,11 @@ export default function Profile() {
     const { error } = await supabase.from("profiles").update({
       display_name: name.trim() || null,
       language,
+      time_format: timeFormatPref,
     }).eq("id", user.id);
     setBusy(false);
-    if (error) toast.error(error.message); else { toast.success(t("common.saved")); i18n.changeLanguage(language); }
+    if (error) toast.error(authErrorMessage(error, t));
+    else { toast.success(t("common.saved")); i18n.changeLanguage(language); setCtxTimeFormat(timeFormatPref); }
   };
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,7 +98,7 @@ export default function Profile() {
     const path = `${user.id}/avatar-${Date.now()}.jpg`;
     setBusy(true);
     const up = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" });
-    if (up.error) { toast.error(up.error.message); setBusy(false); return; }
+    if (up.error) { toast.error(authErrorMessage(up.error, t)); setBusy(false); return; }
     const { data } = supabase.storage.from("avatars").getPublicUrl(path);
     await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", user.id);
     setAvatarUrl(data.publicUrl);
@@ -68,21 +106,104 @@ export default function Profile() {
     toast.success(t("common.saved"));
   };
 
+  const changeEmail = async () => {
+    if (!emailDraft || !user || emailDraft === user.email) return;
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser(
+      { email: emailDraft },
+      { emailRedirectTo: getAuthRedirectUrl() },
+    );
+    setBusy(false);
+    if (error) toast.error(authErrorMessage(error, t));
+    else toast.success(t("profile.emailChangeSent"));
+  };
+
   const changePassword = async () => {
-    if (!newPassword || newPassword.length < 6) { toast.error("min 6"); return; }
+    if (!currentPassword) return;
+    if (newPassword.length < 6) { toast.error(t("errors.weakPassword")); return; }
+    if (newPassword !== repeatNewPassword) { toast.error(t("auth.passwordMismatch")); return; }
+    if (!user?.email) return;
+    setBusy(true);
+    // Re-authenticate to verify current password before allowing the change.
+    const { error: reauthError } = await supabase.auth.signInWithPassword({ email: user.email, password: currentPassword });
+    if (reauthError) {
+      setBusy(false);
+      toast.error(t("errors.wrongCurrentPassword"));
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setBusy(false);
+    if (error) { toast.error(authErrorMessage(error, t)); return; }
+    setCurrentPassword("");
+    setNewPassword("");
+    setRepeatNewPassword("");
+    toast.success(t("auth.passwordResetSuccess"));
+  };
+
+  const setPassword = async () => {
+    if (newPassword.length < 6) { toast.error(t("errors.weakPassword")); return; }
+    if (newPassword !== repeatNewPassword) { toast.error(t("auth.passwordMismatch")); return; }
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setBusy(false);
-    if (error) toast.error(error.message);
-    else { setNewPassword(""); toast.success(t("profile.passwordChanged")); }
+    if (error) { toast.error(authErrorMessage(error, t)); return; }
+    setNewPassword("");
+    setRepeatNewPassword("");
+    setShowSetPasswordForm(false);
+    toast.success(t("profile.passwordSetSuccess"));
   };
+
+  const sendForgotPassword = async () => {
+    if (!user?.email) return;
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: getAuthRedirectUrl() });
+    setBusy(false);
+    if (error) toast.error(authErrorMessage(error, t));
+    else toast.success(t("profile.resetPasswordSent"));
+  };
+
+  const openDeleteDialog = async () => {
+    if (!user) return;
+    // Run preview RPC + ownership check in parallel so the dialog opens with
+    // the right scenario message and never has a flicker of wrong text.
+    const [{ data, error }, ownerRes] = await Promise.all([
+      supabase.rpc("account_deletion_check"),
+      supabase.from("child_user_roles").select("child_id", { count: "exact", head: true })
+        .eq("user_id", user.id).eq("role", "admin"),
+    ]);
+    if (error) { toast.error(error.message); return; }
+    setDeleteCheck(data as unknown as DeletionCheck);
+    setIsOwnerAnywhere((ownerRes.count ?? 0) > 0);
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleteBusy(true);
+    const { error } = await supabase.functions.invoke("delete-account");
+    if (error) {
+      toast.error(error.message || t("common.loadFailed"));
+      setDeleteBusy(false);
+      return;
+    }
+    await supabase.auth.signOut();
+    navigate("/auth", { replace: true });
+  };
+
+  // Pick the message for the strongest applicable scenario: 4.3 > 4.4 > 4.2 > 4.1.
+  const scenario = (() => {
+    if (!deleteCheck) return "default";
+    if (deleteCheck.is_blocked) return "blocked";
+    if (deleteCheck.solo_destructive.length > 0) return "solo";
+    if (isOwnerAnywhere && deleteCheck.unlink.length > 0) return "ownerWithOthers";
+    return "default";
+  })();
 
   const initials = (name || user?.email || "?").trim().split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("profile.title")}</h1>
@@ -104,8 +225,17 @@ export default function Profile() {
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
           </div>
           <div className="space-y-1.5">
-            <Label>{t("profile.email")}</Label>
-            <Input value={user?.email ?? ""} disabled />
+            <Label htmlFor="email">{t("profile.email")}</Label>
+            <Input id="email" type="email" autoComplete="email"
+              value={emailDraft} onChange={(e) => setEmailDraft(e.target.value)} />
+            {emailDraft && emailDraft !== user?.email && (
+              <>
+                <p className="text-xs text-muted-foreground">{t("profile.changeEmailHint")}</p>
+                <Button type="button" onClick={changeEmail} variant="outline" size="sm" disabled={busy}>
+                  {t("profile.changeEmail")}
+                </Button>
+              </>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>{t("common.language")}</Label>
@@ -117,19 +247,148 @@ export default function Profile() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={saveProfile} className="w-full" disabled={busy}>{t("common.save")}</Button>
+          <div className="space-y-1.5">
+            <Label>{t("profile.timeFormat")}</Label>
+            <Select value={timeFormatPref} onValueChange={(v) => setTimeFormatPref(v as typeof timeFormatPref)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">{t("profile.timeFormatSystem")}</SelectItem>
+                <SelectItem value="h12">{t("profile.timeFormat12h")}</SelectItem>
+                <SelectItem value="h24">{t("profile.timeFormat24h")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="button" onClick={saveProfile} className="w-full" disabled={busy}>{t("common.save")}</Button>
         </Card>
 
         <Card className="p-5 shadow-card mb-4 space-y-3">
           <h3 className="font-semibold">{t("profile.changePassword")}</h3>
-          <div className="space-y-1.5">
-            <Label>{t("profile.newPassword")}</Label>
-            <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={6} />
-          </div>
-          <Button onClick={changePassword} className="w-full" disabled={busy || newPassword.length < 6}>
-            {t("profile.changePassword")}
+          {hasPasswordProvider ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="curPw"><RequiredMark />{t("profile.currentPassword")}</Label>
+                <PasswordInput id="curPw" autoComplete="current-password"
+                  value={currentPassword} onChange={setCurrentPassword} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newPw"><RequiredMark />{t("profile.newPassword")}</Label>
+                <PasswordInput id="newPw" autoComplete="new-password" minLength={6}
+                  value={newPassword} onChange={setNewPassword} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
+                <PasswordInput id="newPw2" autoComplete="new-password" minLength={6}
+                  aria-invalid={passwordMismatch}
+                  value={repeatNewPassword} onChange={setRepeatNewPassword} />
+                {passwordMismatch && (
+                  <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
+                )}
+              </div>
+              <Button type="button" onClick={changePassword} className="w-full"
+                disabled={busy || !currentPassword || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
+                {t("profile.changePassword")}
+              </Button>
+              <button type="button" onClick={sendForgotPassword} disabled={busy}
+                className="w-full text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline">
+                {t("auth.forgotPassword")}
+              </button>
+            </>
+          ) : (
+            <>
+              {!showSetPasswordForm ? (
+                <>
+                  <p className="text-sm text-muted-foreground">{t("profile.passwordLoginNotEnabled")}</p>
+                  <Button type="button" variant="outline" className="w-full" onClick={() => setShowSetPasswordForm(true)}>
+                    {t("profile.setPassword")}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="setPw"><RequiredMark />{t("profile.newPassword")}</Label>
+                    <PasswordInput id="setPw" autoComplete="new-password" minLength={6}
+                      value={newPassword} onChange={setNewPassword} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="setPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
+                    <PasswordInput id="setPw2" autoComplete="new-password" minLength={6}
+                      aria-invalid={passwordMismatch}
+                      value={repeatNewPassword} onChange={setRepeatNewPassword} />
+                    {passwordMismatch && (
+                      <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
+                    )}
+                  </div>
+                  <Button type="button" onClick={setPassword} className="w-full"
+                    disabled={busy || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
+                    {t("profile.setPassword")}
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" disabled={busy}
+                    onClick={() => { setShowSetPasswordForm(false); setNewPassword(""); setRepeatNewPassword(""); }}>
+                    {t("common.cancel")}
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+        </Card>
+
+        <Card className="p-5 shadow-card mb-4">
+          <Button type="button" variant="outline" className="w-full" onClick={() => navigate("/deleted-children")}>
+            <Archive className="w-4 h-4 mr-2" /> {t("remove.deletedChildren")}
           </Button>
         </Card>
+
+        <Card className="p-5 shadow-card mb-4">
+          <Button type="button" variant="outline" className="w-full text-destructive hover:text-destructive"
+            onClick={openDeleteDialog} disabled={busy}>
+            <Trash2 className="w-4 h-4 mr-2" /> {t("remove.deleteProfile")}
+          </Button>
+        </Card>
+
+        <AlertDialog open={deleteOpen} onOpenChange={(o) => !o && !deleteBusy && setDeleteOpen(false)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {scenario === "blocked"
+                  ? t("remove.deleteProfileBlockedTitle")
+                  : t("remove.deleteProfileTitle")}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="whitespace-pre-line">
+                {scenario === "blocked"   && t("remove.deleteProfileBodyBlocked")}
+                {scenario === "solo"      && t("remove.deleteProfileBodySolo")}
+                {scenario === "ownerWithOthers" && t("remove.deleteProfileBodyOwnerWithOthers")}
+                {scenario === "default"   && t("remove.deleteProfileBodyDefault")}
+              </AlertDialogDescription>
+              {deleteCheck && (deleteCheck.blocking.length + deleteCheck.solo_destructive.length + deleteCheck.unlink.length) > 0 && (
+                <ul className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                  {[...deleteCheck.blocking, ...deleteCheck.solo_destructive, ...deleteCheck.unlink]
+                    .map((c) => <li key={c.id}>• {c.name}</li>)}
+                </ul>
+              )}
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              {scenario === "blocked" ? (
+                <>
+                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => { setDeleteOpen(false); navigate("/settings"); }}>
+                    {t("remove.deleteProfileGoToChild")}
+                  </AlertDialogAction>
+                </>
+              ) : (
+                <>
+                  <AlertDialogCancel disabled={deleteBusy}>{t("common.cancel")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={deleteBusy}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={(e) => { e.preventDefault(); confirmDelete(); }}
+                  >
+                    {deleteBusy ? t("remove.deleting") : t("remove.deleteForever")}
+                  </AlertDialogAction>
+                </>
+              )}
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </main>
   );

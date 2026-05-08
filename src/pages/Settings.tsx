@@ -5,7 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus } from "lucide-react";
+import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus, LogOut } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useRef } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,7 +17,8 @@ import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ageInMonths, wakeWindowForAge, formatDuration, fmtDateTime } from "@/lib/sleep-utils";
+import { ageInMonths, wakeWindowForAge } from "@/lib/sleep-utils";
+import { useTimeFormat } from "@/lib/use-time-format";
 import { useTranslation } from "react-i18next";
 import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
@@ -33,6 +38,7 @@ export default function Settings() {
   const { activeChild, refresh, refreshSettings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
+  const { fmtDuration } = useTimeFormat();
   const isAdmin = canEditChild(role);
   const isViewer = role === "viewer";
   const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
@@ -47,6 +53,8 @@ export default function Settings() {
   const [s, setS] = useState<any>(null);
   const [childName, setChildName] = useState<string>("");
   const [birthDate, setBirthDate] = useState<string>("");
+  const _today = new Date();
+  const todayStr = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, "0")}-${String(_today.getDate()).padStart(2, "0")}`;
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
   const [newPlace, setNewPlace] = useState("");
@@ -160,6 +168,7 @@ export default function Settings() {
     if (!activeChild || !isAdmin) return;
     const name = (childName ?? "").trim();
     if (!name) return;
+    if (birthDate && birthDate > todayStr) { toast.error(t("child.birthDateFuture")); return; }
     const { error } = await supabase.from("children").update({
       name, birth_date: birthDate || null,
     }).eq("id", activeChild.id);
@@ -204,12 +213,40 @@ export default function Settings() {
     else { toast.success(t("common.deleted")); load(); }
   };
 
-  const deleteProfile = async () => {
-    if (!activeChild || !isAdmin) return;
-    if (!confirm(t("settings.confirmDeleteProfile"))) return;
-    const { error } = await supabase.from("children").delete().eq("id", activeChild.id);
-    if (error) toast.error(error.message);
-    else { toast.success(t("common.deleted")); await refresh(); navigate("/"); }
+  // Owner / membership cleanup. Routes through RPCs so role + last-owner
+  // invariants are enforced server-side; UI only decides which buttons to show.
+  const [confirmAction, setConfirmAction] = useState<null | "leave" | "delete">(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  const otherAdmins = useMemo(
+    () => members.filter((m) => m.user_id !== user?.id && m.role === "admin").length,
+    [members, user?.id],
+  );
+  const canLeave = !isAdmin || otherAdmins > 0;
+  const canDeleteCompletely = isAdmin;
+
+  const handleLeave = async () => {
+    if (!activeChild) return;
+    setConfirmBusy(true);
+    const { error } = await supabase.rpc("leave_child", { _child_id: activeChild.id } as any);
+    setConfirmBusy(false);
+    setConfirmAction(null);
+    if (error) { toast.error(error.message); return; }
+    toast.success(t("common.deleted"));
+    await refresh();
+    navigate("/");
+  };
+
+  const handleSoftDelete = async () => {
+    if (!activeChild) return;
+    setConfirmBusy(true);
+    const { error } = await supabase.rpc("soft_delete_child", { _child_id: activeChild.id } as any);
+    setConfirmBusy(false);
+    setConfirmAction(null);
+    if (error) { toast.error(error.message); return; }
+    toast.success(t("common.deleted"));
+    await refresh();
+    navigate("/");
   };
 
   if (!activeChild || !s) return (
@@ -224,6 +261,50 @@ export default function Settings() {
         ))}
       </div>
     </main>
+  );
+
+  const dangerZone = (canLeave || canDeleteCompletely) ? (
+    <Card className="p-5 shadow-card mb-4 space-y-2">
+      {canLeave && (
+        <Button variant="outline" className="w-full text-destructive hover:text-destructive"
+          onClick={() => setConfirmAction("leave")}>
+          <LogOut className="w-4 h-4 mr-2" /> {t("remove.fromAccount")}
+        </Button>
+      )}
+      {canDeleteCompletely && (
+        <Button variant="outline" className="w-full text-destructive hover:text-destructive"
+          onClick={() => setConfirmAction("delete")}>
+          <Trash2 className="w-4 h-4 mr-2" /> {t("remove.deleteCompletely")}
+        </Button>
+      )}
+    </Card>
+  ) : null;
+
+  const removeDialog = (
+    <AlertDialog open={!!confirmAction} onOpenChange={(o) => !o && !confirmBusy && setConfirmAction(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {confirmAction === "leave" ? t("remove.leaveTitle") : t("remove.deleteChildTitle")}
+          </AlertDialogTitle>
+          <AlertDialogDescription className="whitespace-pre-line">
+            {confirmAction === "leave"
+              ? (isAdmin ? t("remove.leaveOwnerBody") : t("remove.leaveBody"))
+              : t("remove.deleteChildBody")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={confirmBusy}>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={confirmBusy}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={(e) => { e.preventDefault(); confirmAction === "leave" ? handleLeave() : handleSoftDelete(); }}
+          >
+            {confirmAction === "leave" ? t("remove.fromAccount") : t("remove.deleteCompletely")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 
   // Viewers cannot edit any settings — show a read-only minimal screen.
@@ -249,6 +330,8 @@ export default function Settings() {
             <h3 className="font-semibold mb-1">{activeChild.name}</h3>
             <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
           </Card>
+          {dangerZone}
+          {removeDialog}
         </div>
       </main>
     );
@@ -304,13 +387,13 @@ export default function Settings() {
           </div>
           <div className="space-y-1.5">
             <Label>{t("child.birthDate")}</Label>
-            <Input type="date" value={birthDate} disabled={!isAdmin}
+            <Input type="date" value={birthDate} max={todayStr} disabled={!isAdmin}
               onChange={(e) => setBirthDate(e.target.value)} onBlur={saveChild}
               className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
           </div>
           {ww && (
             <p className="text-xs text-muted-foreground">
-              {t("settings.currentWW", { min: formatDuration(ww.min), max: formatDuration(ww.max) })}
+              {t("settings.currentWW", { min: fmtDuration(ww.min), max: fmtDuration(ww.max) })}
             </p>
           )}
         </Card>
@@ -461,14 +544,9 @@ export default function Settings() {
           }}
           onDelete={async (id) => { await supabase.from("settling_methods").delete().eq("id", id); load(); }} />
 
-        {/* 8. Delete profile */}
-        {isAdmin && (
-          <Card className="p-5 shadow-card mb-4">
-            <Button variant="outline" className="w-full text-destructive hover:text-destructive" onClick={deleteProfile}>
-              <Trash2 className="w-4 h-4 mr-2" /> {t("settings.deleteProfile")}
-            </Button>
-          </Card>
-        )}
+        {/* 8. Danger zone — leave / delete child */}
+        {dangerZone}
+        {removeDialog}
       </div>
     </main>
   );

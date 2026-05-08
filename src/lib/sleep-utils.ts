@@ -1,6 +1,8 @@
-import { differenceInMinutes, format, isSameDay, startOfDay } from "date-fns";
+import { format, isSameDay, startOfDay } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
+
+export type TimeFormat = "system" | "h12" | "h24";
 
 const dfLocale = () => (i18n.language?.startsWith("ru") ? ru : enUS);
 
@@ -16,13 +18,18 @@ export interface SleepSession {
   created_by_user_id: string | null;
 }
 
-export const formatDuration = (minutes: number): string => {
-  if (minutes < 1) return "<1m";
+// locale is optional — falls back to current i18n language so module-level
+// callers (e.g. Analytics helper functions) stay reactive on language change.
+export const formatDuration = (minutes: number, locale?: string): string => {
+  const isRu = (locale ?? i18n.language ?? "en").startsWith("ru");
+  const hSuf = isRu ? "ч" : "h";
+  const mSuf = isRu ? "м" : "m";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
+  if (minutes < 1) return `0${mSuf}`;
+  if (h === 0) return `${m}${mSuf}`;
+  if (m === 0) return `${h}${hSuf}`;
+  return `${h}${hSuf}${String(m).padStart(2, "0")}${mSuf}`;
 };
 
 export const sessionDuration = (s: SleepSession, now = new Date()): number => {
@@ -74,13 +81,39 @@ export const inferSleepType = (
 };
 
 
-export const formatTime = (iso: string) => format(new Date(iso), "HH:mm");
+// Returns true when the browser/device locale uses 12-hour clock.
+// Used for the "system" time format option — intentionally reads navigator.language
+// (device preference), not the app's display language.
+function detectSystem12h(): boolean {
+  try {
+    const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en";
+    const parts = new Intl.DateTimeFormat(browserLocale, { hour: "numeric" })
+      .formatToParts(new Date(2020, 0, 1, 13, 0, 0));
+    return parts.some((p) => p.type === "dayPeriod");
+  } catch {
+    return false;
+  }
+}
 
-// Localized date helpers (dd.MM.yy and dd.MM.yy HH:mm)
+// Clock time (HH:mm or h:mm AM/PM) respecting the user's time format preference.
+export function formatClockTime(date: Date | string, locale: string, timeFormat: TimeFormat): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const hour12 = timeFormat === "h12" ? true : timeFormat === "h24" ? false : detectSystem12h();
+  return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", hour12 }).format(d);
+}
+
+// Localized date helpers
 export const fmtDate = (d: Date | string) =>
   format(typeof d === "string" ? new Date(d) : d, "dd.MM.yy", { locale: dfLocale() });
-export const fmtDateTime = (d: Date | string) =>
-  format(typeof d === "string" ? new Date(d) : d, "dd.MM.yy HH:mm", { locale: dfLocale() });
+
+// Date + clock time. locale and timeFormat come from the caller (via useTimeFormat hook).
+export function fmtDateTime(d: Date | string, locale: string, timeFormat: TimeFormat): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  const isRu = locale.startsWith("ru");
+  const datePart = format(date, "dd.MM.yy", { locale: isRu ? ru : enUS });
+  return `${datePart} ${formatClockTime(date, locale, timeFormat)}`;
+}
+
 export const fmtWeekday = (d: Date) => format(d, "EEEE, dd.MM.yy", { locale: dfLocale() });
 
 

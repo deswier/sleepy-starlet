@@ -41,9 +41,16 @@ export default function NewChild() {
   const [joinCustom, setJoinCustom] = useState("");
   const [joining, setJoining] = useState(false);
 
+  const d = new Date();
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (birthDate && birthDate > todayStr) {
+      toast.error(t("child.birthDateFuture"));
+      return;
+    }
     setBusy(true);
     const { data: childId, error } = await supabase.rpc("create_child_with_link", {
       _name: name,
@@ -159,7 +166,7 @@ export default function NewChild() {
                 <div><Label htmlFor="n">{t("child.name")}</Label>
                   <Input id="n" required value={name} onChange={(e) => setName(e.target.value)} /></div>
                 <div><Label htmlFor="b">{t("child.birthDate")}</Label>
-                  <Input id="b" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className="block w-full" /></div>
+                  <Input id="b" type="date" value={birthDate} max={todayStr} onChange={(e) => setBirthDate(e.target.value)} className="block w-full" /></div>
                 <div>
                   <Label>{t("child.gender")}</Label>
                   <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
