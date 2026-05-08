@@ -247,6 +247,7 @@ const en = {
     emailChangeSent: "Confirmation sent. Check both inboxes to complete the change.",
     currentPassword: "Current password",
     setPassword: "Set password",
+    setPasswordViaEmail: "Set password via email",
     passwordLoginNotEnabled: "Password login is not enabled",
     passwordSetSuccess: "Password has been set successfully",
     resetPasswordSent: "Password reset email has been sent to your email",

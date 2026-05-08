@@ -205,11 +205,11 @@ export default function Settings() {
   const removeMember = async (uid: string) => {
     if (!activeChild || !isAdmin) return;
     if (!confirm(t("settings.confirmRemoveMember"))) return;
-    const { error: e1 } = await supabase.from("child_user_roles").delete()
-      .eq("child_id", activeChild.id).eq("user_id", uid);
-    const { error: e2 } = await supabase.from("child_users").delete()
-      .eq("child_id", activeChild.id).eq("user_id", uid);
-    if (e1 || e2) toast.error((e1 || e2)!.message);
+    const { error } = await supabase.rpc("remove_child_member", {
+      _child_id: activeChild.id,
+      _member_user_id: uid,
+    } as any);
+    if (error) toast.error(error.message);
     else { toast.success(t("common.deleted")); load(); }
   };
 
