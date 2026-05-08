@@ -39,6 +39,7 @@ export default function Heatmap() {
   const [loading, setLoading] = useState(true);
   const [hasFetched, setHasFetched] = useState(false);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
 
   const today = startOfDay(new Date());
   // Hard ceiling: last visible day = today.
@@ -216,7 +217,7 @@ export default function Heatmap() {
         if (!cancelled) { setLoading(false); setHasFetched(true); }
       });
     return () => { cancelled = true; };
-  }, [activeChild?.id, renderStart.getTime()]);
+  }, [activeChild?.id, renderStart.getTime(), fetchKey]);
 
   // Update the effective right boundary whenever sessions change.
   useEffect(() => {
@@ -471,7 +472,7 @@ export default function Heatmap() {
             <SleepDetail
               session={openSession}
               onClose={() => setOpenSession(null)}
-              onChange={() => {}}
+              onChange={() => setFetchKey((k) => k + 1)}
             />
           </Suspense>
         )}
