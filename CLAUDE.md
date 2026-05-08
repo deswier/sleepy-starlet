@@ -217,6 +217,8 @@ Namespaces in i18n files: `app`, `common`, `auth`, `child`, `sleep`, `history`, 
 
 ## Validation rules
 
+- **New child form**: all fields required — name, birth date, gender, relation type. If relation is `"other"`, the custom-relation text field is also required. Submit button stays disabled until all are filled.
+- **Join child form**: code (6 chars), relation type required. If relation is `"other"`, the custom-relation text field is required. Submit disabled until code is 6 chars and all required fields are filled.
 - **Birth date**: must be ≤ today. Compare as `YYYY-MM-DD` strings (local date, no timezone shift). Compute today as `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`. Set `max={todayStr}` on date inputs. No minimum date restriction.
 - **Sleep start/end**: neither can be in the future. End must be after start.
 - **Interruption bounds**: must be within session `[start_time, end_time]`. Interruptions must not overlap.
@@ -307,6 +309,7 @@ src/
     Heatmap.tsx           7-day sleep grid
     Settings.tsx          child config + members + invites.
                           saveSettings uses optimistic lock on updated_at.
+                          Language preference is NOT here — it lives in Profile.tsx.
     Auth.tsx              sign-in/up/forgot/reset + Google OAuth.
                           Single routing point post-login.
     NewChild.tsx          create child or redeem invite

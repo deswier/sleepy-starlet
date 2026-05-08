@@ -21,11 +21,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ageInMonths, wakeWindowForAge } from "@/lib/sleep-utils";
 import { useTimeFormat } from "@/lib/use-time-format";
 import { useTranslation } from "react-i18next";
-import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
+import { useChildRole, canCreateSleep, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
-import i18n from "@/i18n";
 
 type Member = {
   user_id: string;
@@ -44,14 +43,6 @@ export default function Settings() {
   const isViewer = role === "viewer";
   // admin and user (editor) can manage night window, places and methods.
   const canEditFamilySettings = canCreateSleep(role);
-  const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
-  const changeLanguage = async (v: "en" | "ru") => {
-    setLanguage(v);
-    await i18n.changeLanguage(v);
-    if (user) {
-      try { await supabase.from("profiles").update({ language: v }).eq("id", user.id); } catch { /* ignore */ }
-    }
-  };
 
   const [s, setS] = useState<any>(null);
   const [childName, setChildName] = useState<string>("");
@@ -319,16 +310,6 @@ export default function Settings() {
             <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
           </Button>
           <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
-          <Card className="p-5 shadow-card mb-4 space-y-3">
-            <h3 className="font-semibold">{t("common.language")}</h3>
-            <Select value={language} onValueChange={(v: "en" | "ru") => changeLanguage(v)}>
-              <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="ru">Русский</SelectItem>
-              </SelectContent>
-            </Select>
-          </Card>
           <Card className="p-5 shadow-card mb-4">
             <h3 className="font-semibold mb-1">{activeChild.name}</h3>
             <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
@@ -350,18 +331,6 @@ export default function Settings() {
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
-
-        {/* Language */}
-        <Card className="p-5 shadow-card mb-4 space-y-3">
-          <h3 className="font-semibold">{t("common.language")}</h3>
-          <Select value={language} onValueChange={(v: "en" | "ru") => changeLanguage(v)}>
-            <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="ru">Русский</SelectItem>
-            </SelectContent>
-          </Select>
-        </Card>
 
         {/* 1. Child */}
         <Card className="p-5 shadow-card mb-4 space-y-3">

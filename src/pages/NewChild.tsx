@@ -16,6 +16,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useTranslation } from "react-i18next";
+import { RequiredMark } from "@/components/RequiredMark";
 import { getDeviceId } from "@/lib/device-id";
 import { readLastRoute } from "@/lib/last-route";
 
@@ -163,12 +164,16 @@ export default function NewChild() {
             </TabsList>
             <TabsContent value="new">
               <form onSubmit={submit} className="space-y-4">
-                <div><Label htmlFor="n">{t("child.name")}</Label>
-                  <Input id="n" required value={name} onChange={(e) => setName(e.target.value)} /></div>
-                <div><Label htmlFor="b">{t("child.birthDate")}</Label>
-                  <Input id="b" type="date" value={birthDate} max={todayStr} onChange={(e) => setBirthDate(e.target.value)} className="block w-full" /></div>
                 <div>
-                  <Label>{t("child.gender")}</Label>
+                  <Label htmlFor="n"><RequiredMark />{t("child.name")}</Label>
+                  <Input id="n" required value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="b"><RequiredMark />{t("child.birthDate")}</Label>
+                  <Input id="b" type="date" required value={birthDate} max={todayStr} onChange={(e) => setBirthDate(e.target.value)} className="block w-full" />
+                </div>
+                <div>
+                  <Label><RequiredMark />{t("child.gender")}</Label>
                   <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
                     <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                     <SelectContent>
@@ -178,7 +183,7 @@ export default function NewChild() {
                   </Select>
                 </div>
                 <div>
-                  <Label>{t("child.relation")}</Label>
+                  <Label><RequiredMark />{t("child.relation")}</Label>
                   <Select value={relation} onValueChange={(v) => setRelation(v as Relation)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -190,22 +195,25 @@ export default function NewChild() {
                 </div>
                 {relation === "other" && (
                   <div>
-                    <Label htmlFor="cr">{t("child.specifyRelation")}</Label>
-                    <Input id="cr" value={customRelation} onChange={(e) => setCustomRelation(e.target.value)} placeholder={t("child.specifyPlaceholder")} />
+                    <Label htmlFor="cr"><RequiredMark />{t("child.specifyRelation")}</Label>
+                    <Input id="cr" required value={customRelation} onChange={(e) => setCustomRelation(e.target.value)} placeholder={t("child.specifyPlaceholder")} />
                   </div>
                 )}
-                <Button type="submit" className="w-full" disabled={busy || !name}>{t("common.create")}</Button>
+                <Button type="submit" className="w-full"
+                  disabled={busy || !name.trim() || !birthDate || !gender || (relation === "other" && !customRelation.trim())}>
+                  {t("common.create")}
+                </Button>
               </form>
             </TabsContent>
             <TabsContent value="join">
               <form onSubmit={join} className="space-y-4">
                 <p className="text-xs text-muted-foreground">{t("child.haveCode")}</p>
                 <div>
-                  <Label htmlFor="code">{t("child.enterCode")}</Label>
+                  <Label htmlFor="code"><RequiredMark />{t("child.enterCode")}</Label>
                   <Input id="code" required value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} className="font-mono uppercase tracking-widest" maxLength={6} />
                 </div>
                 <div>
-                  <Label>{t("child.relation")}</Label>
+                  <Label><RequiredMark />{t("child.relation")}</Label>
                   <Select value={joinRelation} onValueChange={(v) => setJoinRelation(v as Relation)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -217,11 +225,14 @@ export default function NewChild() {
                 </div>
                 {joinRelation === "other" && (
                   <div>
-                    <Label htmlFor="jcr">{t("child.specifyRelation")}</Label>
-                    <Input id="jcr" value={joinCustom} onChange={(e) => setJoinCustom(e.target.value)} placeholder={t("child.specifyPlaceholder")} />
+                    <Label htmlFor="jcr"><RequiredMark />{t("child.specifyRelation")}</Label>
+                    <Input id="jcr" required value={joinCustom} onChange={(e) => setJoinCustom(e.target.value)} placeholder={t("child.specifyPlaceholder")} />
                   </div>
                 )}
-                <Button type="submit" className="w-full" disabled={joining || code.length < 4}>{joining ? t("child.joining") : t("common.create")}</Button>
+                <Button type="submit" className="w-full"
+                  disabled={joining || code.length < 6 || (joinRelation === "other" && !joinCustom.trim())}>
+                  {joining ? t("child.joining") : t("common.create")}
+                </Button>
               </form>
             </TabsContent>
           </Tabs>
