@@ -489,18 +489,18 @@ export default function Settings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t("settings.nightStarts")}</Label>
-              <Input type="time" value={s.night_start_time}
+              <Input type="time" value={s.night_start_time} disabled={!isAdmin}
                 onChange={(e) => setS({ ...s, night_start_time: e.target.value })}
                 className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.nightEnds")}</Label>
-              <Input type="time" value={s.night_end_time}
+              <Input type="time" value={s.night_end_time} disabled={!isAdmin}
                 onChange={(e) => setS({ ...s, night_end_time: e.target.value })}
                 className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
           </div>
-          <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>
+          {isAdmin && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
         </Card>
 
         {/* 4. Display */}
@@ -513,16 +513,17 @@ export default function Settings() {
             { key: "show_interruptions", label: t("settings.showInterruptions") },
             { key: "split_night_sleep_by_date", label: t("settings.splitNightByDate") },
           ].map((o) => (
-            <label key={o.key} className="flex items-center gap-2 cursor-pointer select-none">
-              <Checkbox checked={!!s[o.key]} onCheckedChange={(v) => setS({ ...s, [o.key]: !!v })} />
+            <label key={o.key} className={`flex items-center gap-2 select-none ${isAdmin ? "cursor-pointer" : "cursor-default opacity-60"}`}>
+              <Checkbox checked={!!s[o.key]} disabled={!isAdmin} onCheckedChange={(v) => isAdmin && setS({ ...s, [o.key]: !!v })} />
               <span className="text-sm">{o.label}</span>
             </label>
           ))}
-          <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>
+          {isAdmin && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
         </Card>
 
         {/* 5. Sleep places */}
         <ListEditor title={t("settings.sleepPlaces")} items={places.map((p) => ({ ...p, label: localizePlace(p.name) }))}
+          canEdit={isAdmin}
           newValue={newPlace} setNewValue={setNewPlace} placeholder={t("settings.addNew")}
           onAdd={async () => {
             if (!newPlace.trim()) return;
@@ -533,6 +534,7 @@ export default function Settings() {
 
         {/* 6. Settling methods */}
         <ListEditor title={t("settings.settlingMethods")} items={methods.map((m) => ({ ...m, label: localizeMethod(m.name) }))}
+          canEdit={isAdmin}
           renderIcon={(item: any) => {
             const Icon = iconForMethod(item.name);
             return <Icon className="w-4 h-4 text-muted-foreground shrink-0" />;
@@ -553,7 +555,7 @@ export default function Settings() {
   );
 }
 
-function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, placeholder, renderIcon }: any) {
+function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, placeholder, renderIcon, canEdit }: any) {
   return (
     <Card className="p-5 shadow-card mb-4 space-y-3">
       <h3 className="font-semibold">{title}</h3>
@@ -564,16 +566,20 @@ function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, plac
               {renderIcon ? renderIcon(i) : null}
               <span className="truncate">{i.label ?? i.name}</span>
             </span>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(i.id)}>
-              <X className="w-4 h-4" />
-            </Button>
+            {canEdit && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(i.id)}>
+                <X className="w-4 h-4" />
+              </Button>
+            )}
           </li>
         ))}
       </ul>
-      <div className="flex gap-2">
-        <Input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder={placeholder} />
-        <Button onClick={onAdd}><Plus className="w-4 h-4" /></Button>
-      </div>
+      {canEdit && (
+        <div className="flex gap-2">
+          <Input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder={placeholder} />
+          <Button onClick={onAdd}><Plus className="w-4 h-4" /></Button>
+        </div>
+      )}
     </Card>
   );
 }
