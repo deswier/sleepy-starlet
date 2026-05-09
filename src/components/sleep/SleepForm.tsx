@@ -71,8 +71,8 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
   useEffect(() => {
     if (!activeChild) return;
     Promise.all([
-      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
+      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
     ]).then(([p, m]) => {
       setPlaces(p.data ?? []);
       setMethods(m.data ?? []);

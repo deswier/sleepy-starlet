@@ -247,6 +247,7 @@ const ru = {
     emailChangeSent: "Письмо отправлено. Проверьте обе почты, чтобы завершить смену.",
     currentPassword: "Текущий пароль",
     setPassword: "Установить пароль",
+    setPasswordViaEmail: "Установить пароль через email",
     passwordLoginNotEnabled: "Вход по паролю не настроен",
     passwordSetSuccess: "Пароль успешно установлен",
     resetPasswordSent: "Письмо для сброса пароля отправлено на вашу почту",

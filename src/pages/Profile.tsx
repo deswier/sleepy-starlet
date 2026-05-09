@@ -43,7 +43,6 @@ export default function Profile() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [repeatNewPassword, setRepeatNewPassword] = useState("");
-  const [showSetPasswordForm, setShowSetPasswordForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const passwordMismatch = repeatNewPassword.length > 0 && repeatNewPassword !== newPassword;
 
@@ -88,7 +87,7 @@ export default function Profile() {
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setPendingFile(f);
+    if (f && f.type.startsWith("image/")) setPendingFile(f);
     e.target.value = "";
   };
 
@@ -140,19 +139,6 @@ export default function Profile() {
     toast.success(t("auth.passwordResetSuccess"));
   };
 
-  const setPassword = async () => {
-    if (newPassword.length < 6) { toast.error(t("errors.weakPassword")); return; }
-    if (newPassword !== repeatNewPassword) { toast.error(t("auth.passwordMismatch")); return; }
-    setBusy(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setBusy(false);
-    if (error) { toast.error(authErrorMessage(error, t)); return; }
-    setNewPassword("");
-    setRepeatNewPassword("");
-    setShowSetPasswordForm(false);
-    toast.success(t("profile.passwordSetSuccess"));
-  };
-
   const sendForgotPassword = async () => {
     if (!user?.email) return;
     setBusy(true);
@@ -185,8 +171,11 @@ export default function Profile() {
       setDeleteBusy(false);
       return;
     }
-    await supabase.auth.signOut();
-    navigate("/auth", { replace: true });
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      navigate("/auth", { replace: true });
+    }
   };
 
   // Pick the message for the strongest applicable scenario: 4.3 > 4.4 > 4.2 > 4.1.
@@ -295,39 +284,10 @@ export default function Profile() {
             </>
           ) : (
             <>
-              {!showSetPasswordForm ? (
-                <>
-                  <p className="text-sm text-muted-foreground">{t("profile.passwordLoginNotEnabled")}</p>
-                  <Button type="button" variant="outline" className="w-full" onClick={() => setShowSetPasswordForm(true)}>
-                    {t("profile.setPassword")}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="setPw"><RequiredMark />{t("profile.newPassword")}</Label>
-                    <PasswordInput id="setPw" autoComplete="new-password" minLength={6}
-                      value={newPassword} onChange={setNewPassword} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="setPw2"><RequiredMark />{t("auth.repeatPassword")}</Label>
-                    <PasswordInput id="setPw2" autoComplete="new-password" minLength={6}
-                      aria-invalid={passwordMismatch}
-                      value={repeatNewPassword} onChange={setRepeatNewPassword} />
-                    {passwordMismatch && (
-                      <p className="text-xs text-destructive">{t("auth.passwordMismatch")}</p>
-                    )}
-                  </div>
-                  <Button type="button" onClick={setPassword} className="w-full"
-                    disabled={busy || newPassword.length < 6 || passwordMismatch || repeatNewPassword.length === 0}>
-                    {t("profile.setPassword")}
-                  </Button>
-                  <Button type="button" variant="ghost" className="w-full" disabled={busy}
-                    onClick={() => { setShowSetPasswordForm(false); setNewPassword(""); setRepeatNewPassword(""); }}>
-                    {t("common.cancel")}
-                  </Button>
-                </>
-              )}
+              <p className="text-sm text-muted-foreground">{t("profile.passwordLoginNotEnabled")}</p>
+              <Button type="button" variant="outline" className="w-full" onClick={sendForgotPassword} disabled={busy}>
+                {t("profile.setPasswordViaEmail")}
+              </Button>
             </>
           )}
         </Card>

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
@@ -38,6 +39,7 @@ export default function Heatmap() {
   const [loading, setLoading] = useState(true);
   const [hasFetched, setHasFetched] = useState(false);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
 
   const today = startOfDay(new Date());
   // Hard ceiling: last visible day = today.
@@ -207,7 +209,7 @@ export default function Heatmap() {
       })
       .catch((e) => {
         if (!cancelled) {
-          console.error("[Heatmap] load failed", e);
+          devError("[Heatmap] load failed", e);
           toast.error(t("common.loadFailed"));
         }
       })
@@ -215,7 +217,7 @@ export default function Heatmap() {
         if (!cancelled) { setLoading(false); setHasFetched(true); }
       });
     return () => { cancelled = true; };
-  }, [activeChild?.id, renderStart.getTime()]);
+  }, [activeChild?.id, renderStart.getTime(), fetchKey]);
 
   // Update the effective right boundary whenever sessions change.
   useEffect(() => {
@@ -470,7 +472,7 @@ export default function Heatmap() {
             <SleepDetail
               session={openSession}
               onClose={() => setOpenSession(null)}
-              onChange={() => {}}
+              onChange={() => setFetchKey((k) => k + 1)}
             />
           </Suspense>
         )}

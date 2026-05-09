@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
+import { devError } from "@/lib/logger";
 
 export interface Child {
   id: string;
@@ -134,7 +135,7 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem(STORAGE_KEY, kids[0].id);
       }
     } catch (e) {
-      console.error("[ChildContext] refresh failed", e);
+      devError("[ChildContext] refresh failed", e);
     } finally {
       setLoadedUserId(user.id);
       setLoading(false);

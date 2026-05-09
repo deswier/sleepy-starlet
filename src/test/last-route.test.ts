@@ -33,9 +33,33 @@ describe("saveLastRoute + readLastRoute", () => {
     expect(readLastRoute(USER)).toBeNull();
   });
 
-  it("saves routes other than excluded ones", () => {
+  it("saves a known allowed route (/history)", () => {
     saveLastRoute("/history", USER);
     expect(readLastRoute(USER)?.path).toBe("/history");
+  });
+
+  // ── Allowlist (L-1): unknown paths are now rejected, not just excluded paths ──
+
+  it("rejects a path not in the allowlist", () => {
+    // Old behaviour (EXCLUDED denylist): /unknown-page would have been saved.
+    // New behaviour (ALLOWED allowlist): only known app routes are accepted.
+    saveLastRoute("/unknown-page", USER);
+    expect(readLastRoute(USER)).toBeNull();
+  });
+
+  it("rejects a path with an allowed prefix but not an exact match", () => {
+    // /history/april is not in the allowlist even though /history is
+    saveLastRoute("/history/april", USER);
+    expect(readLastRoute(USER)).toBeNull();
+  });
+
+  it.each([
+    "/", "/history", "/analytics", "/heatmap",
+    "/profile", "/settings", "/conflicts", "/deleted-children",
+  ])("saves the allowed route %s", (path) => {
+    saveLastRoute(path, USER, "child-1");
+    expect(readLastRoute(USER)?.path).toBe(path);
+    localStorage.clear();
   });
 
   it("overwrites previous saved route", () => {

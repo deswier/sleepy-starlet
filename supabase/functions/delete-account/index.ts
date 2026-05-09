@@ -15,19 +15,35 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+// SITE_URL is the deployed web origin (set in Supabase Edge Function secrets).
+// Native Capacitor clients don't send an Origin header, so CORS is moot there.
+const SITE_URL = Deno.env.get("SITE_URL") ?? "";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+function corsHeaders(origin: string | null): Record<string, string> {
+  return {
+    // Reflect the origin only when it matches the known web deployment.
+    // An empty string tells the browser the request is not allowed cross-origin.
+    "Access-Control-Allow-Origin": origin === SITE_URL && SITE_URL !== "" ? SITE_URL : "",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get("Origin");
+
+  // json helper captures origin via closure so call-sites stay unchanged.
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders(origin) });
   }
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders(origin) });
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -60,10 +76,3 @@ Deno.serve(async (req) => {
 
   return json({ ok: true });
 });
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}

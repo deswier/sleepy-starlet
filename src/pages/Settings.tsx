@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { devError } from "@/lib/logger";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,11 +21,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ageInMonths, wakeWindowForAge } from "@/lib/sleep-utils";
 import { useTimeFormat } from "@/lib/use-time-format";
 import { useTranslation } from "react-i18next";
-import { useChildRole, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
+import { useChildRole, canCreateSleep, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
-import i18n from "@/i18n";
 
 type Member = {
   user_id: string;
@@ -41,14 +41,8 @@ export default function Settings() {
   const { fmtDuration } = useTimeFormat();
   const isAdmin = canEditChild(role);
   const isViewer = role === "viewer";
-  const [language, setLanguage] = useState<"en" | "ru">(i18n.language?.startsWith("ru") ? "ru" : "en");
-  const changeLanguage = async (v: "en" | "ru") => {
-    setLanguage(v);
-    await i18n.changeLanguage(v);
-    if (user) {
-      try { await supabase.from("profiles").update({ language: v }).eq("id", user.id); } catch { /* ignore */ }
-    }
-  };
+  // admin and user (editor) can manage night window, places and methods.
+  const canEditFamilySettings = canCreateSleep(role);
 
   const [s, setS] = useState<any>(null);
   const [childName, setChildName] = useState<string>("");
@@ -82,7 +76,7 @@ export default function Settings() {
 
   const onPickChildPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setPendingPhoto(f);
+    if (f && f.type.startsWith("image/")) setPendingPhoto(f);
     e.target.value = "";
   };
 
@@ -112,8 +106,8 @@ export default function Settings() {
     try {
       const [se, p, m, inv, links, roles, profs] = await Promise.all([
         supabase.from("child_settings").select("*").eq("child_id", activeChild.id).single(),
-        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).order("name"),
-        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).order("name"),
+        supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
+        supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
         invitesQuery,
         supabase.from("child_users").select("user_id").eq("child_id", activeChild.id),
         supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
@@ -129,7 +123,7 @@ export default function Settings() {
         role: roleMap.get(l.user_id) ?? "user",
       })));
     } catch (e) {
-      console.error("[Settings] load failed", e);
+      devError("[Settings] load failed", e);
       toast.error(t("common.loadFailed"));
     }
   };
@@ -205,11 +199,11 @@ export default function Settings() {
   const removeMember = async (uid: string) => {
     if (!activeChild || !isAdmin) return;
     if (!confirm(t("settings.confirmRemoveMember"))) return;
-    const { error: e1 } = await supabase.from("child_user_roles").delete()
-      .eq("child_id", activeChild.id).eq("user_id", uid);
-    const { error: e2 } = await supabase.from("child_users").delete()
-      .eq("child_id", activeChild.id).eq("user_id", uid);
-    if (e1 || e2) toast.error((e1 || e2)!.message);
+    const { error } = await supabase.rpc("remove_child_member", {
+      _child_id: activeChild.id,
+      _member_user_id: uid,
+    } as any);
+    if (error) toast.error(error.message);
     else { toast.success(t("common.deleted")); load(); }
   };
 
@@ -316,16 +310,6 @@ export default function Settings() {
             <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
           </Button>
           <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
-          <Card className="p-5 shadow-card mb-4 space-y-3">
-            <h3 className="font-semibold">{t("common.language")}</h3>
-            <Select value={language} onValueChange={(v: "en" | "ru") => changeLanguage(v)}>
-              <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="ru">Русский</SelectItem>
-              </SelectContent>
-            </Select>
-          </Card>
           <Card className="p-5 shadow-card mb-4">
             <h3 className="font-semibold mb-1">{activeChild.name}</h3>
             <p className="text-xs text-muted-foreground">{t("settings.role_viewer")}</p>
@@ -347,18 +331,6 @@ export default function Settings() {
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
-
-        {/* Language */}
-        <Card className="p-5 shadow-card mb-4 space-y-3">
-          <h3 className="font-semibold">{t("common.language")}</h3>
-          <Select value={language} onValueChange={(v: "en" | "ru") => changeLanguage(v)}>
-            <SelectTrigger className="h-10 w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="ru">Русский</SelectItem>
-            </SelectContent>
-          </Select>
-        </Card>
 
         {/* 1. Child */}
         <Card className="p-5 shadow-card mb-4 space-y-3">
@@ -488,18 +460,18 @@ export default function Settings() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t("settings.nightStarts")}</Label>
-              <Input type="time" value={s.night_start_time}
+              <Input type="time" value={s.night_start_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_start_time: e.target.value })}
                 className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.nightEnds")}</Label>
-              <Input type="time" value={s.night_end_time}
+              <Input type="time" value={s.night_end_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_end_time: e.target.value })}
                 className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
           </div>
-          <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>
+          {canEditFamilySettings && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
         </Card>
 
         {/* 4. Display */}
@@ -512,26 +484,31 @@ export default function Settings() {
             { key: "show_interruptions", label: t("settings.showInterruptions") },
             { key: "split_night_sleep_by_date", label: t("settings.splitNightByDate") },
           ].map((o) => (
-            <label key={o.key} className="flex items-center gap-2 cursor-pointer select-none">
-              <Checkbox checked={!!s[o.key]} onCheckedChange={(v) => setS({ ...s, [o.key]: !!v })} />
+            <label key={o.key} className={`flex items-center gap-2 select-none ${isAdmin ? "cursor-pointer" : "cursor-default opacity-60"}`}>
+              <Checkbox checked={!!s[o.key]} disabled={!isAdmin} onCheckedChange={(v) => isAdmin && setS({ ...s, [o.key]: !!v })} />
               <span className="text-sm">{o.label}</span>
             </label>
           ))}
-          <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>
+          {isAdmin && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
         </Card>
 
         {/* 5. Sleep places */}
         <ListEditor title={t("settings.sleepPlaces")} items={places.map((p) => ({ ...p, label: localizePlace(p.name) }))}
+          canEdit={canEditFamilySettings}
           newValue={newPlace} setNewValue={setNewPlace} placeholder={t("settings.addNew")}
           onAdd={async () => {
             if (!newPlace.trim()) return;
             await supabase.from("sleep_places").insert({ child_id: activeChild.id, name: newPlace.trim() });
             setNewPlace(""); load();
           }}
-          onDelete={async (id) => { await supabase.from("sleep_places").delete().eq("id", id); load(); }} />
+          onDelete={async (id) => {
+            await supabase.from("sleep_places").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+            load();
+          }} />
 
         {/* 6. Settling methods */}
         <ListEditor title={t("settings.settlingMethods")} items={methods.map((m) => ({ ...m, label: localizeMethod(m.name) }))}
+          canEdit={canEditFamilySettings}
           renderIcon={(item: any) => {
             const Icon = iconForMethod(item.name);
             return <Icon className="w-4 h-4 text-muted-foreground shrink-0" />;
@@ -542,7 +519,10 @@ export default function Settings() {
             await supabase.from("settling_methods").insert({ child_id: activeChild.id, name: newMethod.trim() });
             setNewMethod(""); load();
           }}
-          onDelete={async (id) => { await supabase.from("settling_methods").delete().eq("id", id); load(); }} />
+          onDelete={async (id) => {
+            await supabase.from("settling_methods").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+            load();
+          }} />
 
         {/* 8. Danger zone — leave / delete child */}
         {dangerZone}
@@ -552,7 +532,7 @@ export default function Settings() {
   );
 }
 
-function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, placeholder, renderIcon }: any) {
+function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, placeholder, renderIcon, canEdit }: any) {
   return (
     <Card className="p-5 shadow-card mb-4 space-y-3">
       <h3 className="font-semibold">{title}</h3>
@@ -563,16 +543,20 @@ function ListEditor({ title, items, newValue, setNewValue, onAdd, onDelete, plac
               {renderIcon ? renderIcon(i) : null}
               <span className="truncate">{i.label ?? i.name}</span>
             </span>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(i.id)}>
-              <X className="w-4 h-4" />
-            </Button>
+            {canEdit && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDelete(i.id)}>
+                <X className="w-4 h-4" />
+              </Button>
+            )}
           </li>
         ))}
       </ul>
-      <div className="flex gap-2">
-        <Input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder={placeholder} />
-        <Button onClick={onAdd}><Plus className="w-4 h-4" /></Button>
-      </div>
+      {canEdit && (
+        <div className="flex gap-2">
+          <Input value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder={placeholder} />
+          <Button onClick={onAdd}><Plus className="w-4 h-4" /></Button>
+        </div>
+      )}
     </Card>
   );
 }

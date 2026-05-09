@@ -56,6 +56,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       localStorage.removeItem("children_cache_v1");
       localStorage.removeItem("active_child_id");
+      localStorage.removeItem("device_id");
+      localStorage.removeItem("analytics.tab");
+      // Clear per-child keys (cs:isSleeping:*, analytics.day.*, etc.) without
+      // knowing which child IDs were active — collect first, then remove.
+      const prefixes = ["cs:isSleeping:", "analytics.day.", "analytics.weekOffset.", "analytics.weekExcluded."];
+      const toRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && prefixes.some((p) => k.startsWith(p))) toRemove.push(k);
+      }
+      toRemove.forEach((k) => localStorage.removeItem(k));
     } catch { /* ignore quota / private-mode errors */ }
     await supabase.auth.signOut();
   }, []);

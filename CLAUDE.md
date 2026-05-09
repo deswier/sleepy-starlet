@@ -27,23 +27,30 @@ Core tables (see `supabase/migrations/`):
 - `profiles` — `display_name`, `avatar_url`, `language` (`en`|`ru`), `time_format` (`system`|`h12`|`h24`)
 
 Key invariants:
-- A child is created **only via the `create_child_with_link` RPC** (direct INSERT blocked by RLS). The RPC creates the link in the same tx; trigger seeds settings + default places/methods.
+- A child is created **only via the `create_child_with_link` RPC** (direct INSERT on `children` and `child_users` both blocked by RLS). The RPC creates the link in the same tx; trigger seeds settings + default places/methods.
+- Joining an existing child requires `redeem_child_invite`; direct `child_users` INSERT is denied by RLS.
+- `child_user_roles` rows are created **exclusively** by the `handle_child_user_link` trigger (AFTER INSERT on `child_users`); direct client INSERT is blocked by RLS.
+- Member removal goes through `remove_child_member(_child_id, _member_user_id)` RPC — never via direct DELETE on `child_users` / `child_user_roles`.
 - Interruption sync goes through `sync_session_interruptions(_session_id, _interruptions jsonb)` RPC — atomic delete-missing + upsert. Don't loop client-side.
 - `sleep_overlaps` RPC checks for overlapping sessions before insert/update.
-- `redeem_child_invite` enforces a per-user/device cooldown via `invite_attempts`.
+- `redeem_child_invite` enforces a **per-user** cooldown via `invite_attempts`. Device ID is recorded for forensics but is not trusted for cooldown (client-supplied).
 - All RPCs are `SECURITY DEFINER SET search_path = public` and gate access via `user_has_child_access` / `has_child_role` / `user_has_session_access`.
 - `ChildContext` always filters `status = 'active'` — soft-deleted children are invisible to the app.
-- A child must always have at least one owner (`admin` role). Profile deletion is blocked if the user is the sole owner of any child.
+- A child must always have at least one owner (`admin` role). The last admin of a shared child cannot be demoted or removed (enforced by `prevent_last_admin_removal` trigger). Profile deletion is blocked if the user is the sole owner of any child.
 
 ## Roles and permissions
 
-| Role | Can start/end sleep | Can edit own sleep | Can edit any sleep | Can manage members/settings |
-|---|---|---|---|---|
-| `admin` | ✓ | ✓ | ✓ | ✓ |
-| `user` | ✓ | ✓ | ✗ | ✗ |
-| `viewer` | ✗ | ✗ | ✗ | ✗ |
+| Role | Can start/stop sleep¹ | Can edit own sleep² | Can edit any sleep | Night window / places / methods³ | Members / display / delete child |
+|---|---|---|---|---|---|
+| `admin` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `user` | ✓ | ✓ | ✗ | ✓ | ✗ |
+| `viewer` | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-- `canCreateSleep(role)` — `admin` or `user`
+¹ "Stop" means ending any active session (wake-up, pause, resume) — including sessions started by someone else.  
+² "Own sleep" = sessions where `created_by_user_id = user.id` (they started it) **or** `updated_by_user_id = user.id` (they ended/last-edited it). After a `user` stops someone else's sleep, `updated_by_user_id` is set to them and they gain edit rights on that session.  
+³ Night-window (`child_settings.night_start_time/end_time`), sleep places, and settling methods. Display toggles (`show_sleep_place` etc.), member management, and child deletion remain admin-only.
+
+- `canCreateSleep(role)` — `admin` or `user` (also used as `canEnd` — stopping any active sleep; and as `canEditFamilySettings` — night window, places, methods)
 - `canEditOwnSleep(role)` — `admin` or `user`
 - `canEditAnySleep(role)` — `admin` only
 - `canEditChild(role)` — `admin` only
@@ -126,8 +133,7 @@ AuthContext onAuthStateChange (user set)
       children.length === 0 → /child/new
       else → render home
 ```
-- `readLastRoute` returns `null` if the stored path is `/auth` or `/child/new`.
-- Query params are stripped before the EXCLUDED set check (so `/auth?mode=reset` is excluded).
+- `readLastRoute` returns `null` for any path not in the explicit ALLOWED set: `/`, `/history`, `/analytics`, `/heatmap`, `/profile`, `/settings`, `/conflicts`, `/deleted-children`. Query params are stripped before the check.
 
 ### Password reset flow
 ```
@@ -150,7 +156,7 @@ handleResetSubmit() → updateUser({ password })
 - `hasPasswordProvider` = any provider is `"email"` or `"password"`.
 - `hasGoogleProvider` = any provider is `"google"` or `"google.com"`.
 - **Email/password users**: change password form with current-password re-auth via `signInWithPassword()` before `updateUser({ password })`.
-- **Google-only users**: "Set password" toggle shows new + repeat fields, calls `updateUser({ password })` to link the email provider.
+- **Google-only users**: "Set password" button sends `resetPasswordForEmail` to the user's own address, routing through the existing recovery-email flow. `updateUser({ password })` is never called without a prior reauth challenge.
 - Forgot password link in the change-password section sends a reset email to the user's own address.
 
 ### Email confirmation flow
@@ -211,6 +217,8 @@ Namespaces in i18n files: `app`, `common`, `auth`, `child`, `sleep`, `history`, 
 
 ## Validation rules
 
+- **New child form**: all fields required — name, birth date, gender, relation type. If relation is `"other"`, the custom-relation text field is also required. Submit button stays disabled until all are filled.
+- **Join child form**: code (6 chars), relation type required. If relation is `"other"`, the custom-relation text field is required. Submit disabled until code is 6 chars and all required fields are filled.
 - **Birth date**: must be ≤ today. Compare as `YYYY-MM-DD` strings (local date, no timezone shift). Compute today as `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`. Set `max={todayStr}` on date inputs. No minimum date restriction.
 - **Sleep start/end**: neither can be in the future. End must be after start.
 - **Interruption bounds**: must be within session `[start_time, end_time]`. Interruptions must not overlap.
@@ -254,9 +262,12 @@ src/
                           + flush() on online event
     auth-errors.ts        authErrorMessage(error, t) — maps Supabase error
                           codes to localized strings.
-    last-route.ts         per-user route persistence. Excludes /auth* and
-                          /child/new. Strips query params before exclusion
-                          check.
+    last-route.ts         per-user route persistence. Saves only routes in the
+                          explicit ALLOWED set; anything else is dropped.
+                          Strips query params before the check.
+    logger.ts             devError / devWarn — console wrappers that are
+                          no-ops in production (import.meta.env.DEV guard).
+                          Always use instead of console.error / console.warn.
     native.ts             Capacitor helpers: isNative(), getAuthRedirectUrl(),
                           NATIVE_AUTH_REDIRECT, registerAuthDeepLinkListener()
     device-id.ts          stable client id for invite cooldown
@@ -271,7 +282,9 @@ src/
     supabase/types.ts     auto-generated DB types
   components/
     AppShell.tsx          header + bottom nav (3 tabs)
-    RequireAuth.tsx       gate; redirects to /auth
+    RequireAuth.tsx       gate; redirects to /auth for unauthenticated users
+                          and for email-provider accounts whose
+                          email_confirmed_at is null.
     RouteTracker.tsx      writes last-route on every nav (skips /auth*, /child/new)
     SyncStatus.tsx        offline / pending / conflicts banner
     DateTimeField.tsx     date picker + HH:mm input (always 24h for the
@@ -296,6 +309,7 @@ src/
     Heatmap.tsx           7-day sleep grid
     Settings.tsx          child config + members + invites.
                           saveSettings uses optimistic lock on updated_at.
+                          Language preference is NOT here — it lives in Profile.tsx.
     Auth.tsx              sign-in/up/forgot/reset + Google OAuth.
                           Single routing point post-login.
     NewChild.tsx          create child or redeem invite
@@ -313,7 +327,8 @@ supabase/
                           with service role key.
 public/                   PWA manifest + icons
 vite.config.ts            manual chunks
-vercel.json               SPA rewrite rule (all routes → index.html)
+vercel.json               SPA rewrite + security headers (CSP, X-Frame-Options,
+                          X-Content-Type-Options, Referrer-Policy).
 capacitor.config.ts       appId: "app.lullaby", webDir: "dist"
 ```
 
@@ -333,7 +348,7 @@ For new code prefer `useQuery` (see `History.tsx`).
 
 **Error handling.** Loading state must always exit. Use `.catch(...).finally(() => setLoading(false))` on chained `Promise.all`. `try/finally` for awaited multi-step flows. Show `toast.error(t("common.loadFailed"))` for read failures. Use `authErrorMessage(error, t)` from `src/lib/auth-errors.ts` for all Supabase auth errors.
 
-**Realtime.** One channel per `(activeChild.id)` named `sleep-${id}`. Always pass `filter: child_id=eq.${id}` (or `sleep_session_id=eq.${id}` for interruptions). Unfiltered subs reload on every other family's edits.
+**Realtime.** One channel per `(activeChild.id)` named `sleep-${id}`. Always pass `filter: child_id=eq.${id}` (or `sleep_session_id=eq.${id}` for interruptions). Unfiltered subs would leak row payloads across families. `sleep_interruptions` is intentionally not subscribed in `History.tsx` — `sessionDuration` is `end − start` and is unaffected by interruptions; `SleepDetail` fetches them fresh on open.
 
 **Comments.** Lead with WHY, not WHAT. Prefer no comment over an obvious one.
 
@@ -346,19 +361,29 @@ For new code prefer `useQuery` (see `History.tsx`).
 ## RLS / security rules
 
 - `profiles` SELECT restricted to self + members of shared children.
-- `children` INSERT requires the RPC.
+- `children` INSERT requires the RPC (direct INSERT policy dropped).
+- `child_users` INSERT blocked client-side; only `create_child_with_link` and `redeem_child_invite` (both SECURITY DEFINER) may insert rows.
 - `child_users.UPDATE` cannot change `child_id` / `user_id` (trigger enforced).
-- TEXT columns have CHECK constraints (length, `^https?://` for URLs). Add constraints on new user-input columns.
-- Edge Functions that need admin access use the service role key from environment — never expose it to the browser.
+- `child_user_roles` INSERT blocked client-side; only the `handle_child_user_link` trigger (AFTER INSERT on `child_users`) may create role rows.
+- `child_user_roles` UPDATE/DELETE: `prevent_last_admin_removal` trigger raises if the operation would leave a shared child with no admin.
+- `child_invites` SELECT/UPDATE (view/revoke): **admin only**. Non-admins cannot see invite codes or revoke them, preventing a viewer from reading a pending admin-role code and redeeming it from a second account.
+- `sleep_sessions` UPDATE: admin (any session) or user (`end_time IS NULL` — can stop any active sleep; or `created_by_user_id = uid`; or `updated_by_user_id = uid`). DELETE: admin or user with `created_by`/`updated_by`.
+- `sleep_interruptions` INSERT/UPDATE/DELETE: gated by `has_session_edit_access()` (same rules as sleep_sessions UPDATE). Direct client INSERTs also require `created_by_user_id = auth.uid()`. `sync_session_interruptions` is SECURITY DEFINER and bypasses RLS.
+- `sleep_places` / `settling_methods` INSERT/UPDATE: **admin or user**. DELETE: **admin only** — but clients never hard-delete; they soft-delete via `UPDATE deleted_at = now()`. Hard DELETE is reserved for admin housekeeping only.
+- `child_settings` UPDATE: **admin or user** (night-window fields). Display toggles are in the same row but the UI gates them with `isAdmin`.
+- TEXT columns have CHECK constraints (length, `^https?://` for URLs). `child_users.custom_relation_name` ≤ 100 chars. Add constraints on new user-input columns.
+- Edge Functions that need admin access use the service role key from environment — never expose it to the browser. `delete-account` CORS is restricted to the `SITE_URL` env var.
 
 ## Critical invariants
 
-- A child must always have at least one admin. Profile deletion is blocked if the user would leave any child without an owner.
+- A child must always have at least one admin. The last admin of a shared child cannot be demoted or removed (enforced server-side by `prevent_last_admin_removal` trigger and by `leave_child` / `delete_my_account_data` RPCs). Profile deletion is blocked if the user would leave any child without an owner.
+- `child_users` and `child_user_roles` rows are never inserted directly from the client; all join flows go through RPCs.
 - Interruptions must not overlap within a session.
 - Interruption start and end must be within the parent session's time range.
 - Only one active (no `end_time`) session is allowed per child.
 - Never write to the DB before a confirmation modal (wake-up confirmation is draft-only until `SleepForm` commits).
 - `ChildContext` must always filter `status = 'active'`; soft-deleted children are never shown.
+- `sleep_places` and `settling_methods` use soft-delete (`deleted_at` column). Never hard-delete these rows — the FK `ON DELETE SET NULL` on `sleep_sessions` and `sleep_interruptions` would silently wipe place/method attribution from historical records. Set `deleted_at = now()` instead. Active-item queries must filter `deleted_at IS NULL`; `SleepDetail` JOINs deliberately skip this filter so historical names remain visible.
 - Birth date cannot be in the future (validated before save and via `max` on the date input).
 - Auth redirect URL for native: `app.lullaby://auth/callback`. Use `getAuthRedirectUrl()` everywhere — never hardcode.
 
@@ -394,6 +419,12 @@ Migrations: timestamped, monotonic. Apply via `supabase db push`. Never edit app
 - Don't call `formatClockTime` / `fmtDateTime` directly from components — use `useTimeFormat()` hook.
 - Don't omit `type="button"` on `<Button>` components outside `<form>` elements.
 - Don't embed the Supabase service role key in client-side code.
+- Don't INSERT directly into `child_users` — use `create_child_with_link` or `redeem_child_invite` RPC.
+- Don't INSERT directly into `child_user_roles` — the `handle_child_user_link` trigger does this automatically on `child_users` INSERT.
+- Don't DELETE from `child_users` + `child_user_roles` directly to remove a member — use `remove_child_member` RPC (atomic, admin-gated, trigger-enforced).
+- Don't hard-delete `sleep_places` / `settling_methods` rows — set `deleted_at = now()` via UPDATE. Hard DELETE would NULL historical session references silently.
+- When querying active places/methods for any dropdown or list, always filter `.is("deleted_at", null)`. Skip this filter only in `SleepDetail`-style JOINs where you want historical names to appear.
+- Don't use `console.error` / `console.warn` directly — use `devError` / `devWarn` from `src/lib/logger.ts`.
 
 ## Common tasks
 
@@ -420,6 +451,10 @@ Migrations: timestamped, monotonic. Apply via `supabase db push`. Never edit app
 - For one-off non-cached queries, use the cancel-ref pattern.
 
 **Offline write:** Use `enqueue()` from `src/lib/offline-queue.ts` when `!navigator.onLine`. Queue auto-flushes on `online` event and surfaces conflicts to `/conflicts`.
+
+**Remove a member from a child:**
+- Call `supabase.rpc("remove_child_member", { _child_id, _member_user_id } as any)`.
+- The RPC validates that the caller is admin, blocks self-removal (use `leave_child` for that), and deletes `child_user_roles` + `child_users` atomically. The `prevent_last_admin_removal` trigger enforces the last-admin invariant.
 
 **Add a new time/duration display:**
 - Duration → `const { fmtDuration } = useTimeFormat()` → `fmtDuration(minutes)`.
