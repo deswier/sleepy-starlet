@@ -9,6 +9,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
+import { db } from "@/lib/offline-queue";
+import { useNetworkStatus } from "@/hooks/use-network-status";
+import { WifiOff } from "lucide-react";
 import {
   sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
@@ -60,6 +64,7 @@ export default function History() {
   // react-query handles: race conditions on rapid day switches (stale results
   // discarded), retry on transient errors, cache (revisiting a day is instant
   // within staleTime), and dedup if multiple consumers query the same key.
+  const isOnline = useNetworkStatus();
   const dayKey = format(day, "yyyy-MM-dd");
   const { data: sessions = [], isLoading: loading } = useQuery({
     queryKey: [...SESSIONS_QUERY_KEY, activeChild?.id, dayKey],
@@ -68,16 +73,33 @@ export default function History() {
     // (e.g. CurrentSleep) while History was unmounted, the realtime sub here
     // wasn't active, and the 30s staleTime would otherwise serve stale data.
     refetchOnMount: "always",
+    // Run the queryFn even when offline so we can serve the local cache.
+    networkMode: "always",
     queryFn: async () => {
-      const since = subDays(startOfDay(day), 1).toISOString();
-      const until = addDays(startOfDay(day), 1).toISOString();
-      const { data, error } = await supabase.from("sleep_sessions").select("*")
-        .eq("child_id", activeChild!.id)
-        .gte("start_time", since)
-        .lt("start_time", until)
-        .order("start_time", { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as SleepSession[];
+      const sinceDate = subDays(startOfDay(day), 1);
+      const untilDate = addDays(startOfDay(day), 1);
+      const since = sinceDate.toISOString();
+      const until = untilDate.toISOString();
+
+      if (navigator.onLine) {
+        const { data, error } = await supabase.from("sleep_sessions").select("*")
+          .eq("child_id", activeChild!.id)
+          .gte("start_time", since)
+          .lt("start_time", until)
+          .order("start_time", { ascending: false });
+        if (error) throw error;
+        const rows = (data ?? []) as SleepSession[];
+        await putSessions(rows);
+        return rows;
+      }
+
+      // Offline: serve cached rows + apply any pending queue mutations.
+      const cached = await getSessions(activeChild!.id, sinceDate, untilDate);
+      const pending = await db.mutations.toArray();
+      const projected = projectSessionMutations(cached, pending);
+      return projected.sort(
+        (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+      );
     },
   });
 
@@ -174,6 +196,13 @@ export default function History() {
           <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
+
+      {!isOnline && (
+        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground py-1 mb-2">
+          <WifiOff className="w-3 h-3" />
+          {t("common.cachedData")}
+        </div>
+      )}
 
       {loading && (
         <Card className="p-5 shadow-card border-border/50 space-y-3">

@@ -10,6 +10,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Moon, Sun, Activity, Clock, Grid3x3, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight, Check } from "lucide-react";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
+import { db } from "@/lib/offline-queue";
+import { useNetworkStatus } from "@/hooks/use-network-status";
+import { WifiOff } from "lucide-react";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -74,27 +78,36 @@ export default function Analytics() {
   useEffect(() => {
     if (!activeChild) return;
     setLoading(true);
-
+    const childId = activeChild.id;
     const today = startOfDay(new Date());
+    const sinceDate = subDays(today, 1);
+    const untilDate = addDays(today, 1);
 
-    // Today's sessions — spinner only until this finishes.
     (async () => {
       try {
         const { data, error } = await supabase.from("sleep_sessions").select("*")
-          .eq("child_id", activeChild.id)
-          .gte("start_time", subDays(today, 1).toISOString())
-          .lt("start_time", addDays(today, 1).toISOString())
+          .eq("child_id", childId)
+          .gte("start_time", sinceDate.toISOString())
+          .lt("start_time", untilDate.toISOString())
           .order("start_time");
         if (error) throw error;
-        setInitialDaySessions((data ?? []) as SleepSession[]);
+        const rows = (data ?? []) as SleepSession[];
+        await putSessions(rows);
+        setInitialDaySessions(rows);
       } catch (e) {
-        devError("[Analytics] day load failed", e);
-        toast.error(t("common.loadFailed"));
+        if (!navigator.onLine) {
+          const cached = await getSessions(childId, sinceDate, untilDate);
+          const pending = await db.mutations.toArray();
+          setInitialDaySessions(projectSessionMutations(cached, pending));
+        } else {
+          devError("[Analytics] day load failed", e);
+          toast.error(t("common.loadFailed"));
+        }
       } finally {
         setLoading(false);
       }
     })();
-  }, [activeChild?.id]);
+  }, [activeChild?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
@@ -145,10 +158,12 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
   const today = startOfDay(new Date());
   const isTodaySelected = isSameDay(day, today);
   // Only reuse the preloaded "today" sessions when the persisted day IS today.
+  const isOnline = useNetworkStatus();
   const [sessions, setSessions] = useState<SleepSession[]>(
     isTodaySelected ? initialSessions : []
   );
   const [loadingDay, setLoadingDay] = useState(!isTodaySelected);
+  const [fromCache, setFromCache] = useState(false);
   const isInitialRender = useRef(true);
 
   useEffect(() => {
@@ -159,18 +174,29 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
     }
     let cancelled = false;
     setLoadingDay(true);
-    const since = subDays(startOfDay(day), 1).toISOString();
-    const until = addDays(startOfDay(day), 1).toISOString();
+    const sinceDate = subDays(startOfDay(day), 1);
+    const untilDate = addDays(startOfDay(day), 1);
     (async () => {
       try {
         const { data, error } = await supabase.from("sleep_sessions").select("*")
           .eq("child_id", childId)
-          .gte("start_time", since)
-          .lt("start_time", until)
+          .gte("start_time", sinceDate.toISOString())
+          .lt("start_time", untilDate.toISOString())
           .order("start_time");
         if (cancelled) return;
-        if (error) { devError("[DayView] load failed", error); return; }
-        setSessions((data ?? []) as SleepSession[]);
+        if (error) throw error;
+        const rows = (data ?? []) as SleepSession[];
+        await putSessions(rows);
+        if (!cancelled) { setSessions(rows); setFromCache(false); }
+      } catch (e) {
+        if (cancelled) return;
+        if (!navigator.onLine) {
+          const cached = await getSessions(childId, sinceDate, untilDate);
+          const pending = await db.mutations.toArray();
+          if (!cancelled) { setSessions(projectSessionMutations(cached, pending)); setFromCache(true); }
+        } else {
+          devError("[DayView] load failed", e);
+        }
       } finally {
         if (!cancelled) setLoadingDay(false);
       }
@@ -314,6 +340,13 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
     <div className="space-y-3">
       <DayPicker day={day} setDay={setDay} />
 
+      {(fromCache || !isOnline) && (
+        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground py-0.5">
+          <WifiOff className="w-3 h-3" />
+          {t("common.cachedData")}
+        </div>
+      )}
+
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(totalSleep)}
         sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
@@ -396,8 +429,10 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   useEffect(() => {
     try { localStorage.setItem(offsetKey, String(weekOffset)); } catch {}
   }, [weekOffset, offsetKey]);
+  const isOnline = useNetworkStatus();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [loadingWeek, setLoadingWeek] = useState(true);
+  const [fromCache, setFromCache] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   // Days the user has manually excluded from the average (by date key yyyy-MM-dd).
   const [excludedMap, setExcludedMap] = useState<Record<string, string[]>>(() => {
@@ -432,20 +467,27 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   useEffect(() => {
     let cancelled = false;
     setLoadingWeek(true);
-    const since = subDays(days[0], 2).toISOString();
-    const until = addDays(days[days.length - 1], 2).toISOString();
+    const sinceDate = subDays(days[0], 2);
+    const untilDate = addDays(days[days.length - 1], 2);
     (async () => {
       try {
         const { data, error } = await supabase.from("sleep_sessions").select("*")
           .eq("child_id", childId)
-          .gte("start_time", since)
-          .lt("start_time", until)
+          .gte("start_time", sinceDate.toISOString())
+          .lt("start_time", untilDate.toISOString())
           .order("start_time");
         if (cancelled) return;
         if (error) throw error;
-        setSessions((data ?? []) as SleepSession[]);
+        const rows = (data ?? []) as SleepSession[];
+        await putSessions(rows);
+        if (!cancelled) { setSessions(rows); setFromCache(false); }
       } catch (e) {
-        if (!cancelled) {
+        if (cancelled) return;
+        if (!navigator.onLine) {
+          const cached = await getSessions(childId, sinceDate, untilDate);
+          const pending = await db.mutations.toArray();
+          if (!cancelled) { setSessions(projectSessionMutations(cached, pending)); setFromCache(true); }
+        } else {
           devError("[WeekView] load failed", e);
           toast.error(t("common.loadFailed"));
         }
@@ -454,7 +496,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       }
     })();
     return () => { cancelled = true; };
-  }, [childId, weekOffset]);
+  }, [childId, weekOffset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const perDay = useMemo(() => {
     // Parse night-window string once instead of once per session per day.
@@ -626,6 +668,12 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   return (
     <div className="space-y-3">
       {picker}
+      {(fromCache || !isOnline) && (
+        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground py-0.5">
+          <WifiOff className="w-3 h-3" />
+          {t("common.cachedData")}
+        </div>
+      )}
       <DayChips
         days={days}
         hasData={dayHasData}

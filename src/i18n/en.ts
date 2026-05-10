@@ -12,6 +12,7 @@ const en = {
     pendingChanges_other: "{{count}} pending changes",
     offline: "Offline",
     online: "Online",
+    cachedData: "Showing previously loaded data",
     adjustPhoto: "Adjust photo",
     loadFailed: "Failed to load data. Check your connection.",
   },
