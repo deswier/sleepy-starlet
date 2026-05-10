@@ -14,7 +14,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { readLastRoute } from "@/lib/last-route";
-import { getAuthRedirectUrl } from "@/lib/native";
+import { getAuthRedirectUrl, isNative } from "@/lib/native";
+import { Browser } from "@capacitor/browser";
 import { authErrorMessage } from "@/lib/auth-errors";
 
 export default function Auth() {
@@ -115,14 +116,21 @@ export default function Auth() {
 
   const handleGoogle = async () => {
     setBusy(true);
-    // Supabase's signInWithOAuth navigates the browser to Google and back. On
-    // return, detectSessionInUrl parses tokens, AuthContext picks them up via
-    // onAuthStateChange, and the routing useEffect above runs.
-    const { error } = await supabase.auth.signInWithOAuth({
+    // Web: Supabase navigates to Google and back; detectSessionInUrl parses tokens
+    // on return. Native: Google blocks OAuth inside WebViews ("disallowed_useragent"),
+    // so we open the consent URL in a Chrome Custom Tab / SFSafariViewController via
+    // @capacitor/browser; the redirect to app.lullaby://auth/callback fires the
+    // appUrlOpen listener in native.ts, which finalizes the session.
+    const native = isNative();
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: getAuthRedirectUrl() },
+      options: { redirectTo: getAuthRedirectUrl(), skipBrowserRedirect: native },
     });
-    if (error) { toast.error(t("auth.googleFailed")); setBusy(false); }
+    if (error) { toast.error(t("auth.googleFailed")); setBusy(false); return; }
+    if (native && data?.url) {
+      try { await Browser.open({ url: data.url, presentationStyle: "popover" }); }
+      catch { toast.error(t("auth.googleFailed")); setBusy(false); }
+    }
   };
 
   if (isResetMode) {
