@@ -1,6 +1,8 @@
 import { format, isSameDay, startOfDay } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
+import { Capacitor } from "@capacitor/core";
+import { SystemTimeFormat } from "@/plugins/system-time-format";
 
 export type TimeFormat = "system" | "h12" | "h24";
 
@@ -81,18 +83,55 @@ export const inferSleepType = (
 };
 
 
-// Returns true when the browser/device locale uses 12-hour clock.
-// Used for the "system" time format option — intentionally reads navigator.language
-// (device preference), not the app's display language.
-function detectSystem12h(): boolean {
+// Cached result of the async system time format detection.
+// null = not yet initialised (app just started); defaults to 24h (false).
+let _system12hCache: boolean | null = null;
+
+// Called once at app startup (main.tsx). On iOS, reads the real system
+// 12/24h setting via the native SystemTimeFormatPlugin (Swift).
+// On Android/web, uses Intl with the resolved system locale — synchronous,
+// so the cache is populated before the first render on those platforms.
+// Any failure defaults to 24h.
+export async function initSystemTimeFormat(): Promise<void> {
+  const platform = Capacitor.getPlatform();
+  if (platform === "android" || platform === "ios") {
+    // Native call required on both platforms:
+    // - Android: DateFormat.is24HourFormat(context) reads Settings.System.TIME_12_24.
+    //   Intl in the WebView does not have access to this setting.
+    // - iOS: DateFormatter with "j" skeleton reads the system 12/24h preference.
+    //   WKWebView does not expose this to Intl either.
+    // TODO(ios): native plugin must be registered for iOS — see
+    //   src/plugins/ios/SystemTimeFormatPlugin.swift. Until added, the catch
+    //   block runs and the cache stays false (24h default).
+    try {
+      const { value } = await SystemTimeFormat.is12HourFormat();
+      _system12hCache = value;
+    } catch {
+      _system12hCache = detectSystem12hSync();
+    }
+  } else {
+    _system12hCache = detectSystem12hSync();
+  }
+}
+
+// Sync helper for web/Android — reads hourCycle from the resolved system
+// locale. undefined locale lets the JS engine include Android's u-hc-*
+// hour-cycle extension, which reflects the device's explicit 12/24h setting
+// independently of the display language.
+function detectSystem12hSync(): boolean {
   try {
-    const browserLocale = typeof navigator !== "undefined" ? navigator.language : "en";
-    const parts = new Intl.DateTimeFormat(browserLocale, { hour: "numeric" })
-      .formatToParts(new Date(2020, 0, 1, 13, 0, 0));
-    return parts.some((p) => p.type === "dayPeriod");
+    const { hourCycle, hour12 } = new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions();
+    if (hourCycle) return hourCycle === "h11" || hourCycle === "h12";
+    return hour12 ?? false;
   } catch {
     return false;
   }
+}
+
+// Returns the cached system 12h flag. Falls back to 24h (false) if
+// initSystemTimeFormat() has not completed yet or failed.
+function detectSystem12h(): boolean {
+  return _system12hCache ?? false;
 }
 
 // Clock time (HH:mm or h:mm AM/PM) respecting the user's time format preference.

@@ -20,8 +20,12 @@
     "db:types": "supabase gen types typescript --linked > src/integrations/supabase/types.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.0",
     "@capacitor/app": "^6.0.2",
+    "@capacitor/browser": "^6.0.0",
     "@capacitor/core": "^6.2.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0",
     "@hookform/resolvers": "^3.10.0",
     "@lovable.dev/cloud-auth-js": "^1.1.2",
     "@radix-ui/react-accordion": "^1.2.11",

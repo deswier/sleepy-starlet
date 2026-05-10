@@ -6,6 +6,7 @@
 
 import { Capacitor } from "@capacitor/core";
 import { App, type URLOpenListenerEvent } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
 import { supabase } from "@/integrations/supabase/client";
 import { devError } from "@/lib/logger";
 
@@ -20,9 +21,11 @@ export async function registerAuthDeepLinkListener(): Promise<() => void> {
   if (!isNative()) return () => {};
   const handle = await App.addListener("appUrlOpen", (event: URLOpenListenerEvent) => {
     if (!event.url.startsWith(NATIVE_AUTH_REDIRECT)) return;
-    finalizeAuthFromCallbackUrl(event.url).catch((e) => {
-      devError("auth deep-link finalize failed", e);
-    });
+    finalizeAuthFromCallbackUrl(event.url)
+      // OAuth flow opened a Custom Tab via @capacitor/browser; dismiss it once
+      // the session is set so the user isn't left staring at Google's page.
+      .then(() => Browser.close().catch(() => {}))
+      .catch((e) => { devError("auth deep-link finalize failed", e); });
   });
   return () => { handle.remove(); };
 }
