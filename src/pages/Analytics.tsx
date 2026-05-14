@@ -641,7 +641,6 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       open={pickerOpen}
       setOpen={setPickerOpen}
       t={t}
-      onOpenHeatmap={openHeatmap}
     />
   );
 
@@ -748,6 +747,10 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         onToggle={toggleDay}
         t={t}
       />
+      <Button type="button" variant="outline" className="w-full gap-2" onClick={openHeatmap}>
+        <Grid3x3 className="w-4 h-4" />
+        {t("analytics.heatmapTitle")}
+      </Button>
 
       {daysWithData.length === 0 ? (
         <Card className="p-6 text-center text-muted-foreground">{t("analytics.noData")}</Card>
@@ -877,12 +880,11 @@ function DayChips({
 
 // ---------- helpers ----------
 function WeekPicker({
-  days, offset, setOffset, open, setOpen, t, onOpenHeatmap,
+  days, offset, setOffset, open, setOpen, t,
 }: {
   days: Date[]; offset: number; setOffset: (n: number) => void;
   open: boolean; setOpen: (b: boolean) => void;
   t: (k: string, o?: any) => string;
-  onOpenHeatmap?: () => void;
 }) {
   const from = days[0];
   const to = days[days.length - 1];
@@ -924,11 +926,6 @@ function WeekPicker({
       <Button variant="ghost" size="icon" disabled={offset === 0} onClick={() => setOffset(offset - 1)}>
         <ChevronRight className="w-4 h-4" />
       </Button>
-      {onOpenHeatmap && (
-        <Button variant="ghost" size="icon" onClick={onOpenHeatmap} title={t("analytics.openHeatmap")} aria-label={t("analytics.openHeatmap")}>
-          <Grid3x3 className="w-4 h-4" />
-        </Button>
-      )}
     </div>
     </div>
   );
