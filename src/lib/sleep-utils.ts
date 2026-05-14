@@ -25,13 +25,13 @@ export interface SleepSession {
 export const formatDuration = (minutes: number, locale?: string): string => {
   const isRu = (locale ?? i18n.language ?? "en").startsWith("ru");
   const hSuf = isRu ? "ч" : "h";
-  const mSuf = isRu ? "м" : "m";
+  const mSuf = isRu ? "мин" : "m";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   if (minutes < 1) return `0${mSuf}`;
   if (h === 0) return `${m}${mSuf}`;
   if (m === 0) return `${h}${hSuf}`;
-  return `${h}${hSuf}${String(m).padStart(2, "0")}${mSuf}`;
+  return `${h}${hSuf} ${m}${mSuf}`;
 };
 
 export const sessionDuration = (s: SleepSession, now = new Date()): number => {
