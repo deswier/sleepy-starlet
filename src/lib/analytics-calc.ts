@@ -36,19 +36,24 @@ function nightSessionDayMs(s: CalcSession, night: NightWindowConfig): number {
 /**
  * Night sleep for a calendar day — full session duration, not clipped to day boundary.
  * Mirrors the nightSleep useMemo in DayView.
+ * Ongoing sessions (no end_time) use `now` as their effective end, matching the
+ * pattern in calcTotalWake/calcTotalDaySleep, so the current day is never blank
+ * when night sleep is still in progress.
  */
 export function calcNightSleep(
   sessions: CalcSession[],
   day: Date,
   splitByDate: boolean,
   night: NightWindowConfig,
+  now: Date = new Date(),
 ): number {
   const dayMs = day.getTime();
+  const nowMs = now.getTime();
   let ns = 0;
   for (const s of sessions) {
-    if (s.sleep_type !== "night" || !s.end_time) continue;
+    if (s.sleep_type !== "night") continue;
     const startMs = new Date(s.start_time).getTime();
-    const endMs = new Date(s.end_time).getTime();
+    const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
     const fullMins = Math.round((endMs - startMs) / 60000);
     const attributed = splitByDate
       ? localDayStart(new Date(startMs)).getTime() === dayMs

@@ -204,11 +204,13 @@ describe("calcNightSleep", () => {
     expect(calcNightSleep(sessions, startOfDay(), false, NIGHT)).toBe(600);
   });
 
-  it("ignores ongoing night sessions (no end_time)", () => {
+  it("counts ongoing night session using now as effective end time", () => {
+    // Session started previous day at 21:00, still sleeping at 07:00 today = 10h = 600min.
+    const now = at(7, 0);
     const sessions: CalcSession[] = [
       s(at(21, 0, -1), null, "night"),
     ];
-    expect(calcNightSleep(sessions, startOfDay(), false, NIGHT)).toBe(0);
+    expect(calcNightSleep(sessions, startOfDay(), false, NIGHT, now)).toBe(600);
   });
 
   it("ignores day sessions", () => {

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Minus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { putSessions, putInterruptions, getSessions, getInterruptionsForRange } from "@/lib/sessions-cache";
 import { useNetworkStatus } from "@/hooks/use-network-status";
@@ -291,7 +291,6 @@ export default function Heatmap() {
       const dayStart = startOfDay(day).getTime();
       const dayEnd = dayStart + 86400000;
       const items = interruptions
-        .filter((i) => i.settling_method_id)
         .map((i) => {
           const ts = new Date(i.start_time).getTime();
           if (ts < dayStart || ts >= dayEnd) return null;
@@ -482,11 +481,11 @@ export default function Heatmap() {
                               type="button"
                               aria-label="open sleep"
                               className="absolute left-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background z-20"
-                              style={{ top: `${cl.topPct}%`, transform: "translate(-50%, -50%)" }}
+                              style={{ top: `${cl.topPct}%`, transform: `translate(-50%, ${cl.topPct === 0 ? "0%" : "-50%"})` }}
                               onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
                             >
                               {vis.map((it) => {
-                                const Icon = iconForMethod(it.name);
+                                const Icon = it.name ? iconForMethod(it.name) : Minus;
                                 return <Icon key={it.id} className="w-2.5 h-2.5 text-muted-foreground" strokeWidth={2} />;
                               })}
                               {extra > 0 && (
