@@ -20,18 +20,19 @@ describe("formatDuration", () => {
     it("returns 0m for negative minutes", () => expect(formatDuration(-5, "en")).toBe("0m"));
     it("returns minutes only when < 60", () => expect(formatDuration(45, "en")).toBe("45m"));
     it("returns hours only when no remainder", () => expect(formatDuration(60, "en")).toBe("1h"));
-    it("zero-pads minutes when hours present", () => expect(formatDuration(65, "en")).toBe("1h05m"));
-    it("does not pad when minutes >= 10", () => expect(formatDuration(75, "en")).toBe("1h15m"));
-    it("handles large values", () => expect(formatDuration(315, "en")).toBe("5h15m"));
+    it("separates hours and minutes with a space", () => expect(formatDuration(65, "en")).toBe("1h 5m"));
+    it("handles 30-minute remainder", () => expect(formatDuration(90, "en")).toBe("1h 30m"));
+    it("handles large values", () => expect(formatDuration(315, "en")).toBe("5h 15m"));
     it("does not produce HH:mm format", () => expect(formatDuration(90, "en")).not.toMatch(/^\d+:\d+/));
   });
 
   describe("RU", () => {
-    it("returns 0м for 0 minutes", () => expect(formatDuration(0, "ru")).toBe("0м"));
-    it("returns minutes with cyrillic suffix", () => expect(formatDuration(45, "ru")).toBe("45м"));
+    it("returns 0мин for 0 minutes", () => expect(formatDuration(0, "ru")).toBe("0мин"));
+    it("returns minutes with мин suffix", () => expect(formatDuration(45, "ru")).toBe("45мин"));
     it("returns hours with cyrillic suffix", () => expect(formatDuration(60, "ru")).toBe("1ч"));
-    it("zero-pads minutes when hours present", () => expect(formatDuration(65, "ru")).toBe("1ч05м"));
-    it("handles large values", () => expect(formatDuration(315, "ru")).toBe("5ч15м"));
+    it("separates hours and minutes with a space", () => expect(formatDuration(65, "ru")).toBe("1ч 5мин"));
+    it("handles 30-minute remainder", () => expect(formatDuration(90, "ru")).toBe("1ч 30мин"));
+    it("handles large values", () => expect(formatDuration(315, "ru")).toBe("5ч 15мин"));
   });
 });
 

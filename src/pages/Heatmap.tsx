@@ -3,8 +3,11 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Minus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { putSessions, putInterruptions, getSessions, getInterruptionsForRange } from "@/lib/sessions-cache";
+import { useNetworkStatus } from "@/hooks/use-network-status";
+import { WifiOff } from "lucide-react";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import { SleepSession } from "@/lib/sleep-utils";
@@ -34,10 +37,12 @@ export default function Heatmap() {
   const { t } = useTranslation();
   const { activeChild } = useChildren();
   const [searchParams] = useSearchParams();
+  const isOnline = useNetworkStatus();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [interruptions, setInterruptions] = useState<InterruptionLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasFetched, setHasFetched] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
 
@@ -182,42 +187,68 @@ export default function Heatmap() {
   useEffect(() => {
     if (!activeChild) return;
     if (!hasFetched) setLoading(true);
-    const since = subDays(renderStart, 1).toISOString();
-    const until = addDays(renderStart, TOTAL + 1).toISOString();
+    const sinceDate = subDays(renderStart, 1);
+    const untilDate = addDays(renderStart, TOTAL + 1);
+    const since = sinceDate.toISOString();
+    const until = untilDate.toISOString();
+    const childId = activeChild.id;
     let cancelled = false;
-    Promise.all([
-      supabase.from("sleep_sessions").select("*")
-        .eq("child_id", activeChild.id)
-        .gte("start_time", since)
-        .lt("start_time", until)
-        .order("start_time"),
-      supabase.from("sleep_interruptions")
-        .select("id, sleep_session_id, start_time, settling_method_id, settling_methods(name)")
-        .gte("start_time", since)
-        .lt("start_time", until),
-    ])
-      .then(([{ data: sessData }, { data: intData }]) => {
+
+    const mapInterruptions = (rows: any[]): InterruptionLite[] =>
+      rows.map((r) => ({
+        id: r.id,
+        sleep_session_id: r.sleep_session_id,
+        start_time: r.start_time,
+        settling_method_id: r.settling_method_id,
+        settling_method_name: r.settling_methods?.name ?? r.settling_method_name ?? null,
+      }));
+
+    (async () => {
+      try {
+        const [{ data: sessData, error: e1 }, { data: intData, error: e2 }] = await Promise.all([
+          supabase.from("sleep_sessions").select("*")
+            .eq("child_id", childId)
+            .gte("start_time", since)
+            .lt("start_time", until)
+            .order("start_time"),
+          supabase.from("sleep_interruptions")
+            .select("id, sleep_session_id, start_time, settling_method_id, settling_methods(name)")
+            .gte("start_time", since)
+            .lt("start_time", until),
+        ]);
         if (cancelled) return;
-        setSessions((sessData ?? []) as SleepSession[]);
-        setInterruptions(((intData ?? []) as any[]).map((r) => ({
-          id: r.id,
-          sleep_session_id: r.sleep_session_id,
-          start_time: r.start_time,
-          settling_method_id: r.settling_method_id,
-          settling_method_name: r.settling_methods?.name ?? null,
-        })));
-      })
-      .catch((e) => {
-        if (!cancelled) {
+        if (e1) throw e1;
+        if (e2) throw e2;
+        const sess = (sessData ?? []) as SleepSession[];
+        const intrs = mapInterruptions((intData ?? []) as any[]);
+        await Promise.all([
+          putSessions(sess),
+          putInterruptions(intrs.map((i) => ({ ...i, end_time: null }))),
+        ]);
+        if (!cancelled) { setSessions(sess); setInterruptions(intrs); setFromCache(false); }
+      } catch (e) {
+        if (cancelled) return;
+        if (!navigator.onLine) {
+          const [cachedSess, cachedIntrs] = await Promise.all([
+            getSessions(childId, sinceDate, untilDate),
+            getInterruptionsForRange(sinceDate, untilDate),
+          ]);
+          if (!cancelled) {
+            setSessions(cachedSess);
+            setInterruptions(mapInterruptions(cachedIntrs));
+            setFromCache(true);
+          }
+        } else {
           devError("[Heatmap] load failed", e);
           toast.error(t("common.loadFailed"));
         }
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) { setLoading(false); setHasFetched(true); }
-      });
+      }
+    })();
+
     return () => { cancelled = true; };
-  }, [activeChild?.id, renderStart.getTime(), fetchKey]);
+  }, [activeChild?.id, renderStart.getTime(), fetchKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update the effective right boundary whenever sessions change.
   useEffect(() => {
@@ -260,7 +291,6 @@ export default function Heatmap() {
       const dayStart = startOfDay(day).getTime();
       const dayEnd = dayStart + 86400000;
       const items = interruptions
-        .filter((i) => i.settling_method_id)
         .map((i) => {
           const ts = new Date(i.start_time).getTime();
           if (ts < dayStart || ts >= dayEnd) return null;
@@ -311,7 +341,13 @@ export default function Heatmap() {
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-2xl font-semibold mb-1">{t("analytics.heatmapTitle")}</h1>
-        <p className="text-xs text-muted-foreground mb-4">{t("analytics.heatmapHelp")}</p>
+        <p className="text-xs text-muted-foreground mb-1">{t("analytics.heatmapHelp")}</p>
+        {(fromCache || !isOnline) && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+            <WifiOff className="w-3 h-3" />
+            {t("common.cachedData")}
+          </div>
+        )}
 
         <div className="flex items-center justify-between mb-3">
           <Button variant="ghost" size="icon" onClick={() => setAnchor(subDays(anchor, 7))}>
@@ -445,11 +481,11 @@ export default function Heatmap() {
                               type="button"
                               aria-label="open sleep"
                               className="absolute left-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background z-20"
-                              style={{ top: `${cl.topPct}%`, transform: "translate(-50%, -50%)" }}
+                              style={{ top: `${cl.topPct}%`, transform: `translate(-50%, ${cl.topPct === 0 ? "0%" : "-50%"})` }}
                               onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
                             >
                               {vis.map((it) => {
-                                const Icon = iconForMethod(it.name);
+                                const Icon = it.name ? iconForMethod(it.name) : Minus;
                                 return <Icon key={it.id} className="w-2.5 h-2.5 text-muted-foreground" strokeWidth={2} />;
                               })}
                               {extra > 0 && (

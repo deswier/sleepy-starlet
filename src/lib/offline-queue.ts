@@ -27,11 +27,21 @@ export interface ConflictRow {
 class LullabyDB extends Dexie {
   mutations!: Table<QueuedMutation, number>;
   conflicts!: Table<ConflictRow, number>;
+  sleep_sessions_cache!: Table<any, string>;
+  sleep_interruptions_cache!: Table<any, string>;
+  cache_meta!: Table<{ key: string; value: string }, string>;
+
   constructor() {
     super("lullaby_offline");
     this.version(1).stores({
       mutations: "++id, table, createdAt",
       conflicts: "++id, table, rowId, createdAt",
+    });
+    // v2: read-cache tables for offline access to History / Analytics / Heatmap.
+    this.version(2).stores({
+      sleep_sessions_cache: "id, child_id, start_time, [child_id+start_time]",
+      sleep_interruptions_cache: "id, sleep_session_id, start_time",
+      cache_meta: "key",
     });
   }
 }

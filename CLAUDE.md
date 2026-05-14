@@ -1,6 +1,7 @@
 # Lullaby — Baby Sleep Tracker
 
 PWA for tracking infant sleep (naps, night sleep, wake windows). Russian + English.
+The PWA application is planned to be available on both iOS and Android.
 
 ## Stack
 
