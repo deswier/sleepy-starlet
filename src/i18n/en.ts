@@ -160,7 +160,7 @@ const en = {
     daily: "Day", weekly: "Week",
     totalSleep: "Total sleep", totalWake: "Total wake time",
     nightSleep: "Night sleep", daySleep: "Day sleep",
-    totalDaySleep: "Total day sleep", napsCountScore: "Number of naps",
+    totalDaySleep: "Total daytime sleep", napsCountScore: "Number of daytime naps",
     dayScore: "Day score: {{score}} of {{total}}",
     needsAttention: "Needs attention",
     allGood: "Great day!",

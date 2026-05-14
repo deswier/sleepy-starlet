@@ -392,20 +392,15 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
         sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
         arrow={<NormArrow value={totalSleep} norm={norm?.totalSleep} />} />
 
-      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
-        value={formatDuration(totalWake)}
-        sub={norm ? normLabel(t, totalWake, norm.totalWake) : undefined}
-        arrow={<NormArrow value={totalWake} norm={norm?.totalWake} />} />
-
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={nightSleep ? formatDuration(nightSleep) : "—"}
         sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined}
         arrow={<NormArrow value={nightSleep} norm={norm?.nightSleep} />} />
 
-      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.daySleep")}
-        value={formatDuration(totalDaySleep)}
-        sub={norm ? normLabel(t, totalDaySleep, norm.daySleep) : undefined}
-        arrow={<NormArrow value={totalDaySleep} norm={norm?.daySleep} />} />
+      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
+        value={formatDuration(totalWake)}
+        sub={norm ? normLabel(t, totalWake, norm.totalWake) : undefined}
+        arrow={<NormArrow value={totalWake} norm={norm?.totalWake} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
@@ -420,8 +415,13 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
         )}
       </Card>
 
+      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalDaySleep")}
+        value={formatDuration(totalDaySleep)}
+        sub={norm ? normLabel(t, totalDaySleep, norm.daySleep) : undefined}
+        arrow={<NormArrow value={totalDaySleep} norm={norm?.daySleep} />} />
+
       <Card className="p-5 shadow-card border-border/50">
-        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")} value={String(napsCount)}
+        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.napsCountScore")} value={String(napsCount)}
           arrow={<NormArrow value={napsCount} norm={norm?.napsCount} />} />
         <SubGrid>
           <SubItem label={t("analytics.avgNap")} value={napsCount ? formatDuration(avgNap) : "—"} />
@@ -780,20 +780,15 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
         arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
 
-      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
-        value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")}
-        secondary={norm ? normLabel(t, avgTotalWake, norm.totalWake) : undefined}
-        arrow={<NormArrow value={avgTotalWake} norm={norm?.totalWake} />} />
-
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={avgNightSleep ? formatDuration(avgNightSleep) : "—"} sub={t("analytics.avgPerDay")}
         secondary={norm && avgNightSleep ? normLabel(t, avgNightSleep, norm.nightSleep) : undefined}
         arrow={<NormArrow value={avgNightSleep} norm={norm?.nightSleep} />} />
 
-      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.daySleep")}
-        value={formatDuration(avgDaySleep)} sub={t("analytics.avgPerDay")}
-        secondary={norm ? normLabel(t, avgDaySleep, norm.daySleep) : undefined}
-        arrow={<NormArrow value={avgDaySleep} norm={norm?.daySleep} />} />
+      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
+        value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")}
+        secondary={norm ? normLabel(t, avgTotalWake, norm.totalWake) : undefined}
+        arrow={<NormArrow value={avgTotalWake} norm={norm?.totalWake} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
@@ -808,8 +803,13 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         )}
       </Card>
 
+      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalDaySleep")}
+        value={formatDuration(avgDaySleep)} sub={t("analytics.avgPerDay")}
+        secondary={norm ? normLabel(t, avgDaySleep, norm.daySleep) : undefined}
+        arrow={<NormArrow value={avgDaySleep} norm={norm?.daySleep} />} />
+
       <Card className="p-5 shadow-card border-border/50">
-        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.naps")}
+        <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.napsCountScore")}
           value={String(avgNapsCount)}
           arrow={<NormArrow value={avgNapsCount} norm={norm?.napsCount} />} />
         <SubGrid>
