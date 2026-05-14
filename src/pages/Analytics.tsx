@@ -21,6 +21,8 @@ import {
   formatDuration, sessionDuration, SleepSession,
   ageInMonthsAt, wakeWindowForAge,
 } from "@/lib/sleep-utils";
+import { getSleepNorms } from "@/lib/sleep-norms";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount } from "@/lib/analytics-calc";
 import {
   isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
 } from "date-fns";
@@ -31,6 +33,35 @@ const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
 function parseHM(hm: string): { h: number; m: number } {
   const [h, m] = hm.split(":").map(Number);
   return { h: h || 0, m: m || 0 };
+}
+
+function getScoreDetails(
+  t: (k: string, o?: any) => string,
+  metrics: {
+    totalSleep: number;
+    totalWake: number;
+    nightSleep: number;
+    daySleep: number;
+    avgWW?: number;
+    napsCount?: number;
+  },
+  normData: ReturnType<typeof ageNorm>,
+) {
+  if (!normData) return { score: 0, total: 6, details: [], failed: [] };
+
+  const details = [
+    { key: "totalSleep", label: t("analytics.totalSleep"), pass: metrics.totalSleep > 0 && metrics.totalSleep >= normData.totalSleep.min && metrics.totalSleep <= normData.totalSleep.max },
+    { key: "nightSleep", label: t("analytics.nightSleep"), pass: metrics.nightSleep > 0 && metrics.nightSleep >= normData.nightSleep.min && metrics.nightSleep <= normData.nightSleep.max },
+    { key: "totalWake", label: t("analytics.totalWake"), pass: metrics.totalWake > 0 && metrics.totalWake >= normData.totalWake.min && metrics.totalWake <= normData.totalWake.max },
+    { key: "ww", label: t("analytics.avgWW"), pass: (metrics.avgWW ?? 0) > 0 && metrics.avgWW! >= normData.ww.min && metrics.avgWW! <= normData.ww.max },
+    { key: "daySleep", label: t("analytics.totalDaySleep"), pass: metrics.daySleep > 0 && metrics.daySleep >= normData.daySleep.min && metrics.daySleep <= normData.daySleep.max },
+    { key: "naps", label: t("analytics.napsCountScore"), pass: (metrics.napsCount ?? 0) > 0 && metrics.napsCount! >= normData.napsCount.min && metrics.napsCount! <= normData.napsCount.max },
+  ];
+
+  const passed = details.filter(d => d.pass).length;
+  const failed = details.filter(d => !d.pass);
+
+  return { score: passed, total: 6, details, failed };
 }
 
 // The calendar day a session belongs to in lists/aggregations.
@@ -206,11 +237,6 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
 
   const now = new Date();
   const isCurrentDay = isSameDay(day, startOfDay(now));
-  // For today, only count time that has already elapsed (cap at "now").
-  // For past days, use the full 24h.
-  const dayElapsedMin = isCurrentDay
-    ? Math.max(0, Math.round((now.getTime() - startOfDay(day).getTime()) / 60000))
-    : 24 * 60;
 
   // Sleeps attributed to the chosen day (used for nap counts and WW).
   const startedToday = useMemo(
@@ -229,52 +255,59 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
 
     let totalSleep = 0;
     let nightSleep = 0;
-    // Sleep clipped to [dayStart, dayEnd] — used for wake-time only.
-    // In splitByDate mode this equals totalSleep; in night-window mode a night
-    // session may start before midnight so its full duration overstates the
-    // sleep that actually fell within the calendar day.
     let totalSleepInWindow = 0;
 
     for (const s of sessions) {
       const startMs = new Date(s.start_time).getTime();
       const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
 
+      const ovStart = Math.max(startMs, dayStartMs);
+      const ovEnd = Math.min(endMs, dayEndMs);
+      const ovMins = ovEnd > ovStart ? Math.round((ovEnd - ovStart) / 60000) : 0;
+
       if (splitByDate) {
-        // Physical overlap with calendar day boundary.
-        const ovStart = Math.max(startMs, dayStartMs);
-        const ovEnd = Math.min(endMs, dayEndMs);
-        if (ovEnd > ovStart) {
-          const mins = Math.round((ovEnd - ovStart) / 60000);
-          totalSleep += mins;
-          totalSleepInWindow += mins;
+        if (ovMins > 0) {
+          totalSleep += ovMins;
+          totalSleepInWindow += ovMins;
         }
         if (s.sleep_type === "night" && s.end_time && startOfDay(new Date(startMs)).getTime() === dayMs)
           nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
       } else {
-        // Full duration of sessions attributed to this day by the night window.
-        if (sessionDay(s, night).getTime() !== dayMs) continue;
+        if (sessionDay(s, night).getTime() !== dayMs) {
+          totalSleepInWindow += ovMins;
+          continue;
+        }
         const fullMins = Math.round((endMs - startMs) / 60000);
         totalSleep += fullMins;
         if (s.sleep_type === "night" && s.end_time)
           nightSleep = Math.max(nightSleep, fullMins);
-        // Clip to calendar day for accurate wake-time accounting.
-        const ovStart = Math.max(startMs, dayStartMs);
-        const ovEnd = Math.min(endMs, dayEndMs);
-        if (ovEnd > ovStart) totalSleepInWindow += Math.round((ovEnd - ovStart) / 60000);
+        totalSleepInWindow += ovMins;
       }
     }
 
     return { totalSleep, nightSleep, totalSleepInWindow };
   }, [sessions, day, night, splitByDate, isCurrentDay]);
 
-  const totalWake = Math.max(0, dayElapsedMin - totalSleepInWindow);
+  const totalWake = useMemo(
+    () => calcTotalWake(sessions, startOfDay(day), now),
+    [sessions, day, isCurrentDay], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
-  const { napsCount, avgNap, minNap, maxNap } = useMemo(() => {
+  const totalDaySleep = useMemo(
+    () => calcTotalDaySleep(sessions, startOfDay(day), now),
+    [sessions, day, isCurrentDay], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const napsCount = useMemo(
+    () => calcNapsCount(sessions, startOfDay(day), now),
+    [sessions, day, isCurrentDay], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const { avgNap, minNap, maxNap } = useMemo(() => {
     const naps = startedToday.filter((s) => s.sleep_type === "day" && s.end_time);
     const durations = naps.map((s) => sessionDuration(s, now));
     const count = naps.length;
     return {
-      napsCount: count,
       avgNap: count ? Math.round(durations.reduce((a, b) => a + b, 0) / count) : 0,
       minNap: count ? Math.min(...durations) : 0,
       maxNap: count ? Math.max(...durations) : 0,
@@ -316,6 +349,14 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
 
   const norm = ageNorm(birthDate, day);
 
+  const getDayScore = () => {
+    if (!norm) return null;
+    const result = getScoreDetails(t, { totalSleep: totalSleepInWindow, totalWake, nightSleep, daySleep: totalDaySleep, avgWW, napsCount }, norm);
+    return { score: result.score, total: 6, failed: result.failed };
+  };
+
+  const dayScore = getDayScore();
+
   if (loadingDay) {
     return (
       <>
@@ -347,18 +388,58 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
         </div>
       )}
 
+      {dayScore && (
+        <Card className="p-4 shadow-card border-border/50">
+          <div className="flex items-end gap-3 mb-3">
+            <div className="flex-1">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${(dayScore.score / dayScore.total) * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="text-sm font-semibold text-primary whitespace-nowrap">
+              {dayScore.score}/{dayScore.total}
+            </div>
+          </div>
+          {dayScore.failed.length > 0 ? (
+            <div className="text-xs text-muted-foreground">
+              <div className="mb-1.5 font-medium">{t("analytics.needsAttention")}:</div>
+              <div className="space-y-0.5">
+                {dayScore.failed.map((item) => (
+                  <div key={item.key}>• {item.label}</div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-[hsl(var(--ww-good))] flex items-center gap-1.5 font-medium">
+              <Check className="w-3.5 h-3.5" />
+              {t("analytics.allGood")}
+            </div>
+          )}
+        </Card>
+      )}
+
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
-        value={formatDuration(totalSleep)}
-        sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
-        arrow={<NormArrow value={totalSleep} norm={norm?.totalSleep} />} />
+        value={formatDuration(totalSleepInWindow)}
+        sub={norm ? normLabel(t, totalSleepInWindow, norm.totalSleep) : undefined}
+        arrow={<NormArrow value={totalSleepInWindow} norm={norm?.totalSleep} />} />
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
-        value={formatDuration(totalWake)} />
+        value={formatDuration(totalWake)}
+        sub={norm ? normLabel(t, totalWake, norm.totalWake) : undefined}
+        arrow={<NormArrow value={totalWake} norm={norm?.totalWake} />} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={nightSleep ? formatDuration(nightSleep) : "—"}
         sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined}
         arrow={<NormArrow value={nightSleep} norm={norm?.nightSleep} />} />
+
+      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.daySleep")}
+        value={formatDuration(totalDaySleep)}
+        sub={norm ? normLabel(t, totalDaySleep, norm.daySleep) : undefined}
+        arrow={<NormArrow value={totalDaySleep} norm={norm?.daySleep} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
@@ -574,7 +655,8 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         if (diff >= 0 && diff < 12 * 60) wws.push(diff);
       }
 
-      return { totalSleep, totalWake, nightSleep, napsCount: naps.length, napDurations, wws };
+      const totalDaySleep = Math.max(0, totalSleep - nightSleep);
+      return { totalSleep, totalWake, nightSleep, totalDaySleep, napsCount: naps.length, napDurations, wws };
     });
   }, [sessions, days, night, splitByDate]);
 
@@ -644,6 +726,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   const avgTotalSleep = avg(daysWithData.map((d) => d.totalSleep));
   const avgTotalWake = avg(daysWithData.map((d) => d.totalWake));
   const avgNightSleep = avg(daysWithData.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
+  const avgDaySleep = avg(daysWithData.map((d) => d.totalDaySleep));
 
   const allWWs = daysWithData.flatMap((d) => d.wws);
   const avgWW = avg(allWWs);
@@ -664,6 +747,24 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
 
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
+
+  const getWeekScore = () => {
+    if (!norm || daysWithData.length === 0) return null;
+    let totalScore = 0;
+    daysWithData.forEach((d) => {
+      const avgWW = d.wws.length ? Math.round(d.wws.reduce((a, b) => a + b, 0) / d.wws.length) : 0;
+      const result = getScoreDetails(
+        t,
+        { totalSleep: d.totalSleep, totalWake: d.totalWake, nightSleep: d.nightSleep, daySleep: d.totalDaySleep, avgWW, napsCount: d.napsCount },
+        norm
+      );
+      totalScore += result.score;
+    });
+    const avgScore = Math.round((totalScore / (daysWithData.length * 6)) * 10) / 10;
+    return { avgScore, daysCount: daysWithData.length };
+  };
+
+  const weekScore = getWeekScore();
 
   return (
     <div className="space-y-3">
@@ -687,18 +788,46 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       ) : (
       <>
 
+      {weekScore && (
+        <Card className="p-4 shadow-card border-border/50">
+          <div className="flex items-end gap-3 mb-3">
+            <div className="flex-1">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${(weekScore.avgScore / 6) * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="text-sm font-semibold text-primary whitespace-nowrap">
+              {weekScore.avgScore}/6
+            </div>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {t("analytics.weekAvg", { days: weekScore.daysCount })}
+          </div>
+        </Card>
+      )}
+
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
         secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
         arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
-        value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")} />
+        value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")}
+        secondary={norm ? normLabel(t, avgTotalWake, norm.totalWake) : undefined}
+        arrow={<NormArrow value={avgTotalWake} norm={norm?.totalWake} />} />
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
         value={avgNightSleep ? formatDuration(avgNightSleep) : "—"} sub={t("analytics.avgPerDay")}
         secondary={norm && avgNightSleep ? normLabel(t, avgNightSleep, norm.nightSleep) : undefined}
         arrow={<NormArrow value={avgNightSleep} norm={norm?.nightSleep} />} />
+
+      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.daySleep")}
+        value={formatDuration(avgDaySleep)} sub={t("analytics.avgPerDay")}
+        secondary={norm ? normLabel(t, avgDaySleep, norm.daySleep) : undefined}
+        arrow={<NormArrow value={avgDaySleep} norm={norm?.daySleep} />} />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
@@ -844,19 +973,8 @@ function ageNorm(birthDate: string | null, at: Date) {
   const months = ageInMonthsAt(birthDate, at);
   if (months === null) return null;
   const ww = wakeWindowForAge(months);
-  // Approximate norm ranges by age. These mirror common pediatric guidance.
-  let totalSleep: { min: number; max: number };
-  let nightSleep: { min: number; max: number };
-  let napsCount: { min: number; max: number };
-  if (months < 1) { totalSleep = { min: 14 * 60, max: 17 * 60 }; nightSleep = { min: 8 * 60, max: 9 * 60 }; napsCount = { min: 5, max: 7 }; }
-  else if (months < 3) { totalSleep = { min: 14 * 60, max: 17 * 60 }; nightSleep = { min: 8 * 60, max: 10 * 60 }; napsCount = { min: 4, max: 5 }; }
-  else if (months < 6) { totalSleep = { min: 12 * 60, max: 16 * 60 }; nightSleep = { min: 9 * 60, max: 11 * 60 }; napsCount = { min: 3, max: 4 }; }
-  else if (months < 9) { totalSleep = { min: 12 * 60, max: 15 * 60 }; nightSleep = { min: 10 * 60, max: 11 * 60 }; napsCount = { min: 2, max: 3 }; }
-  else if (months < 12) { totalSleep = { min: 12 * 60, max: 15 * 60 }; nightSleep = { min: 10 * 60, max: 12 * 60 }; napsCount = { min: 2, max: 3 }; }
-  else if (months < 18) { totalSleep = { min: 11 * 60, max: 14 * 60 }; nightSleep = { min: 10 * 60, max: 12 * 60 }; napsCount = { min: 1, max: 2 }; }
-  else if (months < 36) { totalSleep = { min: 11 * 60, max: 14 * 60 }; nightSleep = { min: 10 * 60, max: 12 * 60 }; napsCount = { min: 1, max: 1 }; }
-  else { totalSleep = { min: 10 * 60, max: 13 * 60 }; nightSleep = { min: 10 * 60, max: 12 * 60 }; napsCount = { min: 0, max: 1 }; }
-  return { totalSleep, nightSleep, napsCount, ww };
+  const norms = getSleepNorms(months);
+  return { ...norms, ww };
 }
 
 function normLabel(
