@@ -164,6 +164,7 @@ const en = {
     dayScore: "Day score: {{score}} of {{total}}",
     needsAttention: "Needs attention",
     allGood: "Great day!",
+    allGoodWeek: "Great week!",
     weekAvg: "Average for {{days}} days",
     longestStretch: "Longest stretch",
     sleepsRecorded: "Sleeps",

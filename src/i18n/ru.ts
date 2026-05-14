@@ -164,6 +164,7 @@ const ru = {
     dayScore: "Оценка дня: {{score}} из {{total}}",
     needsAttention: "Требует внимания",
     allGood: "Отличный день!",
+    allGoodWeek: "Отличные дни!",
     weekAvg: "Среднее за {{days}} дней",
     longestStretch: "Самый длинный сон",
     sleepsRecorded: "Снов",

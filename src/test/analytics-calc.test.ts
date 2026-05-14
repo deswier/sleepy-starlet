@@ -233,6 +233,69 @@ describe("calcNightSleep", () => {
   });
 });
 
+// ─── week score metric parity ─────────────────────────────────────────────────
+// Verifies that the calc functions produce the same per-day metrics in both
+// DayView and WeekView (the weekly perDay useMemo now delegates to these same
+// functions instead of reimplementing the logic independently).
+
+describe("week/day score metric parity", () => {
+  it("totalWake is period minus clipped sleep, not 24h minus totalSleep", () => {
+    // Night: 21:00 yesterday → 07:00 today (10h full, 7h within today's 00:00–24:00)
+    // Day: 09:00–10:00 (60m)
+    // totalSleep = 600 + 60 = 660m
+    // 24h − 660 = 780 (wrong formula used in old weekly code)
+    // calcTotalWake clips everything to calendar day → period=1440, sleep=420+60=480, wake=960
+    const now = at(0, 0, 1);
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), at(7, 0),   "night"),
+      s(at(9, 0),      at(10, 0),  "day"),
+    ];
+    const night = calcNightSleep(sessions, startOfDay(), false, NIGHT);
+    const day   = calcTotalDaySleep(sessions, startOfDay(), now);
+    const wake  = calcTotalWake(sessions, startOfDay(), now);
+    expect(night).toBe(600);
+    expect(day).toBe(60);
+    // calcTotalWake uses clipped sleep (420 night + 60 day = 480), not full totalSleep (660)
+    expect(wake).toBe(1440 - 480); // 960, not 1440 - 660 = 780
+  });
+
+  it("napsCount counts calendar-day intersections, not attribution-bucket membership", () => {
+    // Day nap crosses midnight: 23:30 yesterday → 00:30 today.
+    // Attribution (sessionDay) puts it on yesterday (day sleep stays on start date).
+    // calcNapsCount uses intersection: the nap overlaps today [00:00, 00:30) → count=1.
+    const now = at(12, 0, 1);
+    const sessions: CalcSession[] = [
+      s(at(23, 30, -1), at(0, 30), "day"),
+    ];
+    // calcNapsCount: intersection-based → 1
+    expect(calcNapsCount(sessions, startOfDay(), now)).toBe(1);
+  });
+
+  it("all four metrics are consistent for a typical past day", () => {
+    // Night: 20:30 yesterday → 06:30 today (10h = 600m)
+    // Nap 1: 09:00–09:45 (45m)
+    // Nap 2: 13:00–14:30 (90m)
+    // totalDaySleep = 135m, totalSleep = 735m
+    // totalWake: clipped sleep within calendar day = 390m (night 00:00–06:30) + 135m = 525m
+    //            wake = 1440 − 525 = 915m
+    const now = at(0, 0, 1);
+    const sessions: CalcSession[] = [
+      s(at(20, 30, -1), at(6, 30),  "night"),
+      s(at(9, 0),       at(9, 45),  "day"),
+      s(at(13, 0),      at(14, 30), "day"),
+    ];
+    const night = calcNightSleep(sessions, startOfDay(), false, NIGHT);
+    const day   = calcTotalDaySleep(sessions, startOfDay(), now);
+    const wake  = calcTotalWake(sessions, startOfDay(), now);
+    const naps  = calcNapsCount(sessions, startOfDay(), now);
+    expect(night).toBe(600);
+    expect(day).toBe(135);
+    expect(night + day).toBe(735); // totalSleep used by getScoreDetails
+    expect(wake).toBe(915);        // 1440 − (390 + 135)
+    expect(naps).toBe(2);
+  });
+});
+
 // ─── totalSleep = nightSleep + totalDaySleep ─────────────────────────────────
 
 describe("totalSleep formula", () => {

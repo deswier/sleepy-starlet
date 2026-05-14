@@ -590,27 +590,12 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       const completed = forDay.filter((e) => e.s.end_time)
         .sort((a, b) => a.startMs - b.startMs);
 
-      const dayStartMs = dMs;
-      const dayEndMs = dMs + 24 * 60 * 60 * 1000;
-      let totalSleep = 0;
-      if (splitByDate) {
-        for (const e of ext) {
-          const ovStart = Math.max(e.startMs, dayStartMs);
-          const ovEnd = Math.min(e.endMs, dayEndMs);
-          if (ovEnd > ovStart) totalSleep += Math.round((ovEnd - ovStart) / 60000);
-        }
-      } else {
-        // Full duration of sessions attributed to this day by the night window.
-        for (const e of forDay) totalSleep += Math.round((e.endMs - e.startMs) / 60000);
-      }
-      const totalWake = Math.max(0, 24 * 60 - totalSleep);
-
-      let nightSleep = 0;
-      for (const e of forDay) {
-        if (e.s.sleep_type === "night" && e.s.end_time) {
-          nightSleep = Math.max(nightSleep, Math.round((e.endMs - e.startMs) / 60000));
-        }
-      }
+      // Use the same calc functions as DayView so scores are computed identically.
+      const nightSleep = calcNightSleep(sessions, d, splitByDate, night, now);
+      const totalDaySleep = calcTotalDaySleep(sessions, d, now);
+      const totalSleep = nightSleep + totalDaySleep;
+      const totalWake = calcTotalWake(sessions, d, now);
+      const napsCount = calcNapsCount(sessions, d, now);
 
       const naps = completed.filter((e) => e.s.sleep_type === "day");
       const napDurations = naps.map((e) => Math.round((e.endMs - e.startMs) / 60000));
@@ -621,8 +606,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         if (diff >= 0 && diff < 12 * 60) wws.push(diff);
       }
 
-      const totalDaySleep = Math.max(0, totalSleep - nightSleep);
-      return { totalSleep, totalWake, nightSleep, totalDaySleep, napsCount: naps.length, napDurations, wws };
+      return { totalSleep, totalWake, nightSleep, totalDaySleep, napsCount, napDurations, wws };
     });
   }, [sessions, days, night, splitByDate]);
 
@@ -715,18 +699,14 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
 
   const getWeekScore = () => {
     if (!norm || daysWithData.length === 0) return null;
-    let totalScore = 0;
-    daysWithData.forEach((d) => {
-      const avgWW = d.wws.length ? Math.round(d.wws.reduce((a, b) => a + b, 0) / d.wws.length) : 0;
-      const result = getScoreDetails(
-        t,
-        { totalSleep: d.totalSleep, totalWake: d.totalWake, nightSleep: d.nightSleep, daySleep: d.totalDaySleep, avgWW, napsCount: d.napsCount },
-        norm
-      );
-      totalScore += result.score;
-    });
-    const avgScore = Math.round((totalScore / (daysWithData.length * 6)) * 10) / 10;
-    return { avgScore, daysCount: daysWithData.length };
+    // Score = number of weekly-average metric cards that show a checkmark,
+    // matching exactly the NormArrow checks visible in the UI below.
+    const result = getScoreDetails(
+      t,
+      { totalSleep: avgTotalSleep, totalWake: avgTotalWake, nightSleep: avgNightSleep, daySleep: avgDaySleep, avgWW, napsCount: avgNapsCount },
+      norm,
+    );
+    return { score: result.score, total: result.total, failed: result.failed };
   };
 
   const weekScore = getWeekScore();
@@ -764,17 +744,29 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
               <div className="h-2 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full bg-primary transition-all"
-                  style={{ width: `${(weekScore.avgScore / 6) * 100}%` }}
+                  style={{ width: `${(weekScore.score / weekScore.total) * 100}%` }}
                 />
               </div>
             </div>
             <div className="text-sm font-semibold text-primary whitespace-nowrap">
-              {weekScore.avgScore}/6
+              {weekScore.score}/{weekScore.total}
             </div>
           </div>
-          <div className="text-xs text-muted-foreground">
-            {t("analytics.weekAvg", { days: weekScore.daysCount })}
-          </div>
+          {weekScore.failed.length > 0 ? (
+            <div className="text-xs text-muted-foreground">
+              <div className="mb-1.5 font-medium">{t("analytics.needsAttention")}:</div>
+              <div className="space-y-0.5">
+                {weekScore.failed.map((item) => (
+                  <div key={item.key}>• {item.label}</div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-[hsl(var(--ww-good))] flex items-center gap-1.5 font-medium">
+              <Check className="w-3.5 h-3.5" />
+              {t("analytics.allGoodWeek")}
+            </div>
+          )}
         </Card>
       )}
 
