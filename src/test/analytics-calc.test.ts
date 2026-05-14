@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount, type CalcSession } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, type CalcSession } from "@/lib/analytics-calc";
 
 // All times are constructed in LOCAL timezone to match how the component works.
 // Using Date(year, month, day, h, m) avoids UTC-offset ambiguity.
@@ -187,5 +187,79 @@ describe("calcNapsCount", () => {
       s(at(16, 0), at(17, 0), "day"),
     ];
     expect(calcNapsCount(sessions, startOfDay(), now)).toBe(0);
+  });
+});
+
+// ─── calcNightSleep ───────────────────────────────────────────────────────────
+
+const NIGHT = { start: "20:00", end: "07:00" };
+
+describe("calcNightSleep", () => {
+  it("returns full session duration, not clipped to calendar day", () => {
+    // Night sleep 21:00 yesterday → 07:00 today = 10h = 600min.
+    // Only 7h falls within today's calendar boundaries, but nightSleep must be 10h.
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), at(7, 0), "night"),
+    ];
+    expect(calcNightSleep(sessions, startOfDay(), false, NIGHT)).toBe(600);
+  });
+
+  it("ignores ongoing night sessions (no end_time)", () => {
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), null, "night"),
+    ];
+    expect(calcNightSleep(sessions, startOfDay(), false, NIGHT)).toBe(0);
+  });
+
+  it("ignores day sessions", () => {
+    const sessions: CalcSession[] = [
+      s(at(9, 0), at(10, 0), "day"),
+    ];
+    expect(calcNightSleep(sessions, startOfDay(), false, NIGHT)).toBe(0);
+  });
+
+  it("splitByDate=true: uses start date, not end date, for attribution", () => {
+    // Night sleep starts today 22:00 → ends tomorrow 06:00 = 8h = 480min.
+    // splitByDate attributes by start date → belongs to today.
+    const sessions: CalcSession[] = [
+      s(at(22, 0), at(6, 0, 1), "night"),
+    ];
+    expect(calcNightSleep(sessions, startOfDay(), true, NIGHT)).toBe(480);
+    // The same session belongs to yesterday in splitByDate mode for tomorrow's view.
+    const tomorrow = startOfDay(at(0, 0, 1));
+    expect(calcNightSleep(sessions, tomorrow, true, NIGHT)).toBe(0);
+  });
+});
+
+// ─── totalSleep = nightSleep + totalDaySleep ─────────────────────────────────
+
+describe("totalSleep formula", () => {
+  it("equals nightSleep + totalDaySleep, not physical session intersection", () => {
+    // Night: 21:00 yesterday → 07:00 today = 10h (600min full duration)
+    // Physical today portion of night: 00:00–07:00 = 7h (420min)
+    // Day naps: 09:30–10:10 (40min) + 14:00–15:00 (60min) = 100min
+    const now = at(0, 0, 1); // well past end of day
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), at(7, 0),  "night"),
+      s(at(9, 30),     at(10, 10), "day"),
+      s(at(14, 0),     at(15, 0),  "day"),
+    ];
+    const night = calcNightSleep(sessions, startOfDay(), false, NIGHT);
+    const day   = calcTotalDaySleep(sessions, startOfDay(), now);
+    expect(night).toBe(600);  // full duration, not 420
+    expect(day).toBe(100);
+    expect(night + day).toBe(700); // 11h40m — NOT 420 + 100 = 520
+  });
+
+  it("no night sleep: totalSleep equals totalDaySleep", () => {
+    const now = at(0, 0, 1);
+    const sessions: CalcSession[] = [
+      s(at(9, 0), at(10, 0), "day"), // 60min
+      s(at(13, 0), at(14, 0), "day"), // 60min
+    ];
+    const night = calcNightSleep(sessions, startOfDay(), false, NIGHT);
+    const day   = calcTotalDaySleep(sessions, startOfDay(), now);
+    expect(night).toBe(0);
+    expect(night + day).toBe(120);
   });
 });

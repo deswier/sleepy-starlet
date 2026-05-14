@@ -4,6 +4,60 @@ export interface CalcSession {
   sleep_type: "day" | "night";
 }
 
+export interface NightWindowConfig {
+  start: string; // "HH:MM"
+  end: string;
+}
+
+function localDayStart(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+
+function parseHM(hm: string): [number, number] {
+  const [h, m] = hm.split(":").map(Number);
+  return [h || 0, m || 0];
+}
+
+// Mirrors sessionDay() in Analytics.tsx for night sessions only.
+function nightSessionDayMs(s: CalcSession, night: NightWindowConfig): number {
+  const start = new Date(s.start_time);
+  const [nsH, nsM] = parseHM(night.start);
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const nsMin = nsH * 60 + nsM;
+  if (startMin >= nsMin && startMin >= 12 * 60) {
+    if (!s.end_time) return localDayStart(start).getTime() + 24 * 60 * 60 * 1000;
+    const startDay = localDayStart(start).getTime();
+    const endDay = localDayStart(new Date(s.end_time)).getTime();
+    if (endDay !== startDay) return endDay;
+  }
+  return localDayStart(start).getTime();
+}
+
+/**
+ * Night sleep for a calendar day — full session duration, not clipped to day boundary.
+ * Mirrors the nightSleep useMemo in DayView.
+ */
+export function calcNightSleep(
+  sessions: CalcSession[],
+  day: Date,
+  splitByDate: boolean,
+  night: NightWindowConfig,
+): number {
+  const dayMs = day.getTime();
+  let ns = 0;
+  for (const s of sessions) {
+    if (s.sleep_type !== "night" || !s.end_time) continue;
+    const startMs = new Date(s.start_time).getTime();
+    const endMs = new Date(s.end_time).getTime();
+    const fullMins = Math.round((endMs - startMs) / 60000);
+    const attributed = splitByDate
+      ? localDayStart(new Date(startMs)).getTime() === dayMs
+      : nightSessionDayMs(s, night) === dayMs;
+    if (attributed) ns = Math.max(ns, fullMins);
+  }
+  return ns;
+}
+
 /** Returns [dayStart, dayEnd) in ms for the given calendar day and current time. */
 function dayBounds(day: Date, now: Date): { dayStartMs: number; dayEndMs: number } {
   const dayStartMs = day.getTime();

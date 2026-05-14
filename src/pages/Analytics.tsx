@@ -22,7 +22,7 @@ import {
   ageInMonthsAt, wakeWindowForAge,
 } from "@/lib/sleep-utils";
 import { getSleepNorms } from "@/lib/sleep-norms";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep } from "@/lib/analytics-calc";
 import {
   isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
 } from "date-fns";
@@ -247,46 +247,10 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
     [sessions, day, night, splitByDate]
   );
 
-  const { totalSleep, nightSleep, totalSleepInWindow } = useMemo(() => {
-    const nowMs = now.getTime();
-    const dayMs = startOfDay(day).getTime();
-    const dayStartMs = dayMs;
-    const dayEndMs = isCurrentDay ? nowMs : dayStartMs + 24 * 60 * 60 * 1000;
-
-    let totalSleep = 0;
-    let nightSleep = 0;
-    let totalSleepInWindow = 0;
-
-    for (const s of sessions) {
-      const startMs = new Date(s.start_time).getTime();
-      const endMs = s.end_time ? new Date(s.end_time).getTime() : nowMs;
-
-      const ovStart = Math.max(startMs, dayStartMs);
-      const ovEnd = Math.min(endMs, dayEndMs);
-      const ovMins = ovEnd > ovStart ? Math.round((ovEnd - ovStart) / 60000) : 0;
-
-      if (splitByDate) {
-        if (ovMins > 0) {
-          totalSleep += ovMins;
-          totalSleepInWindow += ovMins;
-        }
-        if (s.sleep_type === "night" && s.end_time && startOfDay(new Date(startMs)).getTime() === dayMs)
-          nightSleep = Math.max(nightSleep, Math.round((endMs - startMs) / 60000));
-      } else {
-        if (sessionDay(s, night).getTime() !== dayMs) {
-          totalSleepInWindow += ovMins;
-          continue;
-        }
-        const fullMins = Math.round((endMs - startMs) / 60000);
-        totalSleep += fullMins;
-        if (s.sleep_type === "night" && s.end_time)
-          nightSleep = Math.max(nightSleep, fullMins);
-        totalSleepInWindow += ovMins;
-      }
-    }
-
-    return { totalSleep, nightSleep, totalSleepInWindow };
-  }, [sessions, day, night, splitByDate, isCurrentDay]);
+  const nightSleep = useMemo(
+    () => calcNightSleep(sessions, startOfDay(day), splitByDate, night),
+    [sessions, day, night, splitByDate],
+  );
 
   const totalWake = useMemo(
     () => calcTotalWake(sessions, startOfDay(day), now),
@@ -347,11 +311,13 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
     };
   }, [startedToday, isCurrentDay, sessions, night, day]);
 
+  const totalSleep = nightSleep + totalDaySleep;
+
   const norm = ageNorm(birthDate, day);
 
   const getDayScore = () => {
     if (!norm) return null;
-    const result = getScoreDetails(t, { totalSleep: totalSleepInWindow, totalWake, nightSleep, daySleep: totalDaySleep, avgWW, napsCount }, norm);
+    const result = getScoreDetails(t, { totalSleep, totalWake, nightSleep, daySleep: totalDaySleep, avgWW, napsCount }, norm);
     return { score: result.score, total: 6, failed: result.failed };
   };
 
@@ -422,9 +388,9 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
       )}
 
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
-        value={formatDuration(totalSleepInWindow)}
-        sub={norm ? normLabel(t, totalSleepInWindow, norm.totalSleep) : undefined}
-        arrow={<NormArrow value={totalSleepInWindow} norm={norm?.totalSleep} />} />
+        value={formatDuration(totalSleep)}
+        sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
+        arrow={<NormArrow value={totalSleep} norm={norm?.totalSleep} />} />
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(totalWake)}
