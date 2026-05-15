@@ -22,6 +22,9 @@ const SleepDetail = lazy(() => import("@/components/sleep/SleepDetail"));
 const HOURS = 24;
 const ROW_PX = 22;
 const GRID_HEIGHT = HOURS * ROW_PX;
+// Extra vertical space so icons at the top/bottom extremes are not clipped.
+// Must be ≥ half the rendered icon button height (~7 px).
+const CHART_PAD_PX = 12;
 const ICON_OVERLAP_PCT = 1.0;
 const VISIBLE = 7;
 const BUFFER = 14; // extra days rendered off-screen on each side
@@ -417,13 +420,13 @@ export default function Heatmap() {
               </div>
 
               {/* Grid: fixed time axis + draggable columns */}
-              <div className="flex" style={{ height: GRID_HEIGHT }}>
+              <div className="flex" style={{ height: GRID_HEIGHT + 2 * CHART_PAD_PX }}>
                 {/* Time axis — never moves */}
-                <div className="relative w-10 flex-shrink-0" style={{ height: GRID_HEIGHT }}>
+                <div className="relative w-10 flex-shrink-0" style={{ height: GRID_HEIGHT + 2 * CHART_PAD_PX }}>
                   {timeMarks.map((h) => (
                     <div key={h}
                       className="absolute right-1 text-[10px] text-muted-foreground leading-none"
-                      style={{ top: `${(h / 24) * 100}%`, transform: "translateY(-50%)" }}>
+                      style={{ top: CHART_PAD_PX + (h / 24) * GRID_HEIGHT, transform: "translateY(-50%)" }}>
                       {h === 24 ? "00:00" : `${String(h).padStart(2, "0")}:00`}
                     </div>
                   ))}
@@ -431,11 +434,11 @@ export default function Heatmap() {
 
                 {/* Clipping container for day columns */}
                 <div className="flex-1 overflow-hidden relative">
-                  {/* Horizontal grid lines — static */}
+                  {/* Horizontal grid lines — static, pixel-aligned with time scale */}
                   {timeMarks.map((h) => (
                     <div key={h}
                       className="absolute left-0 right-0 border-t border-border/60 z-10 pointer-events-none"
-                      style={{ top: `${(h / 24) * 100}%` }} />
+                      style={{ top: CHART_PAD_PX + (h / 24) * GRID_HEIGHT }} />
                   ))}
 
                   {/* Track: all TOTAL columns, translated to show BUFFER offset */}
@@ -459,8 +462,8 @@ export default function Heatmap() {
                             key={bi}
                             className="absolute left-[10%] right-[10%] rounded-md"
                             style={{
-                              top: `${b.topPct}%`,
-                              height: `${b.heightPct}%`,
+                              top: CHART_PAD_PX + b.topPct * GRID_HEIGHT / 100,
+                              height: b.heightPct * GRID_HEIGHT / 100,
                               background: b.type === "night"
                                 ? "hsl(var(--primary) / 0.85)"
                                 : "hsl(var(--primary) / 0.55)",
@@ -481,7 +484,7 @@ export default function Heatmap() {
                               type="button"
                               aria-label="open sleep"
                               className="absolute left-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background z-20"
-                              style={{ top: `${cl.topPct}%`, transform: `translate(-50%, ${cl.topPct === 0 ? "0%" : "-50%"})` }}
+                              style={{ top: CHART_PAD_PX + cl.topPct * GRID_HEIGHT / 100, transform: "translate(-50%, -50%)" }}
                               onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
                             >
                               {vis.map((it) => {
