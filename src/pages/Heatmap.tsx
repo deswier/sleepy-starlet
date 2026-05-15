@@ -430,7 +430,8 @@ export default function Heatmap() {
                 </div>
 
                 {/* Clipping container for day columns */}
-                <div className="flex-1 overflow-hidden relative">
+                {/* overflow-x-clip hides off-screen buffer columns; overflow-y-visible lets edge icons render outside bounds */}
+                <div className="flex-1 overflow-x-clip overflow-y-visible relative">
                   {/* Horizontal grid lines — static */}
                   {timeMarks.map((h) => (
                     <div key={h}
@@ -481,7 +482,7 @@ export default function Heatmap() {
                               type="button"
                               aria-label="open sleep"
                               className="absolute left-1/2 flex items-center gap-0.5 rounded-full bg-background/80 backdrop-blur-sm border border-border/60 px-1 py-0.5 shadow-sm hover:bg-background z-20"
-                              style={{ top: `${cl.topPct}%`, transform: `translate(-50%, ${cl.topPct === 0 ? "0%" : "-50%"})` }}
+                              style={{ top: `${cl.topPct}%`, transform: "translate(-50%, -50%)" }}
                               onClick={(e) => { e.stopPropagation(); setOpenSession(cl.session); }}
                             >
                               {vis.map((it) => {
