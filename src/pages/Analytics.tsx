@@ -22,10 +22,10 @@ import {
   ageInMonthsAt, wakeWindowForAge,
 } from "@/lib/sleep-utils";
 import { getSleepNorms } from "@/lib/sleep-norms";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, calcNightTimes, calcDayNightSleep, calcDayNightTimes, avgNightTimes } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcDayNightSleep, calcDayNightTimes, avgNightTimes } from "@/lib/analytics-calc";
 import { useTimeFormat } from "@/lib/use-time-format";
 import {
-  isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
+  isSameDay, startOfDay, subDays, addDays, format,
 } from "date-fns";
 
 export type NightWindow = { start: string; end: string };

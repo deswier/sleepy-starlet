@@ -173,7 +173,7 @@ export function calcNightTimes(
 
 /**
  * Night sleep duration for a calendar day — sums all attributed night sessions.
- * Use this for daily analytics; weekly analytics uses calcNightSleep (max of one session).
+ * Used by both daily and weekly analytics.
  */
 export function calcDayNightSleep(
   sessions: CalcSession[],
