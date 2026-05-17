@@ -186,6 +186,8 @@ const ru = {
     weekIgnoresToday: "Текущий день не учитывается",
     pickWeek: "Выбрать неделю",
     daysIncluded: "Учтены дни: {{days}}",
+    bedtime: "Засыпание",
+    wakeup: "Пробуждение",
     noDataForDay: "Нет данных за этот день",
     dayToggleHint: "Нажмите, чтобы исключить или вернуть день в расчёт",
     weekRange: "{{from}} – {{to}}",

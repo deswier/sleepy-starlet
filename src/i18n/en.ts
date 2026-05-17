@@ -186,6 +186,8 @@ const en = {
     weekIgnoresToday: "Today is excluded",
     pickWeek: "Pick week",
     daysIncluded: "Days included: {{days}}",
+    bedtime: "Bedtime",
+    wakeup: "Wake-up",
     noDataForDay: "No data for this day",
     dayToggleHint: "Tap to exclude or include a day",
     weekRange: "{{from}} – {{to}}",

@@ -22,7 +22,8 @@ import {
   ageInMonthsAt, wakeWindowForAge,
 } from "@/lib/sleep-utils";
 import { getSleepNorms } from "@/lib/sleep-norms";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, calcNightTimes, calcDayNightSleep, calcDayNightTimes, avgNightTimes } from "@/lib/analytics-calc";
+import { useTimeFormat } from "@/lib/use-time-format";
 import {
   isSameDay, startOfDay, subDays, addDays, differenceInMinutes, format,
 } from "date-fns";
@@ -170,6 +171,7 @@ export default function Analytics() {
 // ---------- DAY ----------
 function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean; initialSessions: SleepSession[] }) {
   const { t } = useTranslation();
+  const { fmtTime } = useTimeFormat();
   const navigate = useNavigate();
   const dayKey = `analytics.day.${childId}`;
   const [day, setDay] = useState<Date>(() => {
@@ -248,7 +250,12 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
   );
 
   const nightSleep = useMemo(
-    () => calcNightSleep(sessions, startOfDay(day), splitByDate, night),
+    () => calcDayNightSleep(sessions, startOfDay(day), splitByDate, night, now),
+    [sessions, day, night, splitByDate, isCurrentDay], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const dayNightTimes = useMemo(
+    () => calcDayNightTimes(sessions, startOfDay(day), splitByDate, night),
     [sessions, day, night, splitByDate],
   );
 
@@ -392,10 +399,25 @@ function DayView({ childId, birthDate, night, splitByDate, initialSessions }: { 
         sub={norm ? normLabel(t, totalSleep, norm.totalSleep) : undefined}
         arrow={<NormArrow value={totalSleep} norm={norm?.totalSleep} />} />
 
-      <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
-        value={nightSleep ? formatDuration(nightSleep) : "—"}
-        sub={norm && nightSleep ? normLabel(t, nightSleep, norm.nightSleep) : undefined}
-        arrow={<NormArrow value={nightSleep} norm={norm?.nightSleep} />} />
+      <Card className="p-5 shadow-card border-border/50">
+        <div className="flex items-center gap-3 text-muted-foreground text-sm mb-1">
+          <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"><Moon className="w-5 h-5" /></span>
+          {t("analytics.nightSleep")}
+        </div>
+        <div className={`font-display text-3xl font-semibold mt-2 flex items-center gap-2${nightSleep > 0 ? " mb-3" : ""}`}>
+          {nightSleep ? formatDuration(nightSleep) : "—"}
+          <NormArrow value={nightSleep} norm={norm?.nightSleep} />
+        </div>
+        {nightSleep > 0 && (
+          <SubGrid>
+            <SubItem label={t("analytics.bedtime")} value={dayNightTimes.bedtime ? fmtTime(dayNightTimes.bedtime) : "—"} />
+            <SubItem label={t("analytics.wakeup")} value={dayNightTimes.wakeup ? fmtTime(dayNightTimes.wakeup) : "—"} />
+          </SubGrid>
+        )}
+        {norm && nightSleep > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">{normLabel(t, nightSleep, norm.nightSleep)}</p>
+        )}
+      </Card>
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(totalWake)}
@@ -459,6 +481,7 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 // ---------- WEEK ----------
 function WeekView({ childId, birthDate, night, splitByDate }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean }) {
   const { t } = useTranslation();
+  const { fmtTime } = useTimeFormat();
   const navigate = useNavigate();
   const now = new Date();
   const today = startOfDay(now);
@@ -591,7 +614,8 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         .sort((a, b) => a.startMs - b.startMs);
 
       // Use the same calc functions as DayView so scores are computed identically.
-      const nightSleep = calcNightSleep(sessions, d, splitByDate, night, now);
+      const nightSleep = calcDayNightSleep(sessions, d, splitByDate, night, now);
+      const nightTimes = calcDayNightTimes(sessions, d, splitByDate, night);
       const totalDaySleep = calcTotalDaySleep(sessions, d, now);
       const totalSleep = nightSleep + totalDaySleep;
       const totalWake = calcTotalWake(sessions, d, now);
@@ -606,7 +630,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         if (diff >= 0 && diff < 12 * 60) wws.push(diff);
       }
 
-      return { totalSleep, totalWake, nightSleep, totalDaySleep, napsCount, napDurations, wws };
+      return { totalSleep, totalWake, nightSleep, nightTimes, totalDaySleep, napsCount, napDurations, wws };
     });
   }, [sessions, days, night, splitByDate]);
 
@@ -675,6 +699,7 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   const avgTotalSleep = avg(daysWithData.map((d) => d.totalSleep));
   const avgTotalWake = avg(daysWithData.map((d) => d.totalWake));
   const avgNightSleep = avg(daysWithData.filter((d) => d.nightSleep > 0).map((d) => d.nightSleep));
+  const weekNightTimes = avgNightTimes(daysWithData.filter((d) => d.nightSleep > 0).map((d) => d.nightTimes));
   const avgDaySleep = avg(daysWithData.map((d) => d.totalDaySleep));
 
   const allWWs = daysWithData.flatMap((d) => d.wws);
@@ -775,10 +800,28 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
         arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
 
-      <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.nightSleep")}
-        value={avgNightSleep ? formatDuration(avgNightSleep) : "—"} sub={t("analytics.avgPerDay")}
-        secondary={norm && avgNightSleep ? normLabel(t, avgNightSleep, norm.nightSleep) : undefined}
-        arrow={<NormArrow value={avgNightSleep} norm={norm?.nightSleep} />} />
+      <Card className="p-5 shadow-card border-border/50">
+        <div className="flex items-center gap-3 text-muted-foreground text-sm mb-1">
+          <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"><Moon className="w-5 h-5" /></span>
+          {t("analytics.nightSleep")}
+        </div>
+        <div className="font-display text-3xl font-semibold mt-2 flex items-center gap-2">
+          {avgNightSleep ? formatDuration(avgNightSleep) : "—"}
+          <NormArrow value={avgNightSleep} norm={norm?.nightSleep} />
+        </div>
+        <div className={`text-xs text-muted-foreground mt-1${avgNightSleep > 0 ? " mb-3" : ""}`}>
+          {t("analytics.avgPerDay")}
+        </div>
+        {avgNightSleep > 0 && (
+          <SubGrid>
+            <SubItem label={t("analytics.bedtime")} value={weekNightTimes.avgBedtime ? fmtTime(weekNightTimes.avgBedtime) : "—"} />
+            <SubItem label={t("analytics.wakeup")} value={weekNightTimes.avgWakeup ? fmtTime(weekNightTimes.avgWakeup) : "—"} />
+          </SubGrid>
+        )}
+        {norm && avgNightSleep > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgNightSleep, norm.nightSleep)}</p>
+        )}
+      </Card>
 
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")}
