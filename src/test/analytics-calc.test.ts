@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, type CalcSession } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, calcNightTimes, avgNightTimes, type CalcSession } from "@/lib/analytics-calc";
 
 // All times are constructed in LOCAL timezone to match how the component works.
 // Using Date(year, month, day, h, m) avoids UTC-offset ambiguity.
@@ -326,5 +326,135 @@ describe("totalSleep formula", () => {
     const day   = calcTotalDaySleep(sessions, startOfDay(), now);
     expect(night).toBe(0);
     expect(night + day).toBe(120);
+  });
+});
+
+// ─── calcNightTimes ───────────────────────────────────────────────────────────
+
+describe("calcNightTimes", () => {
+  it("returns start and end times of the attributed night session", () => {
+    const bedtime = at(21, 0, -1); // 21:00 yesterday
+    const wakeup  = at(7, 0);      // 07:00 today
+    const sessions: CalcSession[] = [s(bedtime, wakeup, "night")];
+    const result = calcNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(result.bedtime?.getHours()).toBe(21);
+    expect(result.bedtime?.getMinutes()).toBe(0);
+    expect(result.wakeup?.getHours()).toBe(7);
+    expect(result.wakeup?.getMinutes()).toBe(0);
+  });
+
+  it("returns null wakeup for an ongoing session", () => {
+    const sessions: CalcSession[] = [s(at(21, 0, -1), null, "night")];
+    const result = calcNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(result.bedtime).not.toBeNull();
+    expect(result.wakeup).toBeNull();
+  });
+
+  it("returns null for both when no night session attributed to the day", () => {
+    const sessions: CalcSession[] = [s(at(9, 0), at(10, 0), "day")];
+    const result = calcNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(result.bedtime).toBeNull();
+    expect(result.wakeup).toBeNull();
+  });
+
+  it("does not clip bedtime to calendar day — preserves exact session start", () => {
+    // Session starts yesterday at 20:30; bedtime must be 20:30, not 00:00.
+    const sessions: CalcSession[] = [s(at(20, 30, -1), at(6, 30), "night")];
+    const result = calcNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(result.bedtime?.getHours()).toBe(20);
+    expect(result.bedtime?.getMinutes()).toBe(30);
+    expect(result.wakeup?.getHours()).toBe(6);
+    expect(result.wakeup?.getMinutes()).toBe(30);
+  });
+
+  it("picks the same session as calcNightSleep when an ongoing and a completed session coexist", () => {
+    // now = 22:00; ongoing started 21:30 (30 min elapsed), completed 21:00→07:00 (10h)
+    // calcNightSleep: max(30, 600) = 600 → picks completed session
+    // calcNightTimes must also pick the completed session (bedtime 21:00)
+    const now = at(22, 0);
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), at(7, 0), "night"),  // completed: 10h
+      s(at(21, 30), null, "night"),          // ongoing: 30 min so far
+    ];
+    const duration = calcNightSleep(sessions, startOfDay(), false, NIGHT, now);
+    const times = calcNightTimes(sessions, startOfDay(), false, NIGHT, now);
+    expect(duration).toBe(600); // 10h = completed session
+    // bedtime must correspond to the same 10h session, not the 30-min ongoing one
+    expect(times.bedtime?.getHours()).toBe(21);
+    expect(times.bedtime?.getMinutes()).toBe(0);
+    expect(times.wakeup?.getHours()).toBe(7);
+  });
+
+  it("splitByDate: attributes by start date, not end date", () => {
+    // Session starts today 22:00 → ends tomorrow 06:00.
+    // splitByDate=true → attributed to today by start date.
+    const sessions: CalcSession[] = [s(at(22, 0), at(6, 0, 1), "night")];
+    const today = calcNightTimes(sessions, startOfDay(), true, NIGHT);
+    expect(today.bedtime?.getHours()).toBe(22);
+    // Not attributed to tomorrow in splitByDate mode.
+    const tomorrow = calcNightTimes(sessions, startOfDay(at(0, 0, 1)), true, NIGHT);
+    expect(tomorrow.bedtime).toBeNull();
+  });
+});
+
+// ─── avgNightTimes ────────────────────────────────────────────────────────────
+
+describe("avgNightTimes", () => {
+  function makeDate(h: number, m: number): Date {
+    const d = new Date(BASE);
+    d.setHours(h, m, 0, 0);
+    return d;
+  }
+
+  it("returns null when given empty array", () => {
+    const result = avgNightTimes([]);
+    expect(result.avgBedtime).toBeNull();
+    expect(result.avgWakeup).toBeNull();
+  });
+
+  it("returns the single value when given one entry", () => {
+    const result = avgNightTimes([{ bedtime: makeDate(21, 30), wakeup: makeDate(7, 0) }]);
+    expect(result.avgBedtime?.getHours()).toBe(21);
+    expect(result.avgBedtime?.getMinutes()).toBe(30);
+    expect(result.avgWakeup?.getHours()).toBe(7);
+    expect(result.avgWakeup?.getMinutes()).toBe(0);
+  });
+
+  it("averages symmetric bedtimes correctly", () => {
+    // 20:00 and 22:00 → avg 21:00
+    const result = avgNightTimes([
+      { bedtime: makeDate(20, 0), wakeup: null },
+      { bedtime: makeDate(22, 0), wakeup: null },
+    ]);
+    expect(result.avgBedtime?.getHours()).toBe(21);
+    expect(result.avgBedtime?.getMinutes()).toBe(0);
+  });
+
+  it("averages wakeup times correctly", () => {
+    // 06:00 and 08:00 → avg 07:00
+    const result = avgNightTimes([
+      { bedtime: null, wakeup: makeDate(6, 0) },
+      { bedtime: null, wakeup: makeDate(8, 0) },
+    ]);
+    expect(result.avgWakeup?.getHours()).toBe(7);
+    expect(result.avgWakeup?.getMinutes()).toBe(0);
+  });
+
+  it("handles midnight-crossing bedtimes with noon anchor", () => {
+    // 23:00 and 01:00 → avg 00:00
+    const result = avgNightTimes([
+      { bedtime: makeDate(23, 0), wakeup: null },
+      { bedtime: makeDate(1, 0), wakeup: null },
+    ]);
+    expect(result.avgBedtime?.getHours()).toBe(0);
+    expect(result.avgBedtime?.getMinutes()).toBe(0);
+  });
+
+  it("ignores null bedtimes when averaging", () => {
+    const result = avgNightTimes([
+      { bedtime: makeDate(21, 0), wakeup: null },
+      { bedtime: null, wakeup: null },
+    ]);
+    expect(result.avgBedtime?.getHours()).toBe(21);
   });
 });
