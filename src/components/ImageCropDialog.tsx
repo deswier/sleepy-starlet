@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { useTranslation } from "react-i18next";
+import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
 interface Props {
   file: File | null;
@@ -18,6 +25,7 @@ export default function ImageCropDialog({ file, open, onClose, onConfirm, size =
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const [showDiscardCrop, setShowDiscardCrop] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -60,10 +68,20 @@ export default function ImageCropDialog({ file, open, onClose, onConfirm, size =
     canvas.toBlob((b) => { if (b) onConfirm(b); }, "image/jpeg", 0.9);
   };
 
+  const cropIsDirty = zoom !== 1 || offset.x !== 0 || offset.y !== 0;
+  const handleCropOpenChange = (o: boolean) => {
+    if (!o && cropIsDirty) { setShowDiscardCrop(true); return; }
+    if (!o) onClose();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>{t("common.adjustPhoto")}</DialogTitle></DialogHeader>
+    <>
+    {/* Bottom-sheet drag-to-close is disabled on mobile because the inner
+        crop box uses pointer-drag gestures for panning the photo. Users close
+        via the Cancel button instead. */}
+    <ResponsiveDialog open={open} onOpenChange={handleCropOpenChange} dismissible={false}>
+      <ResponsiveDialogContent className="max-w-sm">
+        <ResponsiveDialogHeader><ResponsiveDialogTitle>{t("common.adjustPhoto")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
         {src && (
           <>
             <div
@@ -92,11 +110,17 @@ export default function ImageCropDialog({ file, open, onClose, onConfirm, size =
             </div>
           </>
         )}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button onClick={confirm}>{t("common.save")}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <ResponsiveDialogFooter>
+          <Button type="button" variant="ghost" onClick={() => { if (cropIsDirty) { setShowDiscardCrop(true); } else { onClose(); } }}>{t("common.cancel")}</Button>
+          <Button type="button" onClick={confirm}>{t("common.save")}</Button>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
+    <DiscardChangesDialog
+      open={showDiscardCrop}
+      onOpenChange={setShowDiscardCrop}
+      onDiscard={onClose}
+    />
+    </>
   );
 }

@@ -1,7 +1,13 @@
 import { lazy, memo, Suspense, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogTrigger,
+} from "@/components/ui/responsive-dialog";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { Input } from "@/components/ui/input";
@@ -21,6 +27,7 @@ import { useTimeFormat } from "@/lib/use-time-format";
 import { isToday, isYesterday, startOfDay, isSameDay, addDays, subDays, format, differenceInMinutes } from "date-fns";
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import { sessionDay, type NightWindow } from "@/pages/Analytics";
+import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
 // Both components are only used inside dialogs — lazy-loaded to keep
 // the History page bundle minimal.
@@ -42,6 +49,8 @@ export default function History() {
   };
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [addFormDirty, setAddFormDirty] = useState(false);
+  const [showDiscardAdd, setShowDiscardAdd] = useState(false);
   const [day, setDay] = useState<Date>(() => {
     const q = searchParams.get("date");
     if (q) {
@@ -105,6 +114,12 @@ export default function History() {
 
   const invalidateSessions = () =>
     queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
+
+  const handleAddOpenChange = (o: boolean) => {
+    if (!o && addFormDirty) { setShowDiscardAdd(true); return; }
+    setShowAdd(o);
+    if (!o) setAddFormDirty(false);
+  };
 
   useEffect(() => {
     if (!activeChild) return;
@@ -170,26 +185,26 @@ export default function History() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("history.title")}</h2>
-        {canCreateSleep(role) && <Dialog open={showAdd} onOpenChange={setShowAdd}>
-          <DialogTrigger asChild>
+        {canCreateSleep(role) && <ResponsiveDialog open={showAdd} onOpenChange={handleAddOpenChange}>
+          <ResponsiveDialogTrigger asChild>
             <Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-1" /> {t("common.add")}</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{t("sleep.addPast")}</DialogTitle></DialogHeader>
+          </ResponsiveDialogTrigger>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader><ResponsiveDialogTitle>{t("sleep.addPast")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
             <Suspense fallback={null}>
-              <SleepForm mode="manual" defaultDate={day} onDone={() => { setShowAdd(false); invalidateSessions(); }} />
+              <SleepForm mode="manual" defaultDate={day} onDirtyChange={setAddFormDirty} onDone={() => { setShowAdd(false); setAddFormDirty(false); invalidateSessions(); }} />
             </Suspense>
-          </DialogContent>
-        </Dialog>}
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>}
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 w-full">
         <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
           <ChevronLeft className="w-4 h-4" />
         </Button>
         <Input type="date" value={format(day, "yyyy-MM-dd")} max={format(today, "yyyy-MM-dd")}
           onChange={(e) => e.target.value && setDay(startOfDay(new Date(e.target.value)))}
-          className="text-center" />
+          className="text-center flex-1" />
         <Button variant="ghost" size="icon"
           disabled={isSameDay(day, today)}
           onClick={() => setDay(addDays(day, 1))}>
@@ -231,6 +246,12 @@ export default function History() {
           <SleepDetail session={open} onClose={() => setOpen(null)} onChange={invalidateSessions} />
         </Suspense>
       )}
+
+      <DiscardChangesDialog
+        open={showDiscardAdd}
+        onOpenChange={setShowDiscardAdd}
+        onDiscard={() => { setShowAdd(false); setAddFormDirty(false); }}
+      />
     </section>
   );
 }

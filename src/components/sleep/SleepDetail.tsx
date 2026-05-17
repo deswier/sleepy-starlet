@@ -1,5 +1,19 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
+import {
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { sessionDuration, SleepSession, fmtDate } from "@/lib/sleep-utils";
@@ -11,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { useChildRole, canEditAnySleep, canEditOwnSleep } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
 export default function SleepDetail({ session, onClose, onChange }: {
   session: SleepSession; onClose: () => void; onChange: () => void;
@@ -27,6 +42,10 @@ export default function SleepDetail({ session, onClose, onChange }: {
   const [creatorLoaded, setCreatorLoaded] = useState(false);
   const [interruptions, setInterruptions] = useState<{ start_time: string; end_time: string | null; method_name: string | null }[]>([]);
   const [editing, setEditing] = useState(false);
+  const [editFormDirty, setEditFormDirty] = useState(false);
+  const [showDiscardEdit, setShowDiscardEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Fetch every related row in a single round-trip via Supabase joins
   // instead of issuing 4 separate queries. Cancel-ref prevents stale
@@ -74,18 +93,25 @@ export default function SleepDetail({ session, onClose, onChange }: {
   }, [session.id]);
 
   const del = async () => {
-    if (!confirm(t("common.confirmDelete"))) return;
+    setDeleting(true);
     const { error } = await supabase.from("sleep_sessions").delete().eq("id", session.id);
+    setDeleting(false);
+    setConfirmDelete(false);
     if (error) toast.error(error.message);
     else { toast.success(t("common.deleted")); onChange(); onClose(); }
   };
 
+  const handleOpenChange = (o: boolean) => {
+    if (!o && editing && editFormDirty) { setShowDiscardEdit(true); return; }
+    onClose();
+  };
+
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{editing ? t("sleep.editSleep") : t("sleep.details")}</DialogTitle></DialogHeader>
+    <ResponsiveDialog open onOpenChange={handleOpenChange}>
+      <ResponsiveDialogContent>
+        <ResponsiveDialogHeader><ResponsiveDialogTitle>{editing ? t("sleep.editSleep") : t("sleep.details")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
         {editing ? (
-          <SleepForm mode="edit" sessionId={session.id} initial={session} onDone={() => { setEditing(false); onChange(); onClose(); }} />
+          <SleepForm mode="edit" sessionId={session.id} initial={session} onDirtyChange={setEditFormDirty} onDone={() => { setEditing(false); setEditFormDirty(false); onChange(); onClose(); }} />
         ) : (
           <div className="space-y-3 text-sm">
             <Row label={t("sleep.start")} value={fmtDate(session.start_time)} />
@@ -125,18 +151,45 @@ export default function SleepDetail({ session, onClose, onChange }: {
             )}
             {canEdit && (
               <div className="flex gap-2 pt-3">
-                <Button variant="outline" className="flex-1" onClick={() => setEditing(true)}>
+                <Button variant="outline" className="flex-1" onClick={() => { setEditing(true); setEditFormDirty(false); }}>
                   <Pencil className="w-4 h-4 mr-1" /> {t("common.edit")}
                 </Button>
-                <Button variant="outline" className="flex-1 text-destructive hover:text-destructive" onClick={del}>
+                <Button type="button" variant="outline" className="flex-1 text-destructive hover:text-destructive"
+                  onClick={() => setConfirmDelete(true)}>
                   <Trash2 className="w-4 h-4 mr-1" /> {t("common.delete")}
                 </Button>
               </div>
             )}
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </ResponsiveDialogContent>
+      <DiscardChangesDialog
+        open={showDiscardEdit}
+        onOpenChange={setShowDiscardEdit}
+        onDiscard={() => { setEditing(false); setEditFormDirty(false); onClose(); }}
+      />
+      <ResponsiveAlertDialog
+        open={confirmDelete}
+        onOpenChange={(o) => !o && !deleting && setConfirmDelete(false)}
+        dismissible={!deleting}
+      >
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>{t("common.confirmDelete")}</ResponsiveAlertDialogTitle>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel disabled={deleting}>{t("common.cancel")}</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); del(); }}
+            >
+              {t("common.delete")}
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
+    </ResponsiveDialog>
   );
 }
 

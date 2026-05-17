@@ -1,9 +1,15 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Moon, Sun, Plus, Pause, Play, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogTrigger,
+} from "@/components/ui/responsive-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +27,7 @@ import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "
 import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
+import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
 export default function CurrentSleep() {
   const navigate = useNavigate();
@@ -50,6 +57,8 @@ export default function CurrentSleep() {
   const [now, setNow] = useState(new Date());
   const [starting, setStarting] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [manualFormDirty, setManualFormDirty] = useState(false);
+  const [showDiscardManual, setShowDiscardManual] = useState(false);
   const [editingStart, setEditingStart] = useState(false);
   const [startDraft, setStartDraft] = useState<Date>(new Date());
   const [methods, setMethods] = useState<{ id: string; name: string }[]>([]);
@@ -58,6 +67,8 @@ export default function CurrentSleep() {
   const [confirmWake, setConfirmWake] = useState<{
     session: SleepSession; interruptions: DraftInterruption[];
   } | null>(null);
+  const [wakeFormDirty, setWakeFormDirty] = useState(false);
+  const [showDiscardWake, setShowDiscardWake] = useState(false);
   // Inline edit of active interruption start.
   const [editingIntrStart, setEditingIntrStart] = useState(false);
   const [intrStartDraft, setIntrStartDraft] = useState<Date>(new Date());
@@ -65,6 +76,9 @@ export default function CurrentSleep() {
   const [stopIntrDraft, setStopIntrDraft] = useState<{
     id: string; start: Date; end: Date; methodId: string;
   } | null>(null);
+  // Snapshot of stopIntrDraft values at open time — used for dirty comparison.
+  const stopIntrInitialRef = useRef<{ start: Date; end: Date; methodId: string } | null>(null);
+  const [showDiscardStopIntr, setShowDiscardStopIntr] = useState(false);
 
   useEffect(() => {
     if (!childLoading && !activeChild) navigate("/child/new");
@@ -204,12 +218,10 @@ export default function CurrentSleep() {
     if (!active || !user) return;
     if (interruption) {
       // Resume flow — open draft modal: edit start, end (default = now), settling method.
-      setStopIntrDraft({
-        id: interruption.id,
-        start: new Date(interruption.start_time),
-        end: new Date(),
-        methodId: "",
-      });
+      const initStart = new Date(interruption.start_time);
+      const initEnd = new Date();
+      stopIntrInitialRef.current = { start: initStart, end: initEnd, methodId: "" };
+      setStopIntrDraft({ id: interruption.id, start: initStart, end: initEnd, methodId: "" });
     } else {
       // Pause flow — start interruption immediately. Editable via pencil icon.
       const startIso = new Date().toISOString();
@@ -296,6 +308,28 @@ export default function CurrentSleep() {
   const canEditActive = canEditAnySleep(role) || (canEditOwnSleep(role) && ownsActive);
   const canStart = canCreateSleep(role);
 
+  const handleManualOpenChange = (o: boolean) => {
+    if (!o && manualFormDirty) { setShowDiscardManual(true); return; }
+    setShowManual(o);
+    if (!o) setManualFormDirty(false);
+  };
+
+  const stopIntrIsDirty = !!stopIntrDraft && !!stopIntrInitialRef.current && (
+    stopIntrDraft.start.getTime() !== stopIntrInitialRef.current.start.getTime() ||
+    stopIntrDraft.end.getTime() !== stopIntrInitialRef.current.end.getTime() ||
+    stopIntrDraft.methodId !== stopIntrInitialRef.current.methodId
+  );
+
+  const handleStopIntrOpenChange = (o: boolean) => {
+    if (!o && stopIntrIsDirty) { setShowDiscardStopIntr(true); return; }
+    if (!o) { setStopIntrDraft(null); stopIntrInitialRef.current = null; }
+  };
+
+  const handleWakeOpenChange = (o: boolean) => {
+    if (!o && wakeFormDirty) { setShowDiscardWake(true); return; }
+    if (!o) { cancelWake(); setWakeFormDirty(false); }
+  };
+
   return (
     <section className="px-4 max-w-md mx-auto w-full">
       {checkingActive ? (
@@ -330,17 +364,17 @@ export default function CurrentSleep() {
           <Button size="lg" className="w-full h-14 text-base shadow-glow" onClick={startSleep} disabled={!canStart || starting}>
             <Moon className="w-5 h-5 mr-2" /> {t("sleep.startSleep")}
           </Button>
-          {canStart && <Dialog open={showManual} onOpenChange={setShowManual}>
-            <DialogTrigger asChild>
+          {canStart && <ResponsiveDialog open={showManual} onOpenChange={handleManualOpenChange}>
+            <ResponsiveDialogTrigger asChild>
               <Button variant="ghost" className="w-full mt-3"><Plus className="w-4 h-4 mr-1" /> {t("sleep.addManually")}</Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>{t("sleep.addSleep")}</DialogTitle></DialogHeader>
+            </ResponsiveDialogTrigger>
+            <ResponsiveDialogContent>
+              <ResponsiveDialogHeader><ResponsiveDialogTitle>{t("sleep.addSleep")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
               <Suspense fallback={null}>
-                <SleepForm mode="manual" onDone={() => { setShowManual(false); load(); }} />
+                <SleepForm mode="manual" onDirtyChange={setManualFormDirty} onDone={() => { setShowManual(false); setManualFormDirty(false); load(); }} />
               </Suspense>
-            </DialogContent>
-          </Dialog>}
+            </ResponsiveDialogContent>
+          </ResponsiveDialog>}
         </Card>
       ) : (
         <Card className="p-8 text-center bg-night text-primary-foreground shadow-glow border-0 mt-4">
@@ -409,9 +443,9 @@ export default function CurrentSleep() {
         </Card>
       )}
       {/* Stop-interruption modal — draft-based. */}
-      <Dialog open={!!stopIntrDraft} onOpenChange={(o) => !o && setStopIntrDraft(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{t("sleep.endInterruption")}</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!stopIntrDraft} onOpenChange={handleStopIntrOpenChange}>
+        <ResponsiveDialogContent>
+          <ResponsiveDialogHeader><ResponsiveDialogTitle>{t("sleep.endInterruption")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
           {stopIntrDraft && (
             <div className="space-y-3">
               <DateTimeField label={t("sleep.start")} value={stopIntrDraft.start}
@@ -443,18 +477,18 @@ export default function CurrentSleep() {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       {/* Wake Up confirmation modal — full edit before saving. */}
-      <Dialog open={!!confirmWake} onOpenChange={(o) => { if (!o) cancelWake(); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t("sleep.wakeUp", {
+      <ResponsiveDialog open={!!confirmWake} onOpenChange={handleWakeOpenChange}>
+        <ResponsiveDialogContent>
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>{t("sleep.wakeUp", {
               context: activeChild?.gender === "male" ? "male"
                 : activeChild?.gender === "female" ? "female" : "other",
-            })}</DialogTitle>
-          </DialogHeader>
+            })}</ResponsiveDialogTitle>
+          </ResponsiveDialogHeader>
           {confirmWake && (
             <Suspense fallback={null}>
               <SleepForm
@@ -462,12 +496,29 @@ export default function CurrentSleep() {
                 sessionId={confirmWake.session.id}
                 initial={confirmWake.session}
                 initialInterruptions={confirmWake.interruptions}
-                onDone={() => { setConfirmWake(null); load(); }}
+                onDirtyChange={setWakeFormDirty}
+                onDone={() => { setConfirmWake(null); setWakeFormDirty(false); load(); }}
               />
             </Suspense>
           )}
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
+      <DiscardChangesDialog
+        open={showDiscardManual}
+        onOpenChange={setShowDiscardManual}
+        onDiscard={() => { setShowManual(false); setManualFormDirty(false); }}
+      />
+      <DiscardChangesDialog
+        open={showDiscardStopIntr}
+        onOpenChange={setShowDiscardStopIntr}
+        onDiscard={() => { setStopIntrDraft(null); stopIntrInitialRef.current = null; }}
+      />
+      <DiscardChangesDialog
+        open={showDiscardWake}
+        onOpenChange={setShowDiscardWake}
+        onDiscard={() => { cancelWake(); setWakeFormDirty(false); }}
+      />
     </section>
   );
 }
