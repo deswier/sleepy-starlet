@@ -78,6 +78,28 @@
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    /* Reserve space below the native status bar / safe-area so content
+       starts below it. The visible lavender colour is provided by the
+       ::before pseudo-element below (fixed, so it never scrolls away). */
+    padding-top: env(safe-area-inset-top);
+    background-color: #A78BDA;
+  }
+  /* Fixed lavender panel that sits permanently behind the system status bar.
+     position:fixed keeps it in the viewport regardless of document scroll,
+     so child elements scrolling into the safe-area region cannot cover it.
+     pointer-events:none lets touches pass through (the OS owns this area
+     on iOS anyway). On Android with setOverlaysWebView(false) the safe-area
+     inset is 0 so this element has no height and is a no-op. */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top);
+    background-color: #A78BDA;
+    z-index: 9999;
+    pointer-events: none;
   }
   button, a, [role="button"] {
     touch-action: manipulation;

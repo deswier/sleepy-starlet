@@ -17,9 +17,15 @@ import { RequiredMark } from "@/components/RequiredMark";
 import { authErrorMessage } from "@/lib/auth-errors";
 import { getAuthRedirectUrl } from "@/lib/native";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog";
 
 interface DeletionCheck {
   blocking: { id: string; name: string }[];
@@ -305,50 +311,54 @@ export default function Profile() {
           </Button>
         </Card>
 
-        <AlertDialog open={deleteOpen} onOpenChange={(o) => !o && !deleteBusy && setDeleteOpen(false)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
+        <ResponsiveAlertDialog
+          open={deleteOpen}
+          onOpenChange={(o) => !o && !deleteBusy && setDeleteOpen(false)}
+          dismissible={!deleteBusy}
+        >
+          <ResponsiveAlertDialogContent>
+            <ResponsiveAlertDialogHeader>
+              <ResponsiveAlertDialogTitle>
                 {scenario === "blocked"
                   ? t("remove.deleteProfileBlockedTitle")
                   : t("remove.deleteProfileTitle")}
-              </AlertDialogTitle>
-              <AlertDialogDescription className="whitespace-pre-line">
+              </ResponsiveAlertDialogTitle>
+              <ResponsiveAlertDialogDescription className="whitespace-pre-line">
                 {scenario === "blocked"   && t("remove.deleteProfileBodyBlocked")}
                 {scenario === "solo"      && t("remove.deleteProfileBodySolo")}
                 {scenario === "ownerWithOthers" && t("remove.deleteProfileBodyOwnerWithOthers")}
                 {scenario === "default"   && t("remove.deleteProfileBodyDefault")}
-              </AlertDialogDescription>
+              </ResponsiveAlertDialogDescription>
               {deleteCheck && (deleteCheck.blocking.length + deleteCheck.solo_destructive.length + deleteCheck.unlink.length) > 0 && (
                 <ul className="mt-2 text-xs text-muted-foreground space-y-0.5">
                   {[...deleteCheck.blocking, ...deleteCheck.solo_destructive, ...deleteCheck.unlink]
                     .map((c) => <li key={c.id}>• {c.name}</li>)}
                 </ul>
               )}
-            </AlertDialogHeader>
-            <AlertDialogFooter>
+            </ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogFooter>
               {scenario === "blocked" ? (
                 <>
-                  <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => { setDeleteOpen(false); navigate("/settings"); }}>
+                  <ResponsiveAlertDialogCancel>{t("common.cancel")}</ResponsiveAlertDialogCancel>
+                  <ResponsiveAlertDialogAction onClick={() => { setDeleteOpen(false); navigate("/settings"); }}>
                     {t("remove.deleteProfileGoToChild")}
-                  </AlertDialogAction>
+                  </ResponsiveAlertDialogAction>
                 </>
               ) : (
                 <>
-                  <AlertDialogCancel disabled={deleteBusy}>{t("common.cancel")}</AlertDialogCancel>
-                  <AlertDialogAction
+                  <ResponsiveAlertDialogCancel disabled={deleteBusy}>{t("common.cancel")}</ResponsiveAlertDialogCancel>
+                  <ResponsiveAlertDialogAction
                     disabled={deleteBusy}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={(e) => { e.preventDefault(); confirmDelete(); }}
                   >
                     {deleteBusy ? t("remove.deleting") : t("remove.deleteForever")}
-                  </AlertDialogAction>
+                  </ResponsiveAlertDialogAction>
                 </>
               )}
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+            </ResponsiveAlertDialogFooter>
+          </ResponsiveAlertDialogContent>
+        </ResponsiveAlertDialog>
       </div>
     </main>
   );

@@ -462,13 +462,13 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
   const today = startOfDay(new Date());
   const value = format(day, "yyyy-MM-dd");
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 w-full">
       <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
         <ChevronLeft className="w-4 h-4" />
       </Button>
       <Input type="date" value={value} max={format(today, "yyyy-MM-dd")}
         onChange={(e) => e.target.value && setDay(startOfDay(new Date(e.target.value)))}
-        className="text-center" />
+        className="text-center flex-1" />
       <Button variant="ghost" size="icon"
         disabled={isSameDay(day, today)}
         onClick={() => setDay(addDays(day, 1))}>
