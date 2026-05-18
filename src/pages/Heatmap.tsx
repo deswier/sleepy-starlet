@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSwipeBack, SWIPE_BACK_EDGE_THRESHOLD_PX } from "@/hooks/use-swipe-back";
 import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ type InterruptionLite = {
 export default function Heatmap() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const handleBack = () => navigate(-1);
   const { activeChild } = useChildren();
   const [searchParams] = useSearchParams();
   const isOnline = useNetworkStatus();
@@ -48,6 +50,8 @@ export default function Heatmap() {
   const [fromCache, setFromCache] = useState(false);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
+
+  useSwipeBack({ enabled: openSession === null, onBack: handleBack });
 
   const today = startOfDay(new Date());
   // Hard ceiling: last visible day = today.
@@ -122,7 +126,10 @@ export default function Heatmap() {
   }, [anchor]);
 
   // ── drag handlers ────────────────────────────────────────────────────────
-  const startDrag = (clientX: number, clientY: number) => {
+  // fromTouch=true activates the edge-zone guard so the left-edge swipe-back
+  // gesture is never claimed by the date-drag. Mouse drag skips the guard.
+  const startDrag = (clientX: number, clientY: number, fromTouch = false) => {
+    if (fromTouch && clientX <= SWIPE_BACK_EDGE_THRESHOLD_PX) return;
     dragStartX.current = clientX;
     dragStartY.current = clientY;
     dragStartAnchorMs.current = anchor.getTime();
@@ -340,7 +347,7 @@ export default function Heatmap() {
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-2xl mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-2xl font-semibold mb-1">{t("analytics.heatmapTitle")}</h1>
@@ -380,7 +387,7 @@ export default function Heatmap() {
             <div
               ref={dragContainerRef}
               className="select-none"
-              onTouchStart={(e) => startDrag(e.touches[0].clientX, e.touches[0].clientY)}
+              onTouchStart={(e) => startDrag(e.touches[0].clientX, e.touches[0].clientY, true)}
               onTouchEnd={(e) => endDrag(e.changedTouches[0].clientX)}
               onMouseDown={(e) => { e.preventDefault(); startDrag(e.clientX, e.clientY); }}
               onMouseMove={(e) => { if (dragStartX.current !== null) moveDrag(e.clientX, e.clientY); }}
