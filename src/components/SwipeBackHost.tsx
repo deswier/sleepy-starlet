@@ -40,6 +40,11 @@ const SETTLE_FALLBACK_MS = SETTLE_MS + 120;
 // Maximum time we wait for navigate(-1) to reflect in useLocation before
 // forcing cleanup. Should never fire in normal use.
 const COMMIT_FALLBACK_MS = 300;
+// How long we keep the behind layer visible after location matches before
+// revealing the front. One rAF (~16 ms) is not enough — the newly mounted
+// route needs time to receive its data and repaint. 150 ms covers a typical
+// Supabase round-trip so the behind hides any loading-state flash.
+const COMMIT_REVEAL_DELAY_MS = 150;
 
 type Props = {
   // Called with no argument to render the front (current) layer, and with a
@@ -116,9 +121,9 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
   // Timer for the committing-phase fallback (forces cleanup if navigate(-1)
   // never resolves to the expected location).
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // rAF handle used to defer behind-layer removal by one frame after location
-  // matches so the browser paints the front in its final position first.
-  const commitRafRef = useRef(0);
+  // Timer handle used to defer behind-layer removal by COMMIT_REVEAL_DELAY_MS
+  // after location matches. Cleared on new gesture, unmount, or fallback.
+  const commitRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearCommitTimer = () => {
     if (commitTimerRef.current !== null) {
@@ -128,6 +133,10 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
   };
 
   const resetFront = () => {
+    if (commitRevealTimerRef.current !== null) {
+      clearTimeout(commitRevealTimerRef.current);
+      commitRevealTimerRef.current = null;
+    }
     // Restore the real window scroll to match what was shown in the behind layer.
     // Called only on the success path (navigate(-1) committed or fallback timer).
     window.scrollTo(0, behindScrollYRef.current);
@@ -141,10 +150,10 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
 
   // Once navigate(-1) resolves, location updates to match behindLocation.
   // We snap the front to its final position immediately (it is covered by the
-  // behind layer which is at z-index:3 during committing) then wait one rAF
-  // before removing the behind. This guarantees the browser paints the front
-  // at least once in its correct position — under the behind — so when the
-  // behind disappears there is no jump, skeleton flash, or loading-state blink.
+  // behind layer which is at z-index:3 during committing) then wait
+  // COMMIT_REVEAL_DELAY_MS before removing the behind. This gives the newly
+  // mounted route time to receive data and repaint so the reveal is clean
+  // with no skeleton flash or loading-state blink.
   useEffect(() => {
     if (phase !== "committing" || !behindLocation) return;
     if (location.key !== behindLocation.key) return;
@@ -156,15 +165,15 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
       frontRef.current.style.transition = "";
     }
 
-    const rafId = requestAnimationFrame(() => {
-      commitRafRef.current = 0;
+    const timerId = setTimeout(() => {
+      commitRevealTimerRef.current = null;
       setBehindLocation(null);
       setPhase("idle");
-    });
-    commitRafRef.current = rafId;
+    }, COMMIT_REVEAL_DELAY_MS);
+    commitRevealTimerRef.current = timerId;
     return () => {
-      cancelAnimationFrame(rafId);
-      commitRafRef.current = 0;
+      clearTimeout(timerId);
+      commitRevealTimerRef.current = null;
     };
   // clearCommitTimer / scroll / DOM refs are stable; setState setters are stable.
   }, [location, phase, behindLocation]);
@@ -188,9 +197,9 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
       clearTimeout(commitTimerRef.current);
       commitTimerRef.current = null;
     }
-    if (commitRafRef.current !== 0) {
-      cancelAnimationFrame(commitRafRef.current);
-      commitRafRef.current = 0;
+    if (commitRevealTimerRef.current !== null) {
+      clearTimeout(commitRevealTimerRef.current);
+      commitRevealTimerRef.current = null;
     }
     settleGenRef.current++;
 
@@ -318,10 +327,10 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
         clearTimeout(commitTimerRef.current);
         commitTimerRef.current = null;
       }
-      if (commitRafRef.current !== 0) {
+      if (commitRevealTimerRef.current !== null) {
+        clearTimeout(commitRevealTimerRef.current);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        cancelAnimationFrame(commitRafRef.current);
-        commitRafRef.current = 0;
+        commitRevealTimerRef.current = null;
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
       settleGenRef.current++;
@@ -361,8 +370,8 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
             inset: 0,
             // Raised to 3 during committing so it sits above the front layer
             // (z-index:2). After navigate(-1) resolves the front is snapped to
-            // x:0 while still covered here; the rAF-delayed removal then
-            // reveals the front cleanly with no skeleton/loading-state flash.
+            // x:0 while still covered here; removal is deferred by
+            // COMMIT_REVEAL_DELAY_MS so the front can settle before reveal.
             zIndex: phase === "committing" ? 3 : 1,
             paddingTop: "env(safe-area-inset-top)",
             // Scrollable so scrollTop can be set to match window.scrollY of the
