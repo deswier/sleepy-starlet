@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, type Location } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,6 +9,7 @@ import { ChildProvider } from "@/contexts/ChildContext";
 import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import RouteTracker from "@/components/RouteTracker";
+import SwipeBackHost from "@/components/SwipeBackHost";
 
 
 const Index     = lazy(() => import("./pages/Index"));
@@ -38,6 +39,32 @@ const queryClient = new QueryClient({
 });
 const fallback = <div className="min-h-screen bg-hero" />;
 
+// Rendered twice during an active swipe-back: once with the current location
+// (front layer) and once with the frozen previous location (behind layer).
+// When `location` is undefined, <Routes> falls back to the router context's
+// current location.
+function AppRoutes({ location }: { location?: Location }) {
+  return (
+    <Suspense fallback={fallback}>
+      <Routes location={location}>
+        <Route path="/auth" element={<Auth />} />
+        <Route path="/child/new" element={<RequireAuth><NewChild /></RequireAuth>} />
+        <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+        <Route path="/conflicts" element={<RequireAuth><Conflicts /></RequireAuth>} />
+        <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
+        <Route path="/history" element={<RequireAuth><AppShell><History /></AppShell></RequireAuth>} />
+        <Route path="/analytics" element={<RequireAuth><AppShell><Analytics /></AppShell></RequireAuth>} />
+        <Route path="/heatmap" element={<RequireAuth><Heatmap /></RequireAuth>} />
+        <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+        <Route path="/deleted-children" element={<RequireAuth><DeletedChildren /></RequireAuth>} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
+  );
+}
+
+const renderAppRoutes = (location?: Location) => <AppRoutes location={location} />;
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -47,21 +74,7 @@ const App = () => (
         <AuthProvider>
           <ChildProvider>
             <RouteTracker />
-            <Suspense fallback={fallback}>
-              <Routes>
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/child/new" element={<RequireAuth><NewChild /></RequireAuth>} />
-                <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-                <Route path="/conflicts" element={<RequireAuth><Conflicts /></RequireAuth>} />
-                <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
-                <Route path="/history" element={<RequireAuth><AppShell><History /></AppShell></RequireAuth>} />
-                <Route path="/analytics" element={<RequireAuth><AppShell><Analytics /></AppShell></RequireAuth>} />
-                <Route path="/heatmap" element={<RequireAuth><Heatmap /></RequireAuth>} />
-                <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
-                <Route path="/deleted-children" element={<RequireAuth><DeletedChildren /></RequireAuth>} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
+            <SwipeBackHost renderRoutes={renderAppRoutes} />
           </ChildProvider>
         </AuthProvider>
       </BrowserRouter>
