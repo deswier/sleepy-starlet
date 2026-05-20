@@ -375,47 +375,58 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
 
   const isActive = phase !== "idle";
 
-  const frontStyle: CSSProperties | undefined = isActive
-    ? {
-        position: "relative",
-        zIndex: 2,
-        // During committing the front is at translate3d(100vw,0,0) — off-screen.
-        // Omit will-change so the new route's position:fixed children (e.g.
-        // AppShell's bottom nav) are NOT contained within the off-screen div,
-        // preventing a layout shift when the layers swap on cleanup.
-        // Omit box-shadow too: it would appear as a thin sliver at the right edge.
-        ...(phase !== "committing" && {
+  // During committing the behind is at z-index:3 and fully covers the front, so
+  // the front needs no special styles. Keeping position:relative/zIndex:2 here
+  // creates a stacking-context/compositor layer whose demotion at the moment the
+  // behind is removed leaves a 1px seam at the left edge of the revealed page.
+  // Stripping these styles while the front is still off-screen and covered makes
+  // the layer demotion invisible, so the reveal is clean.
+  const frontStyle: CSSProperties | undefined =
+    phase === "dragging" || phase === "settling-success" || phase === "settling-cancel"
+      ? {
+          position: "relative",
+          zIndex: 2,
           willChange: "transform",
           boxShadow: "-12px 0 28px hsl(var(--foreground) / 0.12)",
-        }),
-      }
-    : undefined;
+        }
+      : undefined;
 
   return (
     <SwipeBackContext.Provider value={controllerValue}>
-      {isActive && behindLocation && (
-        <div
-          ref={behindContainerRef}
-          style={{
-            position: "fixed",
-            inset: 0,
-            // Raised to 3 during committing so it sits above the front layer
-            // (z-index:2). After navigate(-1) resolves the front is snapped to
-            // x:0 while still covered here; removal is deferred by
-            // COMMIT_REVEAL_DELAY_MS so the front can settle before reveal.
-            zIndex: phase === "committing" ? 3 : 1,
-            paddingTop: "env(safe-area-inset-top)",
-            // Scrollable so scrollTop can be set to match window.scrollY of the
-            // behind page. overflow-x is hidden to prevent horizontal artefacts.
-            overflowY: "auto",
-            overflowX: "hidden",
-          }}
-        >
-          {renderRoutes(behindLocation)}
+      {/* position:static + overflow-x:hidden clips document-flow artefacts at
+          the left/right viewport edge without touching position:fixed children
+          (AppShell nav, body::before status-bar overlay). The behind container
+          is fixed so it is NOT clipped here — but removing overflow-x from the
+          behind container itself eliminates the GPU-compositor paint boundary
+          at x=0 that caused the left ghost strip on History. */}
+      <div style={{ overflowX: "hidden" }}>
+        {isActive && behindLocation && (
+          <div
+            ref={behindContainerRef}
+            style={{
+              position: "fixed",
+              inset: 0,
+              // Raised to 3 during committing so it covers the front (which has
+              // no special z-index during this phase). After navigate(-1) resolves
+              // the front is snapped to x:0 while still covered here; removal is
+              // deferred by COMMIT_REVEAL_DELAY_MS so the front can settle before reveal.
+              zIndex: phase === "committing" ? 3 : 1,
+              // body has padding-top:env(safe-area-inset-top) which shifts normal-flow
+              // content below the status bar. This fixed container ignores that offset,
+              // so we apply the same padding manually so the behind AppShell header
+              // aligns with where the front renders it.
+              paddingTop: "env(safe-area-inset-top)",
+              // Scrollable so scrollTop can be set to match window.scrollY of the
+              // behind page.
+              overflowY: "auto",
+            }}
+          >
+            {renderRoutes(behindLocation)}
+          </div>
+        )}
+        <div ref={frontRef} style={frontStyle}>
+          {renderRoutes()}
         </div>
-      )}
-      <div ref={frontRef} style={frontStyle}>
-        {renderRoutes()}
       </div>
     </SwipeBackContext.Provider>
   );
