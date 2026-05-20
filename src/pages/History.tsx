@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useEffect, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +43,12 @@ export default function History() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const realLocation = useLocation();
+  // Unique per-mount suffix so two simultaneous History instances (front layer
+  // + behind layer during swipe-back) never share the same Supabase channel
+  // name. supabase.channel() is a singleton registry keyed by name; a shared
+  // name returns the already-subscribed object and adding callbacks to it
+  // after subscribe() throws.
+  const instanceId = useRef(Math.random().toString(36).slice(2)).current;
   const splitByDate = !!settings?.split_night_sleep_by_date;
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? "19:00",
@@ -133,7 +139,7 @@ export default function History() {
   useEffect(() => {
     if (!activeChild) return;
     const ch = supabase
-      .channel(`history-${activeChild.id}`)
+      .channel(`history-${activeChild.id}-${instanceId}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
         () => invalidateSessions())
