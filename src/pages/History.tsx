@@ -77,12 +77,20 @@ export default function History() {
   // Skip when we are the behind layer: firing setSearchParams from a non-current
   // page emits a REPLACE navigation that causes an extra SwipeBackHost commit
   // and can leave a ghost artifact during the reveal transition.
+  // Also skip when params are unchanged: React Router's replaceState always
+  // generates a new location.key even for the same URL. On the initial mount
+  // after a swipe-back, the URL already reflects the correct day (it came from
+  // behindLocation). Calling setSearchParams here would produce a no-op URL
+  // change that still creates a new location.key, which causes SwipeBackHost's
+  // commit-effect cleanup to cancel the 150ms reveal timer — leaving the behind
+  // layer stuck at z-index:3 and visible as the left ghost strip.
   useEffect(() => {
     if (isBehindLayer) return;
     const today = startOfDay(new Date());
     const params = new URLSearchParams(searchParams);
     if (isSameDay(day, today)) params.delete("date");
     else params.set("date", format(day, "yyyy-MM-dd"));
+    if (params.toString() === searchParams.toString()) return;
     if (import.meta.env.DEV) {
       console.log(
         `[History:setSearchParams] realPath=${realLocation.pathname}[${realLocation.key}]`,
