@@ -67,8 +67,18 @@ export default function History() {
     return startOfDay(new Date());
   });
 
+  // True when this instance is the swipe-back behind layer rather than the
+  // real current page. useLocation() always returns the real router location,
+  // so when we're rendering the /history route via <Routes location={behind}>
+  // but the real path is something else, we know we're behind.
+  const isBehindLayer = realLocation.pathname !== "/history";
+
   // Sync day → URL so reload/share preserves it; also clear param when today.
+  // Skip when we are the behind layer: firing setSearchParams from a non-current
+  // page emits a REPLACE navigation that causes an extra SwipeBackHost commit
+  // and can leave a ghost artifact during the reveal transition.
   useEffect(() => {
+    if (isBehindLayer) return;
     const today = startOfDay(new Date());
     const params = new URLSearchParams(searchParams);
     if (isSameDay(day, today)) params.delete("date");
@@ -78,12 +88,11 @@ export default function History() {
         `[History:setSearchParams] realPath=${realLocation.pathname}[${realLocation.key}]`,
         `day=${format(day, "yyyy-MM-dd")}`,
         `params=${params.toString() || "(empty)"}`,
-        `isBehindLayer=${realLocation.pathname !== "/history"}`,
       );
     }
     setSearchParams(params, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day]);
+  }, [day, isBehindLayer]);
 
   // react-query handles: race conditions on rapid day switches (stale results
   // discarded), retry on transient errors, cache (revisiting a day is instant
@@ -92,11 +101,13 @@ export default function History() {
   const dayKey = format(day, "yyyy-MM-dd");
   const { data: sessions = [], isLoading: loading } = useQuery({
     queryKey: [...SESSIONS_QUERY_KEY, activeChild?.id, dayKey],
-    enabled: !!activeChild,
+    enabled: !!activeChild && !isBehindLayer,
     // Always refetch on mount: if a sleep was added/edited on another page
     // (e.g. CurrentSleep) while History was unmounted, the realtime sub here
     // wasn't active, and the 30s staleTime would otherwise serve stale data.
-    refetchOnMount: "always",
+    // Skip the mount-refetch when we are the swipe-back behind layer so the
+    // behind instance does not invalidate the shared cache mid-animation.
+    refetchOnMount: isBehindLayer ? false : "always",
     // Run the queryFn even when offline so we can serve the local cache.
     networkMode: "always",
     queryFn: async () => {
@@ -137,7 +148,7 @@ export default function History() {
   };
 
   useEffect(() => {
-    if (!activeChild) return;
+    if (!activeChild || isBehindLayer) return;
     const ch = supabase
       .channel(`history-${activeChild.id}-${instanceId}`)
       .on("postgres_changes",

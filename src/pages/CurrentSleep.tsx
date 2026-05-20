@@ -32,6 +32,10 @@ import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 export default function CurrentSleep() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  // Unique per-mount suffix — see History.tsx for the same pattern.
+  // supabase.channel(name) is a singleton registry; two simultaneous CurrentSleep
+  // instances (front + behind layer during swipe-back) must not share a name.
+  const instanceId = useRef(Math.random().toString(36).slice(2)).current;
   const { activeChild, loading: childLoading, settings } = useChildren();
   const { user } = useAuth();
   const { role } = useChildRole();
@@ -140,7 +144,7 @@ export default function CurrentSleep() {
   useEffect(() => {
     if (!activeChild) return;
     const ch = supabase
-      .channel(`sleep-${activeChild.id}`)
+      .channel(`sleep-${activeChild.id}-${instanceId}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
         () => load())
@@ -154,7 +158,7 @@ export default function CurrentSleep() {
   useEffect(() => {
     if (!active?.id) return;
     const ch = supabase
-      .channel(`intr-${active.id}`)
+      .channel(`intr-${active.id}-${instanceId}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_interruptions",
           filter: `sleep_session_id=eq.${active.id}` },
