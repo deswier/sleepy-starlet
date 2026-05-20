@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,9 @@ export default function DeletedChildren() {
   };
   useEffect(() => { load(); }, [user?.id]);
 
+  const handleBack = () => navigate(-1);
+  useSwipeBack({ onBack: handleBack });
+
   const restore = async (id: string) => {
     const { error } = await supabase.rpc("restore_child", { _child_id: id } as any);
     if (error) { toast.error(error.message || t("remove.restoreFailed")); return; }
@@ -87,7 +91,7 @@ export default function DeletedChildren() {
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("remove.deletedChildren")}</h1>

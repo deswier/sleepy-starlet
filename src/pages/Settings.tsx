@@ -31,6 +31,7 @@ import { useChildRole, canCreateSleep, canEditChild, canManageMembers, type Chil
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 
 type Member = {
   user_id: string;
@@ -253,6 +254,9 @@ export default function Settings() {
     navigate("/");
   };
 
+  const handleBack = () => navigate(-1);
+  useSwipeBack({ enabled: !confirmAction && !pendingRemoval && !pendingPhoto, onBack: handleBack });
+
   if (!activeChild || !s) return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
@@ -344,7 +348,7 @@ export default function Settings() {
     return (
       <main className="min-h-screen bg-hero p-4">
         <div className="max-w-md mx-auto py-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+          <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
           </Button>
           <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
@@ -365,7 +369,7 @@ export default function Settings() {
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>

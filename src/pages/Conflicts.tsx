@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 import { ArrowLeft } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,9 @@ export default function Conflicts() {
     return () => { off(); };
   }, []);
 
+  const handleBack = () => navigate(-1);
+  useSwipeBack({ onBack: handleBack });
+
   const choose = async (c: ConflictRow, side: "mine" | "theirs") => {
     await resolveConflict(c.id!, side);
     toast.success(t("conflicts.resolved"));
@@ -28,7 +32,7 @@ export default function Conflicts() {
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-2">{t("conflicts.title")}</h1>

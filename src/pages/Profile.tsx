@@ -16,6 +16,7 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { RequiredMark } from "@/components/RequiredMark";
 import { authErrorMessage } from "@/lib/auth-errors";
 import { getAuthRedirectUrl } from "@/lib/native";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -195,10 +196,13 @@ export default function Profile() {
 
   const initials = (name || user?.email || "?").trim().split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
+  const handleBack = () => navigate(-1);
+  useSwipeBack({ enabled: !pendingFile && !deleteOpen, onBack: handleBack });
+
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button type="button" variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("profile.title")}</h1>

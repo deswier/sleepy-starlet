@@ -9,7 +9,7 @@ import {
   ResponsiveDialogTrigger,
 } from "@/components/ui/responsive-dialog";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
@@ -42,6 +42,7 @@ export default function History() {
   const { role } = useChildRole();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const realLocation = useLocation();
   const splitByDate = !!settings?.split_night_sleep_by_date;
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? "19:00",
@@ -66,6 +67,14 @@ export default function History() {
     const params = new URLSearchParams(searchParams);
     if (isSameDay(day, today)) params.delete("date");
     else params.set("date", format(day, "yyyy-MM-dd"));
+    if (import.meta.env.DEV) {
+      console.log(
+        `[History:setSearchParams] realPath=${realLocation.pathname}[${realLocation.key}]`,
+        `day=${format(day, "yyyy-MM-dd")}`,
+        `params=${params.toString() || "(empty)"}`,
+        `isBehindLayer=${realLocation.pathname !== "/history"}`,
+      );
+    }
     setSearchParams(params, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day]);

@@ -67,10 +67,17 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
     if (!stackInitializedRef.current) {
       stackInitializedRef.current = true;
       stackRef.current = [location];
+      if (import.meta.env.DEV) {
+        console.log(`[SwipeBack:stack] INIT → ${location.pathname}[${location.key}]`);
+      }
       return;
     }
     const top = stack[stack.length - 1];
     if (top && top.key === location.key) return;
+
+    const devBefore = import.meta.env.DEV
+      ? stack.map((l) => `${l.pathname}[${l.key}]`).join(" → ")
+      : "";
 
     if (navType === "POP") {
       const idx = stack.findIndex((l) => l.key === location.key);
@@ -80,6 +87,14 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
       stack[stack.length - 1] = location;
     } else {
       stack.push(location);
+    }
+
+    if (import.meta.env.DEV) {
+      console.log(
+        `[SwipeBack:stack] nav=${navType} +${location.pathname}[${location.key}]`,
+        `\n  before: ${devBefore}`,
+        `\n  after:  ${stackRef.current.map((l) => `${l.pathname}[${l.key}]`).join(" → ")}`,
+      );
     }
   }, [location, navType]);
 
@@ -156,6 +171,14 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
   // with no skeleton flash or loading-state blink.
   useEffect(() => {
     if (phase !== "committing" || !behindLocation) return;
+    if (import.meta.env.DEV) {
+      console.log(
+        `[SwipeBack:commit] phase=committing`,
+        `loc=${location.pathname}[${location.key}]`,
+        `behind=${behindLocation.pathname}[${behindLocation.key}]`,
+        `match=${location.key === behindLocation.key}`,
+      );
+    }
     if (location.key !== behindLocation.key) return;
     clearCommitTimer();
 
@@ -180,9 +203,17 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
 
   const beginSwipeBack = useCallback((onBack: () => void): boolean => {
     const stack = stackRef.current;
+    if (import.meta.env.DEV) {
+      console.log(
+        `[SwipeBack:begin] stack(${stack.length}): ${stack.map((l) => `${l.pathname}[${l.key}]`).join(" → ")}`,
+      );
+    }
     if (stack.length < 2) return false;
     const prev = stack[stack.length - 2];
     if (!prev) return false;
+    if (import.meta.env.DEV) {
+      console.log(`[SwipeBack:begin] prev=${prev.pathname}[${prev.key}] → rendering behind layer`);
+    }
 
     // Cancel any in-progress settle / commit from a prior gesture.
     if (settleTimerRef.current !== null) {
