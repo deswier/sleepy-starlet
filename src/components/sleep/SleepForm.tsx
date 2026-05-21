@@ -31,9 +31,11 @@ interface Props {
    * local state to avoid modifying the DB before the user confirms).
    */
   initialInterruptions?: DraftInterruption[];
+  /** Called whenever dirty state changes — parent uses this to guard modal close. */
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
-export default function SleepForm({ mode, sessionId, initial, onDone, defaultDate, initialInterruptions }: Props) {
+export default function SleepForm({ mode, sessionId, initial, onDone, defaultDate, initialInterruptions, onDirtyChange }: Props) {
   const { t } = useTranslation();
   const { activeChild, settings } = useChildren();
   const { user } = useAuth();
@@ -67,6 +69,11 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
   const [busy, setBusy] = useState(false);
   const [typeManuallySet, setTypeManuallySet] = useState(mode === "edit");
   const [interruptions, setInterruptions] = useState<DraftInterruption[]>(initialInterruptions ?? []);
+  const [dirty, setDirty] = useState(false);
+
+  // Report dirty state changes to parent so the parent can guard modal close.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty]);
 
   useEffect(() => {
     if (!activeChild) return;
@@ -194,14 +201,14 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-3">
-        <DateTimeField label={t("sleep.start")} value={start} onChange={setStart} />
-        <DateTimeField label={t("sleep.end")} value={end} onChange={setEnd} />
+        <DateTimeField label={t("sleep.start")} value={start} onChange={(d) => { setStart(d); setDirty(true); }} />
+        <DateTimeField label={t("sleep.end")} value={end} onChange={(d) => { setEnd(d); setDirty(true); }} />
       </div>
 
       {settings?.show_interruptions !== false && (
         <InterruptionsEditor
           value={interruptions}
-          onChange={setInterruptions}
+          onChange={(v) => { setInterruptions(v); setDirty(true); }}
           methods={methods}
           showMethod={settings?.show_falling_asleep_method !== false}
           sleepStart={start}
@@ -216,7 +223,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
         <CollapsibleContent className="space-y-4 pt-2">
           <div>
             <Label>{t("sleep.type")}</Label>
-            <Select value={sleepType} onValueChange={(v: any) => { setSleepType(v); setTypeManuallySet(true); }}>
+            <Select value={sleepType} onValueChange={(v: any) => { setSleepType(v); setTypeManuallySet(true); setDirty(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="day">{t("sleep.day")}</SelectItem>
@@ -227,7 +234,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
           {settings?.show_sleep_place !== false && (
             <div>
               <Label>{t("sleep.place")}</Label>
-              <Select value={placeId || "none"} onValueChange={(v) => setPlaceId(v === "none" ? "" : v)}>
+              <Select value={placeId || "none"} onValueChange={(v) => { setPlaceId(v === "none" ? "" : v); setDirty(true); }}>
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
@@ -239,7 +246,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
           {settings?.show_falling_asleep_method !== false && (
             <div>
               <Label>{t("sleep.settling")}</Label>
-              <Select value={methodId || "none"} onValueChange={(v) => setMethodId(v === "none" ? "" : v)}>
+              <Select value={methodId || "none"} onValueChange={(v) => { setMethodId(v === "none" ? "" : v); setDirty(true); }}>
                 <SelectTrigger><SelectValue placeholder={t("common.select")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t("common.none")}</SelectItem>
@@ -254,7 +261,7 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
           )}
           <div>
             <Label>{t("sleep.comment")}</Label>
-            <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} />
+            <Textarea value={comment} onChange={(e) => { setComment(e.target.value); setDirty(true); }} rows={2} />
           </div>
         </CollapsibleContent>
       </Collapsible>

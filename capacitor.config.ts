@@ -10,6 +10,15 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
   },
+  plugins: {
+    Keyboard: {
+      // Resize the <body> element when the software keyboard appears so the
+      // WebView content scrolls above the keyboard instead of being covered.
+      // "body" is the correct mode for non-Ionic Capacitor apps on iOS.
+      resize: "body",
+      resizeOnFullScreen: true,
+    },
+  },
 };
 
 export default config;

@@ -7,12 +7,30 @@
 import { Capacitor } from "@capacitor/core";
 import { App, type URLOpenListenerEvent } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
+import { StatusBar, Style } from "@capacitor/status-bar";
 import { supabase } from "@/integrations/supabase/client";
 import { devError } from "@/lib/logger";
 
 export const NATIVE_AUTH_REDIRECT = "app.lullaby://auth/callback";
 
 export const isNative = () => Capacitor.isNativePlatform();
+
+// Sets status-bar appearance on native platforms.
+// Android: disables overlay so the bar sits above the web view, then paints it lavender.
+// iOS: keeps default transparent overlay (the CSS strip in AppShell shows through);
+//      just sets dark icons so they're legible on the lavender background.
+export async function initStatusBar(): Promise<void> {
+  if (!isNative()) return;
+  try {
+    if (Capacitor.getPlatform() === "android") {
+      await StatusBar.setOverlaysWebView({ overlay: false });
+      await StatusBar.setBackgroundColor({ color: "#A78BDA" });
+    }
+    await StatusBar.setStyle({ style: Style.Dark });
+  } catch (e) {
+    devError("initStatusBar failed", e);
+  }
+}
 
 export const getAuthRedirectUrl = () =>
   isNative() ? NATIVE_AUTH_REDIRECT : window.location.origin;

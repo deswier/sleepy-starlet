@@ -15,6 +15,10 @@ const en = {
     cachedData: "Showing previously loaded data",
     adjustPhoto: "Adjust photo",
     loadFailed: "Failed to load data. Check your connection.",
+    discardChanges: "Discard changes?",
+    discardChangesDesc: "You have unsaved changes. Are you sure you want to close?",
+    continueEditing: "Continue editing",
+    discard: "Discard",
   },
   auth: {
     signIn: "Sign in", signUp: "Sign up", email: "Email", password: "Password",

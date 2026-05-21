@@ -1,9 +1,15 @@
-import { lazy, memo, Suspense, useEffect, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogTrigger,
+} from "@/components/ui/responsive-dialog";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useChildren } from "@/contexts/ChildContext";
@@ -21,6 +27,7 @@ import { useTimeFormat } from "@/lib/use-time-format";
 import { isToday, isYesterday, startOfDay, isSameDay, addDays, subDays, format, differenceInMinutes } from "date-fns";
 import { useChildRole, canCreateSleep } from "@/hooks/useChildRole";
 import { sessionDay, type NightWindow } from "@/pages/Analytics";
+import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
 // Both components are only used inside dialogs — lazy-loaded to keep
 // the History page bundle minimal.
@@ -35,6 +42,13 @@ export default function History() {
   const { role } = useChildRole();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const realLocation = useLocation();
+  // Unique per-mount suffix so two simultaneous History instances (front layer
+  // + behind layer during swipe-back) never share the same Supabase channel
+  // name. supabase.channel() is a singleton registry keyed by name; a shared
+  // name returns the already-subscribed object and adding callbacks to it
+  // after subscribe() throws.
+  const instanceId = useRef(Math.random().toString(36).slice(2)).current;
   const splitByDate = !!settings?.split_night_sleep_by_date;
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? "19:00",
@@ -42,6 +56,8 @@ export default function History() {
   };
   const [open, setOpen] = useState<SleepSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [addFormDirty, setAddFormDirty] = useState(false);
+  const [showDiscardAdd, setShowDiscardAdd] = useState(false);
   const [day, setDay] = useState<Date>(() => {
     const q = searchParams.get("date");
     if (q) {
@@ -51,15 +67,40 @@ export default function History() {
     return startOfDay(new Date());
   });
 
+  // True when this instance is the swipe-back behind layer rather than the
+  // real current page. useLocation() always returns the real router location,
+  // so when we're rendering the /history route via <Routes location={behind}>
+  // but the real path is something else, we know we're behind.
+  const isBehindLayer = realLocation.pathname !== "/history";
+
   // Sync day → URL so reload/share preserves it; also clear param when today.
+  // Skip when we are the behind layer: firing setSearchParams from a non-current
+  // page emits a REPLACE navigation that causes an extra SwipeBackHost commit
+  // and can leave a ghost artifact during the reveal transition.
+  // Also skip when params are unchanged: React Router's replaceState always
+  // generates a new location.key even for the same URL. On the initial mount
+  // after a swipe-back, the URL already reflects the correct day (it came from
+  // behindLocation). Calling setSearchParams here would produce a no-op URL
+  // change that still creates a new location.key, which causes SwipeBackHost's
+  // commit-effect cleanup to cancel the 150ms reveal timer — leaving the behind
+  // layer stuck at z-index:3 and visible as the left ghost strip.
   useEffect(() => {
+    if (isBehindLayer) return;
     const today = startOfDay(new Date());
     const params = new URLSearchParams(searchParams);
     if (isSameDay(day, today)) params.delete("date");
     else params.set("date", format(day, "yyyy-MM-dd"));
+    if (params.toString() === searchParams.toString()) return;
+    if (import.meta.env.DEV) {
+      console.log(
+        `[History:setSearchParams] realPath=${realLocation.pathname}[${realLocation.key}]`,
+        `day=${format(day, "yyyy-MM-dd")}`,
+        `params=${params.toString() || "(empty)"}`,
+      );
+    }
     setSearchParams(params, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day]);
+  }, [day, isBehindLayer]);
 
   // react-query handles: race conditions on rapid day switches (stale results
   // discarded), retry on transient errors, cache (revisiting a day is instant
@@ -68,11 +109,13 @@ export default function History() {
   const dayKey = format(day, "yyyy-MM-dd");
   const { data: sessions = [], isLoading: loading } = useQuery({
     queryKey: [...SESSIONS_QUERY_KEY, activeChild?.id, dayKey],
-    enabled: !!activeChild,
+    enabled: !!activeChild && !isBehindLayer,
     // Always refetch on mount: if a sleep was added/edited on another page
     // (e.g. CurrentSleep) while History was unmounted, the realtime sub here
     // wasn't active, and the 30s staleTime would otherwise serve stale data.
-    refetchOnMount: "always",
+    // Skip the mount-refetch when we are the swipe-back behind layer so the
+    // behind instance does not invalidate the shared cache mid-animation.
+    refetchOnMount: isBehindLayer ? false : "always",
     // Run the queryFn even when offline so we can serve the local cache.
     networkMode: "always",
     queryFn: async () => {
@@ -106,10 +149,16 @@ export default function History() {
   const invalidateSessions = () =>
     queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
 
+  const handleAddOpenChange = (o: boolean) => {
+    if (!o && addFormDirty) { setShowDiscardAdd(true); return; }
+    setShowAdd(o);
+    if (!o) setAddFormDirty(false);
+  };
+
   useEffect(() => {
-    if (!activeChild) return;
+    if (!activeChild || isBehindLayer) return;
     const ch = supabase
-      .channel(`history-${activeChild.id}`)
+      .channel(`history-${activeChild.id}-${instanceId}`)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "sleep_sessions", filter: `child_id=eq.${activeChild.id}` },
         () => invalidateSessions())
@@ -170,26 +219,26 @@ export default function History() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("history.title")}</h2>
-        {canCreateSleep(role) && <Dialog open={showAdd} onOpenChange={setShowAdd}>
-          <DialogTrigger asChild>
+        {canCreateSleep(role) && <ResponsiveDialog open={showAdd} onOpenChange={handleAddOpenChange}>
+          <ResponsiveDialogTrigger asChild>
             <Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-1" /> {t("common.add")}</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{t("sleep.addPast")}</DialogTitle></DialogHeader>
+          </ResponsiveDialogTrigger>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader><ResponsiveDialogTitle>{t("sleep.addPast")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
             <Suspense fallback={null}>
-              <SleepForm mode="manual" defaultDate={day} onDone={() => { setShowAdd(false); invalidateSessions(); }} />
+              <SleepForm mode="manual" defaultDate={day} onDirtyChange={setAddFormDirty} onDone={() => { setShowAdd(false); setAddFormDirty(false); invalidateSessions(); }} />
             </Suspense>
-          </DialogContent>
-        </Dialog>}
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>}
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 w-full">
         <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
           <ChevronLeft className="w-4 h-4" />
         </Button>
         <Input type="date" value={format(day, "yyyy-MM-dd")} max={format(today, "yyyy-MM-dd")}
           onChange={(e) => e.target.value && setDay(startOfDay(new Date(e.target.value)))}
-          className="text-center" />
+          className="text-center flex-1" />
         <Button variant="ghost" size="icon"
           disabled={isSameDay(day, today)}
           onClick={() => setDay(addDays(day, 1))}>
@@ -231,6 +280,12 @@ export default function History() {
           <SleepDetail session={open} onClose={() => setOpen(null)} onChange={invalidateSessions} />
         </Suspense>
       )}
+
+      <DiscardChangesDialog
+        open={showDiscardAdd}
+        onOpenChange={setShowDiscardAdd}
+        onDiscard={() => { setShowAdd(false); setAddFormDirty(false); }}
+      />
     </section>
   );
 }

@@ -15,6 +15,10 @@ const ru = {
     cachedData: "Отображаются ранее загруженные данные",
     adjustPhoto: "Изменить фото",
     loadFailed: "Не удалось загрузить данные. Проверьте соединение.",
+    discardChanges: "Отменить изменения?",
+    discardChangesDesc: "Есть несохранённые изменения. Закрыть без сохранения?",
+    continueEditing: "Продолжить редактирование",
+    discard: "Закрыть без сохранения",
   },
   auth: {
     signIn: "Войти", signUp: "Регистрация", email: "Email", password: "Пароль",

@@ -8,9 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus, LogOut } from "lucide-react";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog";
 import { useRef } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +31,7 @@ import { useChildRole, canCreateSleep, canEditChild, canManageMembers, type Chil
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 
 type Member = {
   user_id: string;
@@ -196,13 +203,17 @@ export default function Settings() {
     if (error) toast.error(error.message); else { toast.success(t("common.saved")); load(); }
   };
 
-  const removeMember = async (uid: string) => {
-    if (!activeChild || !isAdmin) return;
-    if (!confirm(t("settings.confirmRemoveMember"))) return;
+  const [pendingRemoval, setPendingRemoval] = useState<{ uid: string } | null>(null);
+  const [removalBusy, setRemovalBusy] = useState(false);
+  const confirmRemoveMember = async () => {
+    if (!activeChild || !isAdmin || !pendingRemoval) return;
+    setRemovalBusy(true);
     const { error } = await supabase.rpc("remove_child_member", {
       _child_id: activeChild.id,
-      _member_user_id: uid,
+      _member_user_id: pendingRemoval.uid,
     } as any);
+    setRemovalBusy(false);
+    setPendingRemoval(null);
     if (error) toast.error(error.message);
     else { toast.success(t("common.deleted")); load(); }
   };
@@ -243,6 +254,9 @@ export default function Settings() {
     navigate("/");
   };
 
+  const handleBack = () => navigate(-1);
+  useSwipeBack({ enabled: !confirmAction && !pendingRemoval && !pendingPhoto, onBack: handleBack });
+
   if (!activeChild || !s) return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
@@ -275,30 +289,58 @@ export default function Settings() {
   ) : null;
 
   const removeDialog = (
-    <AlertDialog open={!!confirmAction} onOpenChange={(o) => !o && !confirmBusy && setConfirmAction(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {confirmAction === "leave" ? t("remove.leaveTitle") : t("remove.deleteChildTitle")}
-          </AlertDialogTitle>
-          <AlertDialogDescription className="whitespace-pre-line">
-            {confirmAction === "leave"
-              ? (isAdmin ? t("remove.leaveOwnerBody") : t("remove.leaveBody"))
-              : t("remove.deleteChildBody")}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={confirmBusy}>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={confirmBusy}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={(e) => { e.preventDefault(); confirmAction === "leave" ? handleLeave() : handleSoftDelete(); }}
-          >
-            {confirmAction === "leave" ? t("remove.fromAccount") : t("remove.deleteCompletely")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <>
+      <ResponsiveAlertDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => !o && !confirmBusy && setConfirmAction(null)}
+        dismissible={!confirmBusy}
+      >
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>
+              {confirmAction === "leave" ? t("remove.leaveTitle") : t("remove.deleteChildTitle")}
+            </ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription className="whitespace-pre-line">
+              {confirmAction === "leave"
+                ? (isAdmin ? t("remove.leaveOwnerBody") : t("remove.leaveBody"))
+                : t("remove.deleteChildBody")}
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel disabled={confirmBusy}>{t("common.cancel")}</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              disabled={confirmBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); confirmAction === "leave" ? handleLeave() : handleSoftDelete(); }}
+            >
+              {confirmAction === "leave" ? t("remove.fromAccount") : t("remove.deleteCompletely")}
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
+      <ResponsiveAlertDialog
+        open={!!pendingRemoval}
+        onOpenChange={(o) => !o && !removalBusy && setPendingRemoval(null)}
+        dismissible={!removalBusy}
+      >
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>{t("settings.removeMember")}</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>{t("settings.confirmRemoveMember")}</ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel disabled={removalBusy}>{t("common.cancel")}</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              disabled={removalBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); confirmRemoveMember(); }}
+            >
+              {t("settings.removeMember")}
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
+    </>
   );
 
   // Viewers cannot edit any settings — show a read-only minimal screen.
@@ -306,7 +348,7 @@ export default function Settings() {
     return (
       <main className="min-h-screen bg-hero p-4">
         <div className="max-w-md mx-auto py-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+          <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
             <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
           </Button>
           <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
@@ -327,7 +369,7 @@ export default function Settings() {
   return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+        <Button type="button" variant="ghost" size="sm" onClick={handleBack} className="mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
         </Button>
         <h1 className="font-display text-3xl font-semibold mb-6">{t("settings.title")}</h1>
@@ -394,8 +436,8 @@ export default function Settings() {
                           <SelectItem value="admin">{t("settings.role_admin")}</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
-                        onClick={() => removeMember(mem.user_id)} title={t("settings.removeMember")}>
+                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive"
+                        onClick={() => setPendingRemoval({ uid: mem.user_id })} title={t("settings.removeMember")}>
                         <UserMinus className="w-4 h-4" />
                       </Button>
                     </>
@@ -435,7 +477,6 @@ export default function Settings() {
           ))}
           {canManageMembers(role) && (
             <div className="space-y-2">
-              <Label className="text-xs">{t("settings.inviteRole")}</Label>
               <div className="flex gap-2">
                 <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
                   <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
@@ -449,6 +490,7 @@ export default function Settings() {
                   <Plus className="w-4 h-4 mr-1" /> {t("settings.generateCode")}
                 </Button>
               </div>
+              <Label className="text-xs text-muted-foreground">{t("settings.inviteRole")}</Label>
             </div>
           )}
         </Card>

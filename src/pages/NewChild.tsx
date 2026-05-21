@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -104,6 +105,8 @@ export default function NewChild() {
     navigate(last && last !== "/child/new" ? last : "/", { replace: true });
   };
 
+  useSwipeBack({ enabled: kids.length > 0, onBack: goBack });
+
   if (childrenLoading) {
     return <div className="min-h-screen bg-hero" />;
   }
@@ -119,7 +122,7 @@ export default function NewChild() {
       <div className="w-full max-w-md py-8">
         <div className="flex items-center justify-between mb-4">
           {kids.length > 0 ? (
-            <Button variant="ghost" size="sm" onClick={goBack}>
+            <Button type="button" variant="ghost" size="sm" onClick={goBack}>
               <ArrowLeft className="w-4 h-4 mr-1" /> {t("common.back")}
             </Button>
           ) : <span />}
