@@ -70,15 +70,10 @@ export default function Settings() {
     const id = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
-  const tt = t;
   const formatRemaining = (expiresAtIso: string) => {
     const ms = new Date(expiresAtIso).getTime() - now;
-    if (ms <= 0) return tt("settings.expired");
-    const totalMin = Math.floor(ms / 60_000);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    if (h <= 0) return `${m}m`;
-    return `${h}h ${m}m`;
+    if (ms <= 0) return t("settings.expired");
+    return fmtDuration(Math.floor(ms / 60_000));
   };
 
   const onPickChildPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,10 +198,10 @@ export default function Settings() {
       t("settings.shareStep1"),
       t("settings.shareStep2"),
       t("settings.shareStep3"),
+      t("settings.shareExpiry", { time: formatRemaining(expiresAt) }),
       "",
       code,
       "",
-      t("settings.shareExpiry", { time: formatRemaining(expiresAt) }),
     ].join("\n");
 
     if (typeof navigator.share === "function") {
