@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus, LogOut } from "lucide-react";
+import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus, LogOut, Share2 } from "lucide-react";
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -194,6 +194,31 @@ export default function Settings() {
   const copyCode = async (code: string) => {
     await navigator.clipboard.writeText(code);
     toast.success(t("settings.copied"));
+  };
+
+  const shareCode = async (code: string, expiresAt: string) => {
+    const text = [
+      t("settings.shareTitle"),
+      "",
+      t("settings.shareStep1"),
+      t("settings.shareStep2"),
+      t("settings.shareStep3"),
+      "",
+      code,
+      "",
+      t("settings.shareExpiry", { time: formatRemaining(expiresAt) }),
+    ].join("\n");
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ text });
+      } catch {
+        // User cancelled the share sheet — no feedback needed.
+      }
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast.success(t("settings.shareFallback"));
+    }
   };
 
   const changeMemberRole = async (uid: string, newRole: "viewer" | "user" | "admin") => {
@@ -453,10 +478,13 @@ export default function Settings() {
             <div key={inv.id} className="bg-muted/50 rounded-lg px-3 py-2 space-y-2">
               <div className="flex items-center gap-2">
                 <span className="font-mono font-semibold tracking-widest text-lg">{inv.code}</span>
-                <Button size="icon" variant="ghost" className="h-7 w-7 ml-auto" onClick={() => copyCode(inv.code)}>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7 ml-auto" onClick={() => copyCode(inv.code)}>
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => revokeInvite(inv.id)}>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => shareCode(inv.code, inv.expires_at)}>
+                  <Share2 className="w-3.5 h-3.5" />
+                </Button>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => revokeInvite(inv.id)}>
                   <X className="w-3.5 h-3.5" />
                 </Button>
               </div>
