@@ -60,6 +60,8 @@ export default function CurrentSleep() {
   });
   const [now, setNow] = useState(new Date());
   const [starting, setStarting] = useState(false);
+  const [waking, setWaking] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [manualFormDirty, setManualFormDirty] = useState(false);
   const [showDiscardManual, setShowDiscardManual] = useState(false);
@@ -187,7 +189,14 @@ export default function CurrentSleep() {
         sleep_type: type,
         created_by_user_id: user.id,
       });
-      if (error) toast.error(error.message); else load();
+      if (error) {
+        // 23505 = unique_violation: another device started sleep between our
+        // sleep_overlaps check and this INSERT (one_active_session_per_child index).
+        toast.error(error.code === "23505" ? t("sleep.alreadySleeping") : error.message);
+        load();
+      } else {
+        load();
+      }
     } finally {
       setStarting(false);
     }
@@ -197,43 +206,96 @@ export default function CurrentSleep() {
   // the user confirms. This prevents the previous "write + rollback on cancel"
   // pattern that could leave the DB inconsistent on browser crash.
   const wakeUp = async () => {
-    if (!active) return;
-    const endTime = new Date();
-    const endIso = endTime.toISOString();
-    // Fetch the full interruptions list for the current session so we can
-    // build a complete draft (we need settling_method_id which load() omits).
-    const { data: intrs } = await supabase
-      .from("sleep_interruptions")
-      .select("id,start_time,end_time,settling_method_id")
-      .eq("sleep_session_id", active.id)
-      .order("start_time");
-    const draftIntrs: DraftInterruption[] = (intrs ?? []).map((r: any) => ({
-      id: r.id,
-      start_time: new Date(r.start_time),
-      // Close any open interruption at the wake-up time (draft only).
-      end_time: r.end_time ? new Date(r.end_time) : endTime,
-      settling_method_id: r.settling_method_id,
-    }));
-    setConfirmWake({ session: { ...active, end_time: endIso }, interruptions: draftIntrs });
+    if (waking || !active) return;
+    setWaking(true);
+    try {
+      const endTime = new Date();
+      const endIso = endTime.toISOString();
+      // Fetch the full interruptions list for the current session so we can
+      // build a complete draft (we need settling_method_id which load() omits).
+      const { data: intrs } = await supabase
+        .from("sleep_interruptions")
+        .select("id,start_time,end_time,settling_method_id")
+        .eq("sleep_session_id", active.id)
+        .order("start_time");
+      const draftIntrs: DraftInterruption[] = (intrs ?? []).map((r: any) => ({
+        id: r.id,
+        start_time: new Date(r.start_time),
+        // Close any open interruption at the wake-up time (draft only).
+        end_time: r.end_time ? new Date(r.end_time) : endTime,
+        settling_method_id: r.settling_method_id,
+      }));
+      setConfirmWake({ session: { ...active, end_time: endIso }, interruptions: draftIntrs });
+    } finally {
+      setWaking(false);
+    }
   };
 
   // FSM transitions for the pause/resume button.
   const toggleInterruption = async () => {
-    if (!active || !user) return;
-    if (interruption) {
-      // Resume flow — open draft modal: edit start, end (default = now), settling method.
-      const initStart = new Date(interruption.start_time);
-      const initEnd = new Date();
-      stopIntrInitialRef.current = { start: initStart, end: initEnd, methodId: "" };
-      setStopIntrDraft({ id: interruption.id, start: initStart, end: initEnd, methodId: "" });
-    } else {
-      // Pause flow — start interruption immediately. Editable via pencil icon.
-      const startIso = new Date().toISOString();
-      const { error } = await supabase.from("sleep_interruptions").insert({
-        sleep_session_id: active.id, start_time: startIso, created_by_user_id: user.id,
-      }).select("id").single();
-      if (error) { toast.error(error.message); return; }
-      load();
+    if (toggling || !active || !user) return;
+    setToggling(true);
+    try {
+      if (interruption) {
+        // Resume flow — confirm the interruption is still open on the server.
+        // Another family member on a different device may have already closed it.
+        const { data: intrCheck } = await supabase
+          .from("sleep_interruptions")
+          .select("id")
+          .eq("id", interruption.id)
+          .is("end_time", null)
+          .maybeSingle();
+        if (!intrCheck) {
+          toast.error(t("sleep.interruptionAlreadyEnded"));
+          load();
+          return;
+        }
+        // Open draft modal: edit start, end (default = now), settling method.
+        const initStart = new Date(interruption.start_time);
+        const initEnd = new Date();
+        stopIntrInitialRef.current = { start: initStart, end: initEnd, methodId: "" };
+        setStopIntrDraft({ id: interruption.id, start: initStart, end: initEnd, methodId: "" });
+      } else {
+        // Pause flow — verify the session is still active and no interruption was
+        // opened by another device between the last realtime sync and this tap.
+        const { data: sessionCheck } = await supabase
+          .from("sleep_sessions")
+          .select("id")
+          .eq("id", active.id)
+          .is("end_time", null)
+          .maybeSingle();
+        if (!sessionCheck) {
+          toast.error(t("sleep.sessionEnded"));
+          load();
+          return;
+        }
+        const { data: existingIntr } = await supabase
+          .from("sleep_interruptions")
+          .select("id")
+          .eq("sleep_session_id", active.id)
+          .is("end_time", null)
+          .maybeSingle();
+        if (existingIntr) {
+          toast.error(t("sleep.alreadyPaused"));
+          load();
+          return;
+        }
+        // Start interruption immediately. Editable via pencil icon.
+        const startIso = new Date().toISOString();
+        const { error } = await supabase.from("sleep_interruptions").insert({
+          sleep_session_id: active.id, start_time: startIso, created_by_user_id: user.id,
+        }).select("id").single();
+        if (error) {
+          // 23505 = unique_violation: another device paused between our check and INSERT
+          // (one_active_interruption_per_session index).
+          toast.error(error.code === "23505" ? t("sleep.alreadyPaused") : error.message);
+          load();
+          return;
+        }
+        load();
+      }
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -432,14 +494,14 @@ export default function CurrentSleep() {
             </div>
           )}
           <div className="space-y-2">
-            <Button size="lg" variant="secondary" className="w-full h-14 text-base" onClick={wakeUp} disabled={!canEnd}>
+            <Button size="lg" variant="secondary" className="w-full h-14 text-base" onClick={wakeUp} disabled={!canEnd || waking}>
               <Sun className="w-5 h-5 mr-2" /> {t("sleep.wakeUp", {
                 context: activeChild.gender === "male" ? "male"
                   : activeChild.gender === "female" ? "female" : "other",
               })}
             </Button>
             {showInterruptionFlag && canEnd && (
-              <Button variant="outline" className="w-full bg-white/10 border-white/30 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground" onClick={toggleInterruption}>
+              <Button variant="outline" className="w-full bg-white/10 border-white/30 text-primary-foreground hover:bg-white/20 hover:text-primary-foreground" onClick={toggleInterruption} disabled={toggling}>
                 {interruption ? <><Play className="w-4 h-4 mr-2" /> {t("sleep.endInterruption")}</> : <><Pause className="w-4 h-4 mr-2" /> {t("sleep.addInterruption")}</>}
               </Button>
             )}
