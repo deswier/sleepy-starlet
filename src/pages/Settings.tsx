@@ -197,11 +197,9 @@ export default function Settings() {
       "",
       t("settings.shareStep1"),
       t("settings.shareStep2"),
-      t("settings.shareStep3"),
-      t("settings.shareExpiry", { time: formatRemaining(expiresAt) }),
+      t("settings.shareStep3", { time: formatRemaining(expiresAt) }),
       "",
       code,
-      "",
     ].join("\n");
 
     if (typeof navigator.share === "function") {
