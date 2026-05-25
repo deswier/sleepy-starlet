@@ -213,7 +213,7 @@ export default function NewChild() {
                 <p className="text-xs text-muted-foreground">{t("child.haveCode")}</p>
                 <div>
                   <Label htmlFor="code"><RequiredMark />{t("child.enterCode")}</Label>
-                  <Input id="code" required value={code} onChange={(e) => setCode(e.target.value.replace(/`/g, "").toUpperCase())} className="font-mono uppercase tracking-widest" maxLength={8} />
+                  <Input id="code" required value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} className="font-mono uppercase tracking-widest" maxLength={6} />
                 </div>
                 <div>
                   <Label><RequiredMark />{t("child.relation")}</Label>

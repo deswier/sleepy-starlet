@@ -204,7 +204,7 @@ export default function Settings() {
       t("settings.shareStep2"),
       t("settings.shareStep3"),
       "",
-      `\`${code}\``,
+      code,
       "",
       t("settings.shareExpiry", { time: formatRemaining(expiresAt) }),
     ].join("\n");
