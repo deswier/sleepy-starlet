@@ -11,6 +11,26 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { type Location, useLocation, useNavigationType } from "react-router-dom";
+import { isNative } from "@/lib/native";
+
+// iOS 16+ adds a system left-edge swipe-back gesture to PWAs in
+// display:standalone mode. It races our custom gesture: iOS pops history,
+// then our endSwipeBack(true) calls navigate(-1) on top, landing the user
+// two pages back. `touch-action: pan-y` on the wrapper tells WebKit that the
+// app reserves horizontal touch handling, which suppresses the system
+// edge-pan recognizer while leaving vertical scroll fully native.
+//
+// Scoped to: installed iOS PWA only. Android PWA has no such system gesture;
+// desktop and Safari-tab UA's are excluded too; Capacitor's WKWebView already
+// disables `allowsBackForwardNavigationGestures` so the suppression is a no-op
+// there and we skip it for safety.
+const SUPPRESS_NATIVE_EDGE_SWIPE = (() => {
+  if (typeof window === "undefined") return false;
+  if (isNative()) return false;
+  const standalone = window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+  const isIOS = /iPad|iPhone|iPod/.test(window.navigator.userAgent);
+  return standalone && isIOS;
+})();
 
 // "committing" sits between settling-success and idle: the front is already
 // off-screen at 100vw and the behind layer stays visible while we wait for
@@ -399,7 +419,14 @@ export default function SwipeBackHost({ renderRoutes }: Props) {
           is fixed so it is NOT clipped here — but removing overflow-x from the
           behind container itself eliminates the GPU-compositor paint boundary
           at x=0 that caused the left ghost strip on History. */}
-      <div style={{ overflowX: "hidden" }}>
+      <div
+        style={{
+          overflowX: "hidden",
+          // See SUPPRESS_NATIVE_EDGE_SWIPE: blocks iOS PWA system edge-back so
+          // our gesture runs alone. pan-y keeps native vertical scrolling.
+          touchAction: SUPPRESS_NATIVE_EDGE_SWIPE ? "pan-y" : undefined,
+        }}
+      >
         {isActive && behindLocation && (
           <div
             ref={behindContainerRef}
