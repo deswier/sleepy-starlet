@@ -40,6 +40,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   <img
                     src={activeChild.photo_url}
                     alt=""
+                    // decoding=sync makes the browser finish decoding before
+                    // painting, so on remount (back-swipe) the photo lands in
+                    // the same frame as the initials — no fallback flash.
+                    decoding="sync"
                     className="absolute inset-0 w-full h-full object-cover"
                   />
                 )}
