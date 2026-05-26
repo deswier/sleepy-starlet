@@ -10,7 +10,6 @@ import RequireAuth from "@/components/RequireAuth";
 import AppShell from "@/components/AppShell";
 import RouteTracker from "@/components/RouteTracker";
 import SwipeBackHost from "@/components/SwipeBackHost";
-import AvatarPreloader from "@/components/AvatarPreloader";
 
 
 const Index     = lazy(() => import("./pages/Index"));
@@ -75,7 +74,6 @@ const App = () => (
         <AuthProvider>
           <ChildProvider>
             <RouteTracker />
-            <AvatarPreloader />
             <SwipeBackHost renderRoutes={renderAppRoutes} />
           </ChildProvider>
         </AuthProvider>
