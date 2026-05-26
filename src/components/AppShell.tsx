@@ -7,6 +7,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "react-i18next";
 import SyncStatus from "./SyncStatus";
@@ -27,23 +28,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-3 group">
-              {/* Custom avatar (not Radix Avatar) so initials and image render in
-                  one DOM tree with no React loading-state swap. SwipeBackHost
-                  re-mounts AppShell during back-swipe; Radix Avatar's
-                  loading→loaded transition flashes the fallback once per mount,
-                  which is twice per back-swipe. Here the initials are always
-                  painted underneath and the <img> overlays them as soon as the
-                  browser decodes it (instant from cache). */}
-              <div className="relative w-10 h-10 rounded-full bg-primary/15 overflow-hidden shrink-0 flex items-center justify-center text-primary font-semibold text-sm">
-                {initials}
-                {activeChild?.photo_url && (
-                  <img
-                    src={activeChild.photo_url}
-                    alt=""
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                )}
-              </div>
+              <Avatar className="w-10 h-10 bg-primary/15">
+                {activeChild?.photo_url && <AvatarImage src={activeChild.photo_url} alt="" />}
+                <AvatarFallback className="bg-primary/15 text-primary font-semibold">{initials}</AvatarFallback>
+              </Avatar>
               <div className="text-left">
                 <div className="font-display text-lg font-semibold leading-tight flex items-center gap-1">
                   {activeChild?.name ?? t("child.noChild")} <ChevronDown className="w-4 h-4 opacity-60 group-hover:opacity-100" />
