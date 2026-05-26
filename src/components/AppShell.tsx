@@ -24,7 +24,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-hero flex flex-col" style={{ paddingBottom: "calc(5rem + env(safe-area-inset-bottom))" }}>
-      <header className="px-4 pt-6 pb-3 flex items-center justify-between gap-2">
+      <header className="relative z-[60] px-4 pt-6 pb-3 flex items-center justify-between gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-3 group">
@@ -70,7 +70,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       <main className="flex-1">{children}</main>
 
-      <nav className="fixed bottom-0 inset-x-0 bg-card/95 backdrop-blur border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <nav className="fixed bottom-0 inset-x-0 z-[60] bg-card/95 backdrop-blur border-t border-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-md mx-auto grid grid-cols-3">
           <NavTab to="/" icon={<Moon />} label={t("common.sleepTab")} />
           <NavTab to="/history" icon={<History />} label={t("history.title")} />
