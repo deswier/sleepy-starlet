@@ -64,8 +64,8 @@ export function WeekStackedSleepChart({
 
   const selectedDatum = selectedKey ? data.find((d) => d.dateKey === selectedKey) ?? null : null;
 
-  // Truncated Y axis: start near the minimum non-zero total so day-to-day
-  // variation is visually obvious rather than compressed near the top.
+  // Tight domain built from actual data so day-to-day variation is obvious.
+  // The norm ReferenceArea is allowed to overflow without extending the domain.
   const activeTotals = data
     .filter((d) => d.hasData && d.nightSleep + d.daySleep > 0)
     .map((d) => d.nightSleep + d.daySleep);
@@ -73,14 +73,12 @@ export function WeekStackedSleepChart({
   const maxTotal = activeTotals.length ? Math.max(...activeTotals) : 1;
   const minTotal = activeTotals.length ? Math.min(...activeTotals) : 0;
 
-  // Anchor the bottom of the axis at ~80 % of the smallest bar, but never
-  // higher than the norm minimum (so the norm band always stays visible).
-  const rawMin = Math.floor(minTotal * 0.8);
-  const normFloor = normTotal ? Math.floor(normTotal.min * 0.92) : rawMin;
-  const domainMin = Math.min(rawMin, normFloor);
-
-  const rawTop = Math.max(maxTotal, normTotal?.max ?? 0);
-  const domainTop = Math.ceil(rawTop * 1.06);
+  const spread = maxTotal - minTotal;
+  // Pad by the larger of 10 % of the spread or 10 % of the min value,
+  // so even flat weeks get a bit of breathing room.
+  const pad = Math.max(spread * 0.5, minTotal * 0.08);
+  const domainMin = Math.max(0, Math.floor(minTotal - pad));
+  const domainTop = Math.ceil(maxTotal + pad * 0.5);
 
   return (
     <>
@@ -91,7 +89,7 @@ export function WeekStackedSleepChart({
               <ReferenceArea
                 y1={normTotal.min} y2={normTotal.max}
                 fill="hsl(var(--ww-good))" fillOpacity={0.12}
-                ifOverflow="extendDomain"
+                ifOverflow="visible"
               />
             )}
             <XAxis

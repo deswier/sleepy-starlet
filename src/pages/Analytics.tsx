@@ -789,8 +789,7 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
           fmtDur={formatDuration}
           onSelectDay={onSelectDay}
         />
-        <p className="text-[11px] text-muted-foreground text-center mt-2">{t("analytics.barChartHint")}</p>
-        {norm && <p className="text-xs text-muted-foreground mt-1">{normLabel(t, avgTotalSleep, norm.totalSleep)}</p>}
+        {norm && <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgTotalSleep, norm.totalSleep)}</p>}
       </Card>
 
       <Card className="p-5 shadow-card border-border/50">
