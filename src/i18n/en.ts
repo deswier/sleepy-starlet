@@ -294,7 +294,7 @@ const en = {
       },
       weekChart: {
         title: "Sleep by day",
-        body: "Dark = night · light = naps.\nDashed line — weekly average · band — age norm.\nTap for details · double-tap to open the day.",
+        body: "The dashed line is the weekly average. The green band is the age norm.\n\nTap a bar for details.",
       },
     },
   },
