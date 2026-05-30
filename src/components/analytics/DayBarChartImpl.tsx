@@ -1,6 +1,7 @@
+import { useRef, useState } from "react";
 import {
   Bar, BarChart, Cell, ReferenceArea, ReferenceLine,
-  ResponsiveContainer, Tooltip, XAxis, YAxis,
+  ResponsiveContainer, XAxis, YAxis,
 } from "recharts";
 
 export interface WeekCompareDayDatum {
@@ -25,79 +26,130 @@ export interface WeekStackedSleepChartProps {
   onSelectDay: (dateKey: string) => void;
 }
 
-function stackFill(d: WeekCompareDayDatum, layer: "night" | "day"): string {
+function stackFill(d: WeekCompareDayDatum, layer: "night" | "day", selected: boolean): string {
   if (!d.hasData) return "transparent";
-  if (!d.active) return layer === "night" ? "hsl(var(--muted-foreground) / 0.2)" : "hsl(var(--muted-foreground) / 0.1)";
-  return layer === "night" ? "hsl(var(--primary) / 0.85)" : "hsl(var(--primary) / 0.45)";
+  const dimmed = !d.active;
+  if (layer === "night") {
+    if (dimmed) return "hsl(var(--muted-foreground) / 0.2)";
+    return selected ? "hsl(var(--primary))" : "hsl(var(--primary) / 0.85)";
+  }
+  if (dimmed) return "hsl(var(--muted-foreground) / 0.1)";
+  return selected ? "hsl(var(--primary) / 0.6)" : "hsl(var(--primary) / 0.45)";
 }
 
-function StackedTip({ active, payload, fmtDur }: {
-  active?: boolean;
-  payload?: { payload: WeekCompareDayDatum; name: string; value: number; fill: string }[];
-  fmtDur: (v: number) => string;
-}) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  if (!d.hasData) return null;
-  const total = (payload[0].value ?? 0) + (payload[1]?.value ?? 0);
-  return (
-    <div className="rounded-md border border-border bg-background px-2 py-1.5 text-xs shadow-md space-y-0.5">
-      <div className="font-medium mb-1">{d.label} · {fmtDur(total)}</div>
-      {payload.map((p, i) => p.value > 0 && (
-        <div key={i} className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0" style={{ background: p.fill }} />
-          <span className="text-muted-foreground">{p.name}:</span>
-          <span className="tabular-nums">{fmtDur(p.value)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+const DOUBLE_TAP_MS = 350;
 
 export function WeekStackedSleepChart({
   data, normTotal, avgTotal, nightLabel, dayLabel, fmtDur, onSelectDay,
 }: WeekStackedSleepChartProps) {
-  const maxVal = Math.max(
-    ...data.map((d) => d.nightSleep + d.daySleep),
-    normTotal?.max ?? 0,
-    1,
-  );
-  const domainTop = Math.ceil(maxVal * 1.18);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const lastTapRef = useRef<{ dateKey: string; time: number } | null>(null);
 
   const handleClick = (payload: { payload?: WeekCompareDayDatum }) => {
-    if (payload?.payload?.hasData) onSelectDay(payload.payload.dateKey);
+    const d = payload?.payload;
+    if (!d?.hasData) return;
+
+    const now = Date.now();
+    const last = lastTapRef.current;
+
+    if (last && last.dateKey === d.dateKey && now - last.time < DOUBLE_TAP_MS) {
+      lastTapRef.current = null;
+      setSelectedKey(null);
+      onSelectDay(d.dateKey);
+    } else {
+      lastTapRef.current = { dateKey: d.dateKey, time: now };
+      setSelectedKey((prev) => (prev === d.dateKey ? null : d.dateKey));
+    }
   };
+
+  const selectedDatum = selectedKey ? data.find((d) => d.dateKey === selectedKey) ?? null : null;
+
+  // Truncated Y axis: start near the minimum non-zero total so day-to-day
+  // variation is visually obvious rather than compressed near the top.
+  const activeTotals = data
+    .filter((d) => d.hasData && d.nightSleep + d.daySleep > 0)
+    .map((d) => d.nightSleep + d.daySleep);
+
+  const maxTotal = activeTotals.length ? Math.max(...activeTotals) : 1;
+  const minTotal = activeTotals.length ? Math.min(...activeTotals) : 0;
+
+  // Anchor the bottom of the axis at ~80 % of the smallest bar, but never
+  // higher than the norm minimum (so the norm band always stays visible).
+  const rawMin = Math.floor(minTotal * 0.8);
+  const normFloor = normTotal ? Math.floor(normTotal.min * 0.92) : rawMin;
+  const domainMin = Math.min(rawMin, normFloor);
+
+  const rawTop = Math.max(maxTotal, normTotal?.max ?? 0);
+  const domainTop = Math.ceil(rawTop * 1.06);
 
   return (
     <>
-      <div className="h-36 mt-3">
+      <div className="h-40 mt-3">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }} barCategoryGap="22%">
+          <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }} barCategoryGap="24%">
             {normTotal && (
-              <ReferenceArea y1={normTotal.min} y2={normTotal.max}
-                fill="hsl(var(--ww-good))" fillOpacity={0.1} ifOverflow="extendDomain" />
+              <ReferenceArea
+                y1={normTotal.min} y2={normTotal.max}
+                fill="hsl(var(--ww-good))" fillOpacity={0.12}
+                ifOverflow="extendDomain"
+              />
             )}
-            <XAxis dataKey="label" interval={0} tickLine={false} axisLine={false}
-              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-            <YAxis hide domain={[0, domainTop]} />
+            <XAxis
+              dataKey="label" interval={0} tickLine={false} axisLine={false}
+              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+            />
+            <YAxis hide domain={[domainMin, domainTop]} />
             {avgTotal > 0 && (
-              <ReferenceLine y={avgTotal} stroke="hsl(var(--primary))"
-                strokeDasharray="3 3" strokeOpacity={0.6} />
+              <ReferenceLine
+                y={avgTotal} stroke="hsl(var(--primary))"
+                strokeDasharray="3 3" strokeOpacity={0.55}
+              />
             )}
-            <Tooltip cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
-              content={<StackedTip fmtDur={fmtDur} />} />
-            <Bar dataKey="nightSleep" name={nightLabel} stackId="s"
-              isAnimationActive={false} cursor="pointer" onClick={handleClick}>
-              {data.map((d, i) => <Cell key={i} fill={stackFill(d, "night")} />)}
+            <Bar
+              dataKey="nightSleep" name={nightLabel} stackId="s"
+              isAnimationActive={false} cursor="pointer" onClick={handleClick}
+            >
+              {data.map((d, i) => (
+                <Cell key={i} fill={stackFill(d, "night", d.dateKey === selectedKey)} />
+              ))}
             </Bar>
-            <Bar dataKey="daySleep" name={dayLabel} stackId="s" radius={[4, 4, 0, 0]}
-              isAnimationActive={false} cursor="pointer" onClick={(p: { payload?: WeekCompareDayDatum }) => handleClick(p)}>
-              {data.map((d, i) => <Cell key={i} fill={stackFill(d, "day")} />)}
+            <Bar
+              dataKey="daySleep" name={dayLabel} stackId="s" radius={[4, 4, 0, 0]}
+              isAnimationActive={false} cursor="pointer"
+              onClick={(p: { payload?: WeekCompareDayDatum }) => handleClick(p)}
+            >
+              {data.map((d, i) => (
+                <Cell key={i} fill={stackFill(d, "day", d.dateKey === selectedKey)} />
+              ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="flex items-center gap-3 mt-1.5 justify-center">
+
+      {/* Selected day detail panel */}
+      {selectedDatum && (
+        <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 flex items-center justify-between gap-2">
+          <span className="text-xs font-medium">{selectedDatum.label}</span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="inline-block w-2 h-2 rounded-sm bg-primary/85 flex-shrink-0" />
+              {fmtDur(selectedDatum.nightSleep)}
+            </span>
+            {selectedDatum.daySleep > 0 && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="inline-block w-2 h-2 rounded-sm bg-primary/45 flex-shrink-0" />
+                {fmtDur(selectedDatum.daySleep)}
+              </span>
+            )}
+            <span className="text-xs font-semibold tabular-nums">
+              {fmtDur(selectedDatum.nightSleep + selectedDatum.daySleep)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 mt-2 justify-center">
         <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <span className="inline-block w-2.5 h-2.5 rounded-sm bg-primary/85" />
           {nightLabel}
