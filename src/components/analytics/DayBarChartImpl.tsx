@@ -64,7 +64,7 @@ export function WeekStackedSleepChart({
 
   const selectedDatum = selectedKey ? data.find((d) => d.dateKey === selectedKey) ?? null : null;
 
-  // Tight domain built from actual data so day-to-day variation is obvious.
+  // Ultra-tight domain: minimal padding so day-to-day variation is maximally visible.
   // The norm ReferenceArea is allowed to overflow without extending the domain.
   const activeTotals = data
     .filter((d) => d.hasData && d.nightSleep + d.daySleep > 0)
@@ -74,11 +74,11 @@ export function WeekStackedSleepChart({
   const minTotal = activeTotals.length ? Math.min(...activeTotals) : 0;
 
   const spread = maxTotal - minTotal;
-  // Pad by the larger of 10 % of the spread or 10 % of the min value,
-  // so even flat weeks get a bit of breathing room.
-  const pad = Math.max(spread * 0.5, minTotal * 0.08);
-  const domainMin = Math.max(0, Math.floor(minTotal - pad));
-  const domainTop = Math.ceil(maxTotal + pad * 0.5);
+  // Minimal padding: 15% below, 5% above.
+  const padBelow = Math.max(spread * 0.15, minTotal * 0.03);
+  const padAbove = spread * 0.05;
+  const domainMin = Math.max(0, Math.floor(minTotal - padBelow));
+  const domainTop = Math.ceil(maxTotal + padAbove);
 
   return (
     <>
