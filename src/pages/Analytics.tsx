@@ -30,7 +30,7 @@ import {
 } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
-import { WeekCompareChart, type WeekCompareDayDatum } from "@/components/analytics/DayBarChart";
+import { WeekStackedSleepChart, type WeekCompareDayDatum } from "@/components/analytics/DayBarChart";
 
 export type NightWindow = { start: string; end: string };
 const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
@@ -731,18 +731,6 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
       ) : (
       <>
 
-      <Card className="px-4 pt-4 pb-3 shadow-card border-border/50">
-        <WeekCompareChart
-          data={chartData}
-          norm={norm}
-          avgs={{ totalSleep: avgTotalSleep, nightSleep: avgNightSleep, totalWake: avgTotalWake, ww: avgWW, napsCount: avgNapsCount }}
-          labels={{ sleep: t("analytics.sleepShort"), wake: t("analytics.wakeShort"), ww: t("analytics.wwShort"), naps: t("analytics.napsShort") }}
-          fmtDur={formatDuration}
-          onSelectDay={onSelectDay}
-        />
-        <p className="text-[11px] text-muted-foreground text-center mt-2">{t("analytics.barChartHint")}</p>
-      </Card>
-
       {weekScore && (
         <Card className="p-4 shadow-card border-border/50">
           <div className="flex items-end gap-3 mb-3">
@@ -776,10 +764,34 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
         </Card>
       )}
 
-      <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
-        value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
-        secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
-        arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
+      <Card className="p-5 shadow-card border-border/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-muted-foreground text-sm">
+            <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              <Moon className="w-5 h-5" />
+            </span>
+            {t("analytics.totalSleep")}
+          </div>
+          <div className="text-right">
+            <div className="font-display text-2xl font-semibold flex items-center gap-1.5 justify-end">
+              {formatDuration(avgTotalSleep)}
+              <NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />
+            </div>
+            <div className="text-xs text-muted-foreground">{t("analytics.avgPerDay")}</div>
+          </div>
+        </div>
+        <WeekStackedSleepChart
+          data={chartData}
+          normTotal={norm?.totalSleep}
+          avgTotal={avgTotalSleep}
+          nightLabel={t("analytics.nightSleep")}
+          dayLabel={t("analytics.totalDaySleep")}
+          fmtDur={formatDuration}
+          onSelectDay={onSelectDay}
+        />
+        <p className="text-[11px] text-muted-foreground text-center mt-2">{t("analytics.barChartHint")}</p>
+        {norm && <p className="text-xs text-muted-foreground mt-1">{normLabel(t, avgTotalSleep, norm.totalSleep)}</p>}
+      </Card>
 
       <Card className="p-5 shadow-card border-border/50">
         <div className="flex items-center gap-3 text-muted-foreground text-sm mb-1">
