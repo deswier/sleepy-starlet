@@ -289,12 +289,12 @@ const en = {
     },
     analytics: {
       dayChips: {
-        title: "Day filter",
-        body: "Tap any day to exclude it from the weekly averages.\n\nUseful when a day was atypical — the averages will be calculated only from the selected days.",
+        title: "Exclude a day",
+        body: "Tap to exclude an atypical day — averages update instantly.",
       },
       weekChart: {
         title: "Sleep by day",
-        body: "Dark segment — night sleep, light — naps.\n\nThe dashed line is the weekly average. The shaded band is the age norm.\n\nTap a bar to see details · double-tap to open that day.",
+        body: "Dark = night · light = naps.\nDashed line — weekly average · band — age norm.\nTap for details · double-tap to open the day.",
       },
     },
   },
