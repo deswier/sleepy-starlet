@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { devError } from "@/lib/logger";
@@ -16,6 +16,7 @@ import { db } from "@/lib/offline-queue";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { WifiOff } from "lucide-react";
 import { useChildren } from "@/contexts/ChildContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -31,6 +32,10 @@ import {
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
 import { WeekStackedSleepChart, type WeekCompareDayDatum } from "@/components/analytics/DayBarChart";
+import { useTour } from "@/hooks/use-tour";
+import { getTourProgress } from "@/lib/tour-storage";
+
+const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
 
 export type NightWindow = { start: string; end: string };
 const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
@@ -93,6 +98,7 @@ export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT):
 
 export default function Analytics() {
   const { activeChild, settings } = useChildren();
+  const { user } = useAuth();
   const { t } = useTranslation();
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? DEFAULT_NIGHT.start,
@@ -119,6 +125,16 @@ export default function Analytics() {
     setTab("day");
   };
 
+  const tour = useTour("analytics", !!activeChild);
+
+  // Switch to the week tab once on mount when the analytics tour hasn't been
+  // completed yet — all tour anchors live in the week tab.
+  useEffect(() => {
+    if (!activeChild || !user) return;
+    const progress = getTourProgress(user.id, "analytics");
+    if (!progress?.done) setTab("week");
+  }, [activeChild?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
   }
@@ -136,6 +152,11 @@ export default function Analytics() {
         <TabsContent value="day"><DayView key={`${activeChild.id}:${dayNav}`} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
         <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} onSelectDay={selectDay} /></TabsContent>
       </Tabs>
+      {tour.active && (
+        <Suspense fallback={null}>
+          <TourSpotlight tourId="analytics" {...tour} />
+        </Suspense>
+      )}
     </section>
   );
 }
@@ -714,13 +735,15 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
           {t("common.cachedData")}
         </div>
       )}
-      <DayChips
-        days={days}
-        hasData={dayHasData}
-        active={activeFlags}
-        onToggle={toggleDay}
-        t={t}
-      />
+      <div data-tour="analytics.day-chips">
+        <DayChips
+          days={days}
+          hasData={dayHasData}
+          active={activeFlags}
+          onToggle={toggleDay}
+          t={t}
+        />
+      </div>
       <Button type="button" variant="outline" className="w-full gap-2" onClick={openHeatmap}>
         <Grid3x3 className="w-4 h-4" />
         {t("analytics.heatmapTitle")}
@@ -764,7 +787,7 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
         </Card>
       )}
 
-      <Card className="p-5 shadow-card border-border/50">
+      <Card className="p-5 shadow-card border-border/50" data-tour="analytics.week-chart">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-muted-foreground text-sm">
             <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">

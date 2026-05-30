@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 
-export type TourId = "history" | "settings";
+export type TourId = "history" | "settings" | "analytics";
 
 export interface TourStep {
   anchor: string;
@@ -44,6 +44,24 @@ export const TOURS: Record<TourId, TourDef> = {
         titleKey: "tour.history.add.title",
         bodyKey: "tour.history.add.body",
         placement: "bottom",
+      },
+    ],
+  },
+  analytics: {
+    id: "analytics",
+    version: 1,
+    steps: [
+      {
+        anchor: "analytics.day-chips",
+        titleKey: "tour.analytics.dayChips.title",
+        bodyKey: "tour.analytics.dayChips.body",
+        placement: "bottom",
+      },
+      {
+        anchor: "analytics.week-chart",
+        titleKey: "tour.analytics.weekChart.title",
+        bodyKey: "tour.analytics.weekChart.body",
+        placement: "top",
       },
     ],
   },

@@ -287,6 +287,16 @@ const en = {
         body: "Generate a code to invite a family member.\n\nRoles:\n· Viewer — can only see data\n· Editor — can add and edit sleep\n· Owner — manages settings and members",
       },
     },
+    analytics: {
+      dayChips: {
+        title: "Day filter",
+        body: "Tap any day to exclude it from the weekly averages.\n\nUseful when a day was atypical — the averages will be calculated only from the selected days.",
+      },
+      weekChart: {
+        title: "Sleep by day",
+        body: "Dark segment — night sleep, light — naps.\n\nThe dashed line is the weekly average. The shaded band is the age norm.\n\nTap a bar to see details · double-tap to open that day.",
+      },
+    },
   },
   profile: {
     title: "Profile",
