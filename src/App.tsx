@@ -23,7 +23,6 @@ const Heatmap   = lazy(() => import("./pages/Heatmap"));
 const Profile   = lazy(() => import("./pages/Profile"));
 const DeletedChildren = lazy(() => import("./pages/DeletedChildren"));
 const NotFound  = lazy(() => import("./pages/NotFound"));
-const ProtoCharts = lazy(() => import("./pages/ProtoCharts"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,7 +57,6 @@ function AppRoutes({ location }: { location?: Location }) {
         <Route path="/heatmap" element={<RequireAuth><Heatmap /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
         <Route path="/deleted-children" element={<RequireAuth><DeletedChildren /></RequireAuth>} />
-        <Route path="/proto-charts" element={<Suspense fallback={null}><ProtoCharts /></Suspense>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
