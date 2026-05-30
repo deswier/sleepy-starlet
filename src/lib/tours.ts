@@ -49,7 +49,7 @@ export const TOURS: Record<TourId, TourDef> = {
   },
   analytics: {
     id: "analytics",
-    version: 1,
+    version: 2,
     steps: [
       {
         anchor: "analytics.day-chips",
@@ -61,6 +61,12 @@ export const TOURS: Record<TourId, TourDef> = {
         anchor: "analytics.week-chart",
         titleKey: "tour.analytics.weekChart.title",
         bodyKey: "tour.analytics.weekChart.body",
+        placement: "top",
+      },
+      {
+        anchor: "analytics.heatmap-btn",
+        titleKey: "tour.analytics.heatmap.title",
+        bodyKey: "tour.analytics.heatmap.body",
         placement: "top",
       },
     ],

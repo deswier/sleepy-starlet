@@ -296,6 +296,10 @@ const en = {
         title: "Sleep by day",
         body: "The dashed line is the weekly average. The green band is the age norm.\n\nTap a bar for details.",
       },
+      heatmap: {
+        title: "Sleep diagram",
+        body: "Detailed hour-by-hour sleep view for each day of the week.",
+      },
     },
   },
   profile: {

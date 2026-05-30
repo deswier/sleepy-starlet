@@ -744,7 +744,7 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
           t={t}
         />
       </div>
-      <Button type="button" variant="outline" className="w-full gap-2" onClick={openHeatmap}>
+      <Button type="button" variant="outline" className="w-full gap-2" onClick={openHeatmap} data-tour="analytics.heatmap-btn">
         <Grid3x3 className="w-4 h-4" />
         {t("analytics.heatmapTitle")}
       </Button>
