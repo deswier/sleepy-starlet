@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { useTour } from "@/hooks/use-tour";
+const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
 import { devError } from "@/lib/logger";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
@@ -275,6 +277,8 @@ export default function Settings() {
   const handleBack = () => navigate(-1);
   useSwipeBack({ enabled: !confirmAction && !pendingRemoval && !pendingPhoto, onBack: handleBack });
 
+  const tour = useTour("settings", !!activeChild && !!s && !isViewer);
+
   if (!activeChild || !s) return (
     <main className="min-h-screen bg-hero p-4">
       <div className="max-w-md mx-auto py-4">
@@ -421,7 +425,7 @@ export default function Settings() {
             <Label>{t("child.birthDate")}</Label>
             <Input type="date" value={birthDate} max={todayStr} disabled={!isAdmin}
               onChange={(e) => setBirthDate(e.target.value)} onBlur={saveChild}
-              className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
+              className="w-full [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
           </div>
           {ww && (
             <p className="text-xs text-muted-foreground">
@@ -497,7 +501,7 @@ export default function Settings() {
             </div>
           ))}
           {canManageMembers(role) && (
-            <div className="space-y-2">
+            <div className="space-y-2" data-tour="settings.family-invite">
               <div className="flex gap-2">
                 <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
                   <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
@@ -517,7 +521,7 @@ export default function Settings() {
         </Card>
 
         {/* 3. Night window */}
-        <Card className="p-5 shadow-card mb-4 space-y-3">
+        <Card className="p-5 shadow-card mb-4 space-y-3" data-tour="settings.night-window">
           <h3 className="font-semibold">{t("settings.nightWindow")}</h3>
           <p className="text-xs text-muted-foreground">{t("settings.nightWindowHelp")}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -525,13 +529,13 @@ export default function Settings() {
               <Label>{t("settings.nightStarts")}</Label>
               <Input type="time" value={s.night_start_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_start_time: e.target.value })}
-                className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
+                className="w-full [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.nightEnds")}</Label>
               <Input type="time" value={s.night_end_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_end_time: e.target.value })}
-                className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
+                className="w-full [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
           </div>
           {canEditFamilySettings && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
@@ -590,6 +594,12 @@ export default function Settings() {
         {/* 8. Danger zone — leave / delete child */}
         {dangerZone}
         {removeDialog}
+
+        {tour.active && (
+          <Suspense fallback={null}>
+            <TourSpotlight tourId="settings" {...tour} />
+          </Suspense>
+        )}
       </div>
     </main>
   );

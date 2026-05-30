@@ -1,4 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
+import { useTour } from "@/hooks/use-tour";
+const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -174,6 +176,8 @@ export default function History() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChild?.id]);
 
+  const tour = useTour("history", !isBehindLayer && !!activeChild && !loading);
+
   if (!activeChild) return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
 
   const today = startOfDay(new Date());
@@ -221,7 +225,7 @@ export default function History() {
         <h2 className="font-display text-2xl font-semibold">{t("history.title")}</h2>
         {canCreateSleep(role) && <ResponsiveDialog open={showAdd} onOpenChange={handleAddOpenChange}>
           <ResponsiveDialogTrigger asChild>
-            <Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-1" /> {t("common.add")}</Button>
+            <Button variant="outline" size="sm" data-tour="history.add"><Plus className="w-4 h-4 mr-1" /> {t("common.add")}</Button>
           </ResponsiveDialogTrigger>
           <ResponsiveDialogContent>
             <ResponsiveDialogHeader><ResponsiveDialogTitle>{t("sleep.addPast")}</ResponsiveDialogTitle></ResponsiveDialogHeader>
@@ -233,13 +237,13 @@ export default function History() {
       </div>
 
       <div className="flex items-center gap-2 mb-4 w-full">
-        <Button variant="ghost" size="icon" onClick={() => setDay(subDays(day, 1))}>
+        <Button variant="ghost" size="icon" type="button" onClick={() => setDay(subDays(day, 1))}>
           <ChevronLeft className="w-4 h-4" />
         </Button>
         <Input type="date" value={format(day, "yyyy-MM-dd")} max={format(today, "yyyy-MM-dd")}
           onChange={(e) => e.target.value && setDay(startOfDay(new Date(e.target.value)))}
           className="text-center flex-1" />
-        <Button variant="ghost" size="icon"
+        <Button variant="ghost" size="icon" type="button"
           disabled={isSameDay(day, today)}
           onClick={() => setDay(addDays(day, 1))}>
           <ChevronRight className="w-4 h-4" />
@@ -286,6 +290,12 @@ export default function History() {
         onOpenChange={setShowDiscardAdd}
         onDiscard={() => { setShowAdd(false); setAddFormDirty(false); }}
       />
+
+      {tour.active && (
+        <Suspense fallback={null}>
+          <TourSpotlight tourId="history" {...tour} />
+        </Suspense>
+      )}
     </section>
   );
 }
@@ -316,6 +326,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
   // and their full duration is counted only on the end day.
   const totalMin = ordered.reduce((acc, s) => acc + sessionDuration(s, now), 0);
   const dayNapsCount = ordered.filter((s) => s.sleep_type === "day").length;
+  const dayWWTh = wwThresholdsAt(date, birthDate);
 
   // Projected wake window for an ongoing wake period (latest completed sleep
   // is at index 0 in DESC order).
@@ -401,9 +412,15 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
             const th = wwThresholdsAt(new Date(s.start_time), birthDate);
             if (th) status = wwStatus(ww, th.min, th.max);
           }
+          // Attach data-tour only to the first (topmost) session row and its WW bar.
+          const isFirst = i === 0;
           return (
             <div key={s.id}>
-              <button onClick={() => onOpen(s)} className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth">
+              <button
+                onClick={() => onOpen(s)}
+                className="w-full text-left flex items-center justify-between py-3 hover:bg-muted/40 -mx-2 px-2 rounded-lg transition-smooth"
+                {...(isFirst ? { "data-tour": "history.session-row" } : {})}
+              >
                 <div className="flex items-center gap-3">
                   <span className={`w-2 h-2 rounded-full ${s.sleep_type === "night" ? "bg-primary" : "bg-accent"}`} />
                   <span className="font-medium">{fmtTime(s.start_time)}</span>
@@ -416,7 +433,10 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
                 <span className="text-muted-foreground text-sm">{fmtDuration(sessionDuration(s, now))}</span>
               </button>
               {earlier && ww !== null && ww >= 0 && (
-                <div className="flex items-center gap-3 py-2 pl-2">
+                <div
+                  className="flex items-center gap-3 py-2 pl-2"
+                  {...(isFirst ? { "data-tour": "history.ww-bar" } : {})}
+                >
                   <div className={`w-0.5 h-8 rounded-full ${status === "good" ? "bg-ww-good" : "bg-ww-warn"}`} />
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${status === "good" ? "bg-ww-good-soft text-[hsl(var(--ww-good))]" : "bg-ww-warn-soft text-[hsl(var(--ww-warn))]"}`}>
                     {t("sleep.awake_label", { duration: fmtDuration(ww) })}
@@ -427,7 +447,7 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
           );
         })}
 
-        <div className="border-t border-border mt-3 pt-3 space-y-1">
+        <div className="border-t border-border mt-3 pt-3 space-y-1" data-tour="history.summary">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">{t("sleep.totalSleep")}</span>
             <span className="font-display text-lg font-semibold">{fmtDuration(totalMin)}</span>
@@ -436,6 +456,13 @@ const DayGroup = memo(function DayGroup({ date, sessions, stubs = [], birthDate,
             <span className="text-sm text-muted-foreground">{t("analytics.naps")}</span>
             <span className="text-sm font-semibold">{dayNapsCount}</span>
           </div>
+          {dayWWTh && (
+            <div className="pt-1">
+              <span className="text-xs text-muted-foreground">
+                {t("history.expectedWW", { min: fmtDuration(dayWWTh.min), max: fmtDuration(dayWWTh.max) })}
+              </span>
+            </div>
+          )}
         </div>
       </Card>
     </div>

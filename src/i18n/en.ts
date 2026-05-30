@@ -162,7 +162,7 @@ const en = {
     noChildSelected: "No child selected",
     timeToSleep: "Time to sleep!",
   },
-  history: { title: "History" },
+  history: { title: "History", expectedWW: "Expected wake window: {{min}} – {{max}}" },
   analytics: {
     title: "Analytics",
     daily: "Day", weekly: "Week",
@@ -251,6 +251,42 @@ const en = {
     yourVersion: "Your version", serverVersion: "Server version",
     keepMine: "Keep mine", keepTheirs: "Keep theirs",
     resolved: "Resolved",
+  },
+  tour: {
+    common: {
+      skip: "Skip",
+      next: "Next",
+      prev: "Back",
+      finish: "Got it",
+    },
+    history: {
+      sessionRow: {
+        title: "Sleep records",
+        body: "Each row is one sleep session.\n\nDot color = sleep type:\n· Dark — night sleep\n· Light — nap\n\nTap a row to see details or edit.",
+      },
+      wwBar: {
+        title: "Wake window",
+        body: "The bar shows how long the baby was awake between sleeps.\n\n🟢 Green — within the normal range for this age\n🟡 Yellow — above or below the norm",
+      },
+      summary: {
+        title: "Day summary",
+        body: "Total sleep time and nap count for the day.\n\nThe expected wake window range is calculated automatically from the baby's age.",
+      },
+      add: {
+        title: "Add past sleep",
+        body: "Tap + Add to log a sleep session\nthat wasn't tracked in real time.",
+      },
+    },
+    settings: {
+      nightWindow: {
+        title: "Night window",
+        body: "Defines when night begins and ends.\n\nAny sleep starting within this range is classified as night sleep — this affects the dot color in History and all sleep statistics.",
+      },
+      familyInvite: {
+        title: "Family access",
+        body: "Generate a code to invite a family member.\n\nRoles:\n· Viewer — can only see data\n· Editor — can add and edit sleep\n· Owner — manages settings and members",
+      },
+    },
   },
   profile: {
     title: "Profile",

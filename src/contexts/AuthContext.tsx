@@ -60,7 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.removeItem("analytics.tab");
       // Clear per-child keys (cs:isSleeping:*, analytics.day.*, etc.) without
       // knowing which child IDs were active — collect first, then remove.
-      const prefixes = ["cs:isSleeping:", "analytics.day.", "analytics.weekOffset.", "analytics.weekExcluded."];
+      const prefixes = ["cs:isSleeping:", "analytics.day.", "analytics.weekOffset.", "analytics.weekExcluded.", "tour:"];
       const toRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
