@@ -168,7 +168,7 @@ const ru = {
     daily: "День", weekly: "Неделя",
     totalSleep: "Всего сна", totalWake: "Всего бодрствования",
     nightSleep: "Ночной сон", daySleep: "Дневной сон",
-    totalDaySleep: "Всего дневного сна", napsCountScore: "Количество дневных снов",
+    totalDaySleep: "Дневной сон", napsCountScore: "Количество дневных снов",
     dayScore: "Оценка дня: {{score}} из {{total}}",
     needsAttention: "Требует внимания",
     allGood: "Отличный день!",
