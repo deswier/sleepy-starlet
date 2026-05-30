@@ -198,6 +198,8 @@ const en = {
     wakeup: "Wake-up",
     noDataForDay: "No data for this day",
     dayToggleHint: "Tap to exclude or include a day",
+    barChartHint: "Tap a bar to open that day",
+    weekAvgShort: "avg",
     weekRange: "{{from}} – {{to}}",
     thisWeek: "Current week",
     openHeatmap: "Open diagram",

@@ -198,6 +198,8 @@ const ru = {
     wakeup: "Пробуждение",
     noDataForDay: "Нет данных за этот день",
     dayToggleHint: "Нажмите, чтобы исключить или вернуть день в расчёт",
+    barChartHint: "Нажмите на столбец, чтобы открыть этот день",
+    weekAvgShort: "сред.",
     weekRange: "{{from}} – {{to}}",
     thisWeek: "Текущая неделя",
     openHeatmap: "Открыть диаграмму",

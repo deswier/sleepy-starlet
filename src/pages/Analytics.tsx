@@ -28,6 +28,9 @@ import { useTimeFormat } from "@/lib/use-time-format";
 import {
   isSameDay, startOfDay, subDays, addDays, format,
 } from "date-fns";
+import { enUS, ru } from "date-fns/locale";
+import i18n from "@/i18n";
+import { DayBarChart, type DayBarDatum } from "@/components/analytics/DayBarChart";
 
 export type NightWindow = { start: string; end: string };
 const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
@@ -105,6 +108,17 @@ export default function Analytics() {
     try { localStorage.setItem("analytics.tab", tab); } catch {}
   }, [tab]);
 
+  // Tapping a day bar in the week view drills into that day. We persist the
+  // target into DayView's own localStorage key, switch tabs, and bump a token
+  // so DayView remounts and re-reads it (covers both Radix mount behaviours).
+  const [dayNav, setDayNav] = useState(0);
+  const selectDay = (dateKey: string) => {
+    if (!activeChild) return;
+    try { localStorage.setItem(`analytics.day.${activeChild.id}`, dateKey); } catch {}
+    setDayNav((n) => n + 1);
+    setTab("day");
+  };
+
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
   }
@@ -119,8 +133,8 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
-        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
+        <TabsContent value="day"><DayView key={`${activeChild.id}:${dayNav}`} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} onSelectDay={selectDay} /></TabsContent>
       </Tabs>
     </section>
   );
@@ -421,10 +435,11 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ childId, birthDate, night, splitByDate }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean }) {
+function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean; onSelectDay: (dateKey: string) => void }) {
   const { t } = useTranslation();
   const { fmtTime } = useTimeFormat();
   const navigate = useNavigate();
+  const locale = i18n.language?.startsWith("ru") ? ru : enUS;
   const now = new Date();
   const today = startOfDay(now);
 
@@ -656,6 +671,19 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   const minNap = allNapDur.length ? Math.min(...allNapDur) : 0;
   const maxNap = allNapDur.length ? Math.max(...allNapDur) : 0;
 
+  // Per-day series for the comparison bar charts. Excluded/empty days are
+  // carried through (flagged) so the chart can de-emphasise rather than drop them.
+  const dayAvgWW = (wws: number[]) =>
+    wws.length ? Math.round(wws.reduce((a, b) => a + b, 0) / wws.length) : 0;
+  const buildChart = (pick: (d: (typeof perDay)[number]) => number): DayBarDatum[] =>
+    perDay.map((d, i) => ({
+      dateKey: dayKey(days[i]),
+      label: format(days[i], "EEEEEE", { locale }),
+      value: pick(d),
+      active: activeFlags[i],
+      hasData: dayHasData[i],
+    }));
+
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
 
@@ -735,7 +763,14 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
         value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
         secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
-        arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
+        arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />}
+        chart={
+          <>
+            <DayBarChart data={buildChart((d) => d.totalSleep)} norm={norm?.totalSleep}
+              average={avgTotalSleep} format={(v) => formatDuration(v)} onSelectDay={onSelectDay} />
+            <p className="text-[11px] text-muted-foreground text-center mt-1">{t("analytics.barChartHint")}</p>
+          </>
+        } />
 
       <Card className="p-5 shadow-card border-border/50">
         <div className="flex items-center gap-3 text-muted-foreground text-sm mb-1">
@@ -755,6 +790,8 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
             <SubItem label={t("analytics.wakeup")} value={weekNightTimes.avgWakeup ? fmtTime(weekNightTimes.avgWakeup) : "—"} />
           </SubGrid>
         )}
+        <DayBarChart data={buildChart((d) => d.nightSleep)} norm={norm?.nightSleep}
+          average={avgNightSleep} format={(v) => formatDuration(v)} onSelectDay={onSelectDay} />
         {norm && avgNightSleep > 0 && (
           <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgNightSleep, norm.nightSleep)}</p>
         )}
@@ -763,7 +800,11 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
         value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")}
         secondary={norm ? normLabel(t, avgTotalWake, norm.totalWake) : undefined}
-        arrow={<NormArrow value={avgTotalWake} norm={norm?.totalWake} />} />
+        arrow={<NormArrow value={avgTotalWake} norm={norm?.totalWake} />}
+        chart={
+          <DayBarChart data={buildChart((d) => d.totalWake)} norm={norm?.totalWake}
+            average={avgTotalWake} format={(v) => formatDuration(v)} onSelectDay={onSelectDay} />
+        } />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}
@@ -773,6 +814,8 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
           <SubItem label={t("analytics.minWW")} value={allWWs.length ? formatDuration(minWW) : "—"} />
           <SubItem label={t("analytics.maxWW")} value={allWWs.length ? formatDuration(maxWW) : "—"} />
         </SubGrid>
+        <DayBarChart data={buildChart((d) => dayAvgWW(d.wws))} norm={norm?.ww}
+          average={avgWW} format={(v) => formatDuration(v)} onSelectDay={onSelectDay} />
         {norm && avgWW > 0 && (
           <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgWW, norm.ww)}</p>
         )}
@@ -781,7 +824,11 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
       <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalDaySleep")}
         value={formatDuration(avgDaySleep)} sub={t("analytics.avgPerDay")}
         secondary={norm ? normLabel(t, avgDaySleep, norm.daySleep) : undefined}
-        arrow={<NormArrow value={avgDaySleep} norm={norm?.daySleep} />} />
+        arrow={<NormArrow value={avgDaySleep} norm={norm?.daySleep} />}
+        chart={
+          <DayBarChart data={buildChart((d) => d.totalDaySleep)} norm={norm?.daySleep}
+            average={avgDaySleep} format={(v) => formatDuration(v)} onSelectDay={onSelectDay} />
+        } />
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Clock className="w-5 h-5" />} label={t("analytics.napsCountScore")}
@@ -794,6 +841,8 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
           <SubItem label={t("analytics.minNap")} value={allNapDur.length ? formatDuration(minNap) : "—"} />
           <SubItem label={t("analytics.maxNap")} value={allNapDur.length ? formatDuration(maxNap) : "—"} />
         </SubGrid>
+        <DayBarChart data={buildChart((d) => d.napsCount)} norm={norm?.napsCount}
+          average={avgNapsCount} format={(v) => String(v)} onSelectDay={onSelectDay} />
         {norm && avgNapsCount > 0 && (
           <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgNapsCount, norm.napsCount)}</p>
         )}
@@ -937,8 +986,8 @@ function humanDelta(v: number, isDuration = false): string {
   return Math.round(v * 10) / 10 + "";
 }
 
-function Stat({ icon, label, value, sub, secondary, arrow }: {
-  icon: React.ReactNode; label: string; value: string; sub?: string; secondary?: string; arrow?: React.ReactNode;
+function Stat({ icon, label, value, sub, secondary, arrow, chart }: {
+  icon: React.ReactNode; label: string; value: string; sub?: string; secondary?: string; arrow?: React.ReactNode; chart?: React.ReactNode;
 }) {
   return (
     <Card className="p-5 shadow-card border-border/50">
@@ -949,6 +998,7 @@ function Stat({ icon, label, value, sub, secondary, arrow }: {
       <div className="font-display text-3xl font-semibold mt-2 flex items-center gap-2">{value}{arrow}</div>
       {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
       {secondary && <div className="text-xs text-muted-foreground mt-1">{secondary}</div>}
+      {chart}
     </Card>
   );
 }
