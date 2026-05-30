@@ -290,7 +290,7 @@ const en = {
     analytics: {
       dayChips: {
         title: "Exclude a day",
-        body: "Tap to exclude an atypical day — averages update instantly.",
+        body: "Tap a day to exclude it from the averages.",
       },
       weekChart: {
         title: "Sleep by day",
