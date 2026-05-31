@@ -1,4 +1,4 @@
-package app.alinamikh.lullaby;
+package app.deswier.lullaby;
 
 import android.text.format.DateFormat;
 import com.getcapacitor.JSObject;

@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "app.alinamikh.lullaby",
+  appId: "app.deswier.lullaby",
   appName: "Lullaby",
   webDir: "dist",
   android: {
