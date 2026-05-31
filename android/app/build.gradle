@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "app.lullaby"
+    namespace "app.alinamikh.lullaby"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.lullaby"
+        applicationId "app.alinamikh.lullaby"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
