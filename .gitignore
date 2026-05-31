@@ -31,3 +31,4 @@ dist-ssr
 
 # Android keystore
 lullaby-release.keystore
+android/keystore.properties
