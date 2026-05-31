@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -70,6 +70,18 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
   const [typeManuallySet, setTypeManuallySet] = useState(mode === "edit");
   const [interruptions, setInterruptions] = useState<DraftInterruption[]>(initialInterruptions ?? []);
   const [dirty, setDirty] = useState(false);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+
+  // Resize textarea to fit content, capped by max-height CSS.
+  const resizeComment = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  // Resize on mount so pre-filled values (edit mode) display correctly.
+  useEffect(() => {
+    if (commentRef.current && comment) resizeComment(commentRef.current);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Report dirty state changes to parent so the parent can guard modal close.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -222,6 +234,18 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-2">
           <div>
+            <Label>{t("sleep.comment")}</Label>
+            <Textarea
+              ref={commentRef}
+              value={comment}
+              onChange={(e) => { setComment(e.target.value); setDirty(true); resizeComment(e.target); }}
+              rows={1}
+              enterKeyHint="done"
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }}
+              className="resize-none overflow-y-auto max-h-[6rem]"
+            />
+          </div>
+          <div>
             <Label>{t("sleep.type")}</Label>
             <Select value={sleepType} onValueChange={(v: any) => { setSleepType(v); setTypeManuallySet(true); setDirty(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -259,16 +283,14 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
               </Select>
             </div>
           )}
-          <div>
-            <Label>{t("sleep.comment")}</Label>
-            <Textarea value={comment} onChange={(e) => { setComment(e.target.value); setDirty(true); }} rows={2} />
-          </div>
         </CollapsibleContent>
       </Collapsible>
 
-      <Button type="submit" className="w-full" disabled={busy}>
-        {mode === "edit" ? t("common.save") : t("sleep.addSleep")}
-      </Button>
+      <div className="sticky bottom-0 bg-background pt-2">
+        <Button type="submit" className="w-full" disabled={busy}>
+          {mode === "edit" ? t("common.save") : t("sleep.addSleep")}
+        </Button>
+      </div>
     </form>
   );
 }

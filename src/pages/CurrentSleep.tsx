@@ -10,6 +10,16 @@ import {
   ResponsiveDialogTitle,
   ResponsiveDialogTrigger,
 } from "@/components/ui/responsive-dialog";
+import {
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
@@ -75,6 +85,9 @@ export default function CurrentSleep() {
   } | null>(null);
   const [wakeFormDirty, setWakeFormDirty] = useState(false);
   const [showDiscardWake, setShowDiscardWake] = useState(false);
+  // Confirm + busy state for discarding the whole sleep (delete, not save).
+  const [showDiscardSleep, setShowDiscardSleep] = useState(false);
+  const [discardingSleep, setDiscardingSleep] = useState(false);
   // Inline edit of active interruption start.
   const [editingIntrStart, setEditingIntrStart] = useState(false);
   const [intrStartDraft, setIntrStartDraft] = useState<Date>(new Date());
@@ -348,6 +361,22 @@ export default function CurrentSleep() {
     setConfirmWake(null);
   };
 
+  // Discard the whole sleep: the session already exists in the DB (startSleep
+  // wrote it), so "don't save at all" means deleting it outright. Interruptions
+  // cascade via FK. Used when a sleep was logged by mistake.
+  const discardActiveSleep = async () => {
+    if (!active || discardingSleep) return;
+    setDiscardingSleep(true);
+    const { error } = await supabase.from("sleep_sessions").delete().eq("id", active.id);
+    setDiscardingSleep(false);
+    if (error) { toast.error(error.message); return; }
+    setShowDiscardSleep(false);
+    setConfirmWake(null);
+    setWakeFormDirty(false);
+    toast.success(t("sleep.sleepDiscarded"));
+    load();
+  };
+
   const beginEditStart = () => {
     if (!active) return;
     const owns = active.created_by_user_id === user?.id;
@@ -535,11 +564,11 @@ export default function CurrentSleep() {
                   </Select>
                 </div>
               )}
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setStopIntrDraft(null)}>
+              <div className="flex gap-2 pt-2 sticky bottom-0 bg-background">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setStopIntrDraft(null)}>
                   {t("common.cancel")}
                 </Button>
-                <Button className="flex-1" onClick={saveStopIntr}>{t("common.save")}</Button>
+                <Button type="button" className="flex-1" onClick={saveStopIntr}>{t("common.save")}</Button>
               </div>
             </div>
           )}
@@ -567,8 +596,39 @@ export default function CurrentSleep() {
               />
             </Suspense>
           )}
+          {confirmWake && canEditActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full mt-2 text-destructive hover:text-destructive"
+              disabled={discardingSleep}
+              onClick={() => setShowDiscardSleep(true)}
+            >
+              {t("sleep.discardSleep")}
+            </Button>
+          )}
         </ResponsiveDialogContent>
       </ResponsiveDialog>
+
+      {/* Discard the whole sleep without saving — deletes the session. */}
+      <ResponsiveAlertDialog open={showDiscardSleep} onOpenChange={setShowDiscardSleep}>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>{t("sleep.discardSleepConfirm")}</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>{t("sleep.discardSleepHint")}</ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel disabled={discardingSleep}>{t("common.cancel")}</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
+              disabled={discardingSleep}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => { e.preventDefault(); discardActiveSleep(); }}
+            >
+              {t("common.delete")}
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
 
       <DiscardChangesDialog
         open={showDiscardManual}
