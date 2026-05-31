@@ -152,6 +152,10 @@ const en = {
     overlap: "Sleep overlaps with an existing record",
     alreadySleeping: "Sleep has already started on another device",
     sessionEnded: "Sleep has already ended",
+    discardSleep: "Don't save this sleep",
+    discardSleepConfirm: "Discard this sleep?",
+    discardSleepHint: "The sleep will be deleted and not saved.",
+    sleepDiscarded: "Sleep discarded",
     alreadyPaused: "Sleep is already paused",
     interruptionAlreadyEnded: "Pause has already ended",
     sleepAdded: "Sleep added", updated: "Updated",
@@ -165,6 +169,78 @@ const en = {
   history: { title: "History", expectedWW: "Expected wake window: {{min}} – {{max}}" },
   analytics: {
     title: "Analytics",
+    export: {
+      action: "Export",
+      title: "Export sleep data",
+      subtitle: "Pick a date range. The CSV can be analyzed in AI or a spreadsheet.",
+      lastDays: "Last {{count}} days",
+      empty: "No sleep records in this range",
+      done: "Exported {{count}} record",
+      done_other: "Exported {{count}} records",
+      shareTitle: "Lullaby sleep data",
+      day: "Day",
+      night: "Night",
+      col: {
+        date: "Date",
+        start: "Start",
+        end: "End",
+        durationMin: "Duration (min)",
+        type: "Type",
+        place: "Place",
+        method: "Settling method",
+        interruptions: "Wake-ups",
+        interruptionMin: "Wake-up time (min)",
+        wakeWindowMin: "Wake window (min)",
+        comment: "Comment",
+      },
+      prompt: {
+        show: "AI analysis prompt",
+        hint: "Fill in the fields in [brackets], copy, then attach the file.",
+        copy: "Copy prompt",
+        copied: "Prompt copied",
+        ageWeeks: "{{count}} week",
+        ageWeeks_other: "{{count}} weeks",
+        agePlaceholder: "[enter age]",
+        template: `You are a pediatric sleep consultant. Analyze my baby's sleep data from the CSV file and prepare a detailed but easy-to-read report for a parent.
+
+CHILD CONTEXT:
+- Age: {{age}}
+- Notes: [e.g. teething / was sick last week / nothing]
+- What worries me: [e.g. frequent night wakings / short naps]
+
+CSV COLUMNS:
+- Date — the calendar day of the sleep
+- Start / End — local start and end time (HH:mm)
+- Duration (min) — sleep length in minutes
+- Type — "Day" (nap) or "Night" (night sleep)
+- Place — where the baby slept
+- Settling method — how the baby was put to sleep
+- Wake-ups — how many times the baby woke up DURING this sleep
+- Wake-up time (min) — total length of those wake-ups
+- Wake window (min) — awake window BEFORE this sleep
+- Comment — parent's note
+
+WHAT TO DO:
+1. First check the data: gaps, odd values, unfinished sleeps (empty "End"). Briefly note anything that limits the analysis. Do not factor in or draw conclusions from fields that have no data (empty place, settling method, etc.) — simply ignore them.
+2. Per day, compute: total 24h sleep, night vs day sleep, number of naps, longest unbroken stretch. Convert minutes to hours and minutes (e.g. 6h30m).
+3. Compare key metrics to age norms for the stated age: total sleep, night sleep, day sleep, number of naps, wake window length. Clearly state what is within norm and what is above/below and by how much.
+4. Assess wake windows: too long/short for the age, and whether window length correlates with the quality of the following sleep (duration, number of wake-ups).
+5. Analyze night wakings: how often, at what time, how long, and any day-to-day patterns.
+6. Assess the effect of settling method and sleep place: with which method/place sleeps are longer and calmer, and with which they are worse — based on the data, not generic advice.
+7. Find trends over the period: what is improving, what is worsening, are there "bad" days and what they have in common (use the comments).
+8. Give 3-5 concrete, prioritized recommendations — what to try first and why, referencing the numbers from the data.
+
+OUTPUT FORMAT:
+- Start with a short TL;DR (3-5 sentences).
+- Then a per-day table with key metrics.
+- A "Comparison to norms" section.
+- A "What to watch" section (problems and patterns).
+- A "Recommendations" section (numbered by priority).
+- Plain language, no fluff. Back every conclusion with concrete numbers from the file. If there is too little data for a confident conclusion, say so honestly.
+- Express all time totals in hours and minutes, not just minutes.
+- If you need more info for an accurate analysis, ask clarifying questions at the very end.`,
+      },
+    },
     daily: "Day", weekly: "Week",
     totalSleep: "Total sleep", totalWake: "Total wake time",
     nightSleep: "Night sleep", daySleep: "Day sleep",

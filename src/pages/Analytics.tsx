@@ -36,6 +36,7 @@ import { useTour } from "@/hooks/use-tour";
 import { getTourProgress } from "@/lib/tour-storage";
 
 const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
+const ExportSleepDialog = lazy(() => import("@/components/analytics/ExportSleepDialog"));
 
 export type NightWindow = { start: string; end: string };
 const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
@@ -143,6 +144,9 @@ export default function Analytics() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("analytics.title")}</h2>
+        <Suspense fallback={null}>
+          <ExportSleepDialog childId={activeChild.id} birthDate={activeChild.birth_date} />
+        </Suspense>
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="grid grid-cols-2 w-full mb-4">
