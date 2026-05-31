@@ -150,6 +150,14 @@ const en = {
     startNotFuture: "Start cannot be in the future",
     endNotFuture: "End cannot be in the future",
     overlap: "Sleep overlaps with an existing record",
+    alreadySleeping: "Sleep has already started on another device",
+    sessionEnded: "Sleep has already ended",
+    discardSleep: "Don't save this sleep",
+    discardSleepConfirm: "Discard this sleep?",
+    discardSleepHint: "The sleep will be deleted and not saved.",
+    sleepDiscarded: "Sleep discarded",
+    alreadyPaused: "Sleep is already paused",
+    interruptionAlreadyEnded: "Pause has already ended",
     sleepAdded: "Sleep added", updated: "Updated",
     sleepsCount: "{{count}} sleep",
     sleepsCount_other: "{{count}} sleeps",
@@ -158,13 +166,85 @@ const en = {
     noChildSelected: "No child selected",
     timeToSleep: "Time to sleep!",
   },
-  history: { title: "History" },
+  history: { title: "History", expectedWW: "Expected wake window: {{min}} – {{max}}" },
   analytics: {
     title: "Analytics",
+    export: {
+      action: "Export",
+      title: "Export sleep data",
+      subtitle: "Pick a date range. The CSV can be analyzed in AI or a spreadsheet.",
+      lastDays: "Last {{count}} days",
+      empty: "No sleep records in this range",
+      done: "Exported {{count}} record",
+      done_other: "Exported {{count}} records",
+      shareTitle: "Lullaby sleep data",
+      day: "Day",
+      night: "Night",
+      col: {
+        date: "Date",
+        start: "Start",
+        end: "End",
+        durationMin: "Duration (min)",
+        type: "Type",
+        place: "Place",
+        method: "Settling method",
+        interruptions: "Wake-ups",
+        interruptionMin: "Wake-up time (min)",
+        wakeWindowMin: "Wake window (min)",
+        comment: "Comment",
+      },
+      prompt: {
+        show: "AI analysis prompt",
+        hint: "Fill in the fields in [brackets], copy, then attach the file.",
+        copy: "Copy prompt",
+        copied: "Prompt copied",
+        ageWeeks: "{{count}} week",
+        ageWeeks_other: "{{count}} weeks",
+        agePlaceholder: "[enter age]",
+        template: `You are a pediatric sleep consultant. Analyze my baby's sleep data from the CSV file and prepare a detailed but easy-to-read report for a parent.
+
+CHILD CONTEXT:
+- Age: {{age}}
+- Notes: [e.g. teething / was sick last week / nothing]
+- What worries me: [e.g. frequent night wakings / short naps]
+
+CSV COLUMNS:
+- Date — the calendar day of the sleep
+- Start / End — local start and end time (HH:mm)
+- Duration (min) — sleep length in minutes
+- Type — "Day" (nap) or "Night" (night sleep)
+- Place — where the baby slept
+- Settling method — how the baby was put to sleep
+- Wake-ups — how many times the baby woke up DURING this sleep
+- Wake-up time (min) — total length of those wake-ups
+- Wake window (min) — awake window BEFORE this sleep
+- Comment — parent's note
+
+WHAT TO DO:
+1. First check the data: gaps, odd values, unfinished sleeps (empty "End"). Briefly note anything that limits the analysis. Do not factor in or draw conclusions from fields that have no data (empty place, settling method, etc.) — simply ignore them.
+2. Per day, compute: total 24h sleep, night vs day sleep, number of naps, longest unbroken stretch. Convert minutes to hours and minutes (e.g. 6h30m).
+3. Compare key metrics to age norms for the stated age: total sleep, night sleep, day sleep, number of naps, wake window length. Clearly state what is within norm and what is above/below and by how much.
+4. Assess wake windows: too long/short for the age, and whether window length correlates with the quality of the following sleep (duration, number of wake-ups).
+5. Analyze night wakings: how often, at what time, how long, and any day-to-day patterns.
+6. Assess the effect of settling method and sleep place: with which method/place sleeps are longer and calmer, and with which they are worse — based on the data, not generic advice.
+7. Find trends over the period: what is improving, what is worsening, are there "bad" days and what they have in common (use the comments).
+8. Give 3-5 concrete, prioritized recommendations — what to try first and why, referencing the numbers from the data.
+
+OUTPUT FORMAT:
+- Start with a short TL;DR (3-5 sentences).
+- Then a per-day table with key metrics.
+- A "Comparison to norms" section.
+- A "What to watch" section (problems and patterns).
+- A "Recommendations" section (numbered by priority).
+- Plain language, no fluff. Back every conclusion with concrete numbers from the file. If there is too little data for a confident conclusion, say so honestly.
+- Express all time totals in hours and minutes, not just minutes.
+- If you need more info for an accurate analysis, ask clarifying questions at the very end.`,
+      },
+    },
     daily: "Day", weekly: "Week",
     totalSleep: "Total sleep", totalWake: "Total wake time",
     nightSleep: "Night sleep", daySleep: "Day sleep",
-    totalDaySleep: "Total daytime sleep", napsCountScore: "Number of daytime naps",
+    totalDaySleep: "Daytime sleep", napsCountScore: "Number of daytime naps",
     dayScore: "Day score: {{score}} of {{total}}",
     needsAttention: "Needs attention",
     allGood: "Great day!",
@@ -222,6 +302,12 @@ const en = {
     expires24h: "Expires in 24 hours",
     expired: "Expired",
     revoke: "Revoke", copy: "Copy", copied: "Copied",
+    shareButton: "Share",
+    shareTitle: "Join our child in Lullaby 👶",
+    shareStep1: "1. Open Lullaby",
+    shareStep2: '2. Tap "Join child"',
+    shareStep3: "3. Enter this invite code (expires in {{time}}):",
+    shareFallback: "Invite copied to clipboard",
     members: "Members", you: "You",
     role_admin: "Owner", role_user: "Editor", role_viewer: "Viewer",
     inviteRole: "Role for this code",
@@ -241,6 +327,56 @@ const en = {
     yourVersion: "Your version", serverVersion: "Server version",
     keepMine: "Keep mine", keepTheirs: "Keep theirs",
     resolved: "Resolved",
+  },
+  tour: {
+    common: {
+      skip: "Skip",
+      next: "Next",
+      prev: "Back",
+      finish: "Got it",
+    },
+    history: {
+      sessionRow: {
+        title: "Sleep records",
+        body: "Each row is one sleep session.\n\nDot color = sleep type:\n· Dark — night sleep\n· Light — nap\n\nTap a row to see details or edit.",
+      },
+      wwBar: {
+        title: "Wake window",
+        body: "The bar shows how long the baby was awake between sleeps.\n\n🟢 Green — within the normal range for this age\n🟡 Yellow — above or below the norm",
+      },
+      summary: {
+        title: "Day summary",
+        body: "Total sleep time and nap count for the day.\n\nThe expected wake window range is calculated automatically from the baby's age.",
+      },
+      add: {
+        title: "Add past sleep",
+        body: "Tap + Add to log a sleep session\nthat wasn't tracked in real time.",
+      },
+    },
+    settings: {
+      nightWindow: {
+        title: "Night window",
+        body: "Defines when night begins and ends.\n\nAny sleep starting within this range is classified as night sleep — this affects the dot color in History and all sleep statistics.",
+      },
+      familyInvite: {
+        title: "Family access",
+        body: "Generate a code to invite a family member.\n\nRoles:\n· Viewer — can only see data\n· Editor — can add and edit sleep\n· Owner — manages settings and members",
+      },
+    },
+    analytics: {
+      dayChips: {
+        title: "Exclude a day",
+        body: "Tap a day to exclude it from the averages.",
+      },
+      weekChart: {
+        title: "Sleep by day",
+        body: "The dashed line is the weekly average. The green band is the age norm.\n\nTap a bar for details.",
+      },
+      heatmap: {
+        title: "Sleep diagram",
+        body: "Detailed hour-by-hour sleep view for each day of the week.",
+      },
+    },
   },
   profile: {
     title: "Profile",

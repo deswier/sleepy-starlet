@@ -47,7 +47,10 @@ const ResponsiveAlertDialogContent = React.forwardRef<
         <DrawerPrimitive.Content
           ref={ref}
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-2xl border bg-background outline-none",
+            // z-[70] sits above AppShell header/nav (z-[60]) so the drawer's
+            // action buttons aren't clipped by the bottom nav. Overlay stays
+            // at z-50 below the nav to keep the chrome visually undimmed.
+            "fixed inset-x-0 bottom-0 z-[70] flex max-h-[90dvh] flex-col rounded-t-2xl border bg-background outline-none",
             className,
           )}
           {...props}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { devError } from "@/lib/logger";
@@ -16,6 +16,7 @@ import { db } from "@/lib/offline-queue";
 import { useNetworkStatus } from "@/hooks/use-network-status";
 import { WifiOff } from "lucide-react";
 import { useChildren } from "@/contexts/ChildContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -28,6 +29,14 @@ import { useTimeFormat } from "@/lib/use-time-format";
 import {
   isSameDay, startOfDay, subDays, addDays, format,
 } from "date-fns";
+import { enUS, ru } from "date-fns/locale";
+import i18n from "@/i18n";
+import { WeekStackedSleepChart, type WeekCompareDayDatum } from "@/components/analytics/DayBarChart";
+import { useTour } from "@/hooks/use-tour";
+import { getTourProgress } from "@/lib/tour-storage";
+
+const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
+const ExportSleepDialog = lazy(() => import("@/components/analytics/ExportSleepDialog"));
 
 export type NightWindow = { start: string; end: string };
 const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
@@ -90,6 +99,7 @@ export function sessionDay(s: SleepSession, night: NightWindow = DEFAULT_NIGHT):
 
 export default function Analytics() {
   const { activeChild, settings } = useChildren();
+  const { user } = useAuth();
   const { t } = useTranslation();
   const night: NightWindow = {
     start: settings?.night_start_time?.slice(0, 5) ?? DEFAULT_NIGHT.start,
@@ -105,6 +115,27 @@ export default function Analytics() {
     try { localStorage.setItem("analytics.tab", tab); } catch {}
   }, [tab]);
 
+  // Tapping a day bar in the week view drills into that day. We persist the
+  // target into DayView's own localStorage key, switch tabs, and bump a token
+  // so DayView remounts and re-reads it (covers both Radix mount behaviours).
+  const [dayNav, setDayNav] = useState(0);
+  const selectDay = (dateKey: string) => {
+    if (!activeChild) return;
+    try { localStorage.setItem(`analytics.day.${activeChild.id}`, dateKey); } catch {}
+    setDayNav((n) => n + 1);
+    setTab("day");
+  };
+
+  const tour = useTour("analytics", !!activeChild);
+
+  // Switch to the week tab once on mount when the analytics tour hasn't been
+  // completed yet — all tour anchors live in the week tab.
+  useEffect(() => {
+    if (!activeChild || !user) return;
+    const progress = getTourProgress(user.id, "analytics");
+    if (!progress?.done) setTab("week");
+  }, [activeChild?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
   }
@@ -113,15 +144,23 @@ export default function Analytics() {
     <section className="px-4 max-w-md mx-auto w-full pb-4">
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("analytics.title")}</h2>
+        <Suspense fallback={null}>
+          <ExportSleepDialog childId={activeChild.id} birthDate={activeChild.birth_date} />
+        </Suspense>
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="grid grid-cols-2 w-full mb-4">
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView key={activeChild.id} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
-        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
+        <TabsContent value="day"><DayView key={`${activeChild.id}:${dayNav}`} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
+        <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} onSelectDay={selectDay} /></TabsContent>
       </Tabs>
+      {tour.active && (
+        <Suspense fallback={null}>
+          <TourSpotlight tourId="analytics" {...tour} />
+        </Suspense>
+      )}
     </section>
   );
 }
@@ -421,10 +460,11 @@ function DayPicker({ day, setDay }: { day: Date; setDay: (d: Date) => void }) {
 }
 
 // ---------- WEEK ----------
-function WeekView({ childId, birthDate, night, splitByDate }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean }) {
+function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean; onSelectDay: (dateKey: string) => void }) {
   const { t } = useTranslation();
   const { fmtTime } = useTimeFormat();
   const navigate = useNavigate();
+  const locale = i18n.language?.startsWith("ru") ? ru : enUS;
   const now = new Date();
   const today = startOfDay(now);
 
@@ -656,6 +696,23 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
   const minNap = allNapDur.length ? Math.min(...allNapDur) : 0;
   const maxNap = allNapDur.length ? Math.max(...allNapDur) : 0;
 
+  // Per-day series for the comparison bar chart.
+  const chartData: WeekCompareDayDatum[] = perDay.map((d, i) => {
+    const wwArr = d.wws;
+    const avgWW = wwArr.length ? Math.round(wwArr.reduce((a, b) => a + b, 0) / wwArr.length) : 0;
+    return {
+      dateKey: dayKey(days[i]),
+      label: format(days[i], "EEEEEE", { locale }),
+      nightSleep: d.nightSleep,
+      daySleep: d.totalDaySleep,
+      totalWake: d.totalWake,
+      avgWW,
+      napsCount: d.napsCount,
+      active: activeFlags[i],
+      hasData: dayHasData[i],
+    };
+  });
+
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
 
@@ -682,14 +739,16 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
           {t("common.cachedData")}
         </div>
       )}
-      <DayChips
-        days={days}
-        hasData={dayHasData}
-        active={activeFlags}
-        onToggle={toggleDay}
-        t={t}
-      />
-      <Button type="button" variant="outline" className="w-full gap-2" onClick={openHeatmap}>
+      <div data-tour="analytics.day-chips">
+        <DayChips
+          days={days}
+          hasData={dayHasData}
+          active={activeFlags}
+          onToggle={toggleDay}
+          t={t}
+        />
+      </div>
+      <Button type="button" variant="outline" className="w-full gap-2" onClick={openHeatmap} data-tour="analytics.heatmap-btn">
         <Grid3x3 className="w-4 h-4" />
         {t("analytics.heatmapTitle")}
       </Button>
@@ -732,10 +791,33 @@ function WeekView({ childId, birthDate, night, splitByDate }: { childId: string;
         </Card>
       )}
 
-      <Stat icon={<Moon className="w-5 h-5" />} label={t("analytics.totalSleep")}
-        value={formatDuration(avgTotalSleep)} sub={t("analytics.avgPerDay")}
-        secondary={norm ? normLabel(t, avgTotalSleep, norm.totalSleep) : undefined}
-        arrow={<NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />} />
+      <Card className="p-5 shadow-card border-border/50" data-tour="analytics.week-chart">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-muted-foreground text-sm">
+            <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              <Moon className="w-5 h-5" />
+            </span>
+            {t("analytics.totalSleep")}
+          </div>
+          <div className="text-right">
+            <div className="font-display text-2xl font-semibold flex items-center gap-1.5 justify-end">
+              {formatDuration(avgTotalSleep)}
+              <NormArrow value={avgTotalSleep} norm={norm?.totalSleep} />
+            </div>
+            <div className="text-xs text-muted-foreground">{t("analytics.avgPerDay")}</div>
+          </div>
+        </div>
+        <WeekStackedSleepChart
+          data={chartData}
+          normTotal={norm?.totalSleep}
+          avgTotal={avgTotalSleep}
+          nightLabel={t("analytics.nightSleep")}
+          dayLabel={t("analytics.totalDaySleep")}
+          fmtDur={formatDuration}
+          onSelectDay={onSelectDay}
+        />
+        {norm && <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgTotalSleep, norm.totalSleep)}</p>}
+      </Card>
 
       <Card className="p-5 shadow-card border-border/50">
         <div className="flex items-center gap-3 text-muted-foreground text-sm mb-1">

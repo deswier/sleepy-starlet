@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { useTour } from "@/hooks/use-tour";
+const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
 import { devError } from "@/lib/logger";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
@@ -6,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus, LogOut } from "lucide-react";
+import { ArrowLeft, Plus, X, Copy, Trash2, Camera, UserMinus, LogOut, Share2 } from "lucide-react";
 import {
   ResponsiveAlertDialog,
   ResponsiveAlertDialogAction,
@@ -70,15 +72,10 @@ export default function Settings() {
     const id = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
-  const tt = t;
   const formatRemaining = (expiresAtIso: string) => {
     const ms = new Date(expiresAtIso).getTime() - now;
-    if (ms <= 0) return tt("settings.expired");
-    const totalMin = Math.floor(ms / 60_000);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    if (h <= 0) return `${m}m`;
-    return `${h}h ${m}m`;
+    if (ms <= 0) return t("settings.expired");
+    return fmtDuration(Math.floor(ms / 60_000));
   };
 
   const onPickChildPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -196,6 +193,29 @@ export default function Settings() {
     toast.success(t("settings.copied"));
   };
 
+  const shareCode = async (code: string, expiresAt: string) => {
+    const text = [
+      t("settings.shareTitle"),
+      "",
+      t("settings.shareStep1"),
+      t("settings.shareStep2"),
+      t("settings.shareStep3", { time: formatRemaining(expiresAt) }),
+      "",
+      code,
+    ].join("\n");
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ text });
+      } catch {
+        // User cancelled the share sheet — no feedback needed.
+      }
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast.success(t("settings.shareFallback"));
+    }
+  };
+
   const changeMemberRole = async (uid: string, newRole: "viewer" | "user" | "admin") => {
     if (!activeChild || !isAdmin) return;
     const { error } = await supabase.from("child_user_roles")
@@ -256,6 +276,8 @@ export default function Settings() {
 
   const handleBack = () => navigate(-1);
   useSwipeBack({ enabled: !confirmAction && !pendingRemoval && !pendingPhoto, onBack: handleBack });
+
+  const tour = useTour("settings", !!activeChild && !!s && !isViewer);
 
   if (!activeChild || !s) return (
     <main className="min-h-screen bg-hero p-4">
@@ -403,7 +425,7 @@ export default function Settings() {
             <Label>{t("child.birthDate")}</Label>
             <Input type="date" value={birthDate} max={todayStr} disabled={!isAdmin}
               onChange={(e) => setBirthDate(e.target.value)} onBlur={saveChild}
-              className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
+              className="w-full [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
           </div>
           {ww && (
             <p className="text-xs text-muted-foreground">
@@ -453,10 +475,13 @@ export default function Settings() {
             <div key={inv.id} className="bg-muted/50 rounded-lg px-3 py-2 space-y-2">
               <div className="flex items-center gap-2">
                 <span className="font-mono font-semibold tracking-widest text-lg">{inv.code}</span>
-                <Button size="icon" variant="ghost" className="h-7 w-7 ml-auto" onClick={() => copyCode(inv.code)}>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7 ml-auto" onClick={() => copyCode(inv.code)}>
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => revokeInvite(inv.id)}>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => shareCode(inv.code, inv.expires_at)}>
+                  <Share2 className="w-3.5 h-3.5" />
+                </Button>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => revokeInvite(inv.id)}>
                   <X className="w-3.5 h-3.5" />
                 </Button>
               </div>
@@ -476,7 +501,7 @@ export default function Settings() {
             </div>
           ))}
           {canManageMembers(role) && (
-            <div className="space-y-2">
+            <div className="space-y-2" data-tour="settings.family-invite">
               <div className="flex gap-2">
                 <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
                   <SelectTrigger className="h-10 w-36"><SelectValue /></SelectTrigger>
@@ -496,7 +521,7 @@ export default function Settings() {
         </Card>
 
         {/* 3. Night window */}
-        <Card className="p-5 shadow-card mb-4 space-y-3">
+        <Card className="p-5 shadow-card mb-4 space-y-3" data-tour="settings.night-window">
           <h3 className="font-semibold">{t("settings.nightWindow")}</h3>
           <p className="text-xs text-muted-foreground">{t("settings.nightWindowHelp")}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -504,13 +529,13 @@ export default function Settings() {
               <Label>{t("settings.nightStarts")}</Label>
               <Input type="time" value={s.night_start_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_start_time: e.target.value })}
-                className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
+                className="w-full [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
             <div className="space-y-1.5">
               <Label>{t("settings.nightEnds")}</Label>
               <Input type="time" value={s.night_end_time} disabled={!canEditFamilySettings}
                 onChange={(e) => setS({ ...s, night_end_time: e.target.value })}
-                className="block w-full justify-start text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
+                className="w-full [&::-webkit-date-and-time-value]:text-left [&::-webkit-datetime-edit]:text-left" />
             </div>
           </div>
           {canEditFamilySettings && <Button onClick={saveSettings} className="w-full">{t("common.save")}</Button>}
@@ -569,6 +594,12 @@ export default function Settings() {
         {/* 8. Danger zone — leave / delete child */}
         {dangerZone}
         {removeDialog}
+
+        {tour.active && (
+          <Suspense fallback={null}>
+            <TourSpotlight tourId="settings" {...tour} />
+          </Suspense>
+        )}
       </div>
     </main>
   );

@@ -30,6 +30,19 @@ const ICON_OVERLAP_PCT = 1.0;
 const VISIBLE = 7;
 const BUFFER = 14; // extra days rendered off-screen on each side
 const TOTAL = BUFFER + VISIBLE + BUFFER; // 35
+const DEFAULT_NIGHT_START = "19:00";
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+// "HH:MM[:SS]" → minutes since midnight.
+function parseHM(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+// Minutes since midnight → "HH:MM" clock label (wraps past 24h).
+function minsToClock(min: number): string {
+  const m = ((min % 1440) + 1440) % 1440;
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+}
 
 type InterruptionLite = {
   id: string; sleep_session_id: string; start_time: string;
@@ -40,7 +53,7 @@ export default function Heatmap() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const handleBack = () => navigate(-1);
-  const { activeChild } = useChildren();
+  const { activeChild, settings } = useChildren();
   const [searchParams] = useSearchParams();
   const isOnline = useNetworkStatus();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
@@ -78,6 +91,16 @@ export default function Heatmap() {
   };
 
   const locale = i18n.language?.startsWith("ru") ? ru : enUS;
+
+  // Variant A: when night sleep is NOT split by calendar date, anchor each
+  // column's vertical axis at night_start so a cross-midnight night renders as
+  // one continuous block instead of two midnight-clipped pieces. A column for
+  // date D then spans [D night_start, D+1 night_start) — its night plus the
+  // following day's naps. When split-by-date is on, origin stays at midnight
+  // and the night is clipped into two pieces (legacy behaviour).
+  const nightStartMin = parseHM((settings?.night_start_time ?? DEFAULT_NIGHT_START).slice(0, 5));
+  const splitByDate = !!settings?.split_night_sleep_by_date;
+  const originMin = splitByDate ? 0 : nightStartMin;
 
   const renderStart = useMemo(() => subDays(anchor, BUFFER), [anchor]);
   const allDays = useMemo(
@@ -276,17 +299,17 @@ export default function Heatmap() {
   const blocksPerDay = useMemo(() => {
     const now = new Date();
     return allDays.map((day) => {
-      const dayStart = startOfDay(day).getTime();
-      const dayEnd = dayStart + 86400000;
+      const windowStart = startOfDay(day).getTime() + originMin * 60000;
+      const windowEnd = windowStart + 86400000;
       const out: { topPct: number; heightPct: number; type: "day" | "night"; sessionId: string }[] = [];
       for (const s of sessions) {
         const start = new Date(s.start_time).getTime();
         const end = (s.end_time ? new Date(s.end_time) : now).getTime();
-        const lo = Math.max(start, dayStart);
-        const hi = Math.min(end, dayEnd);
+        const lo = Math.max(start, windowStart);
+        const hi = Math.min(end, windowEnd);
         if (hi <= lo) continue;
         out.push({
-          topPct: ((lo - dayStart) / 86400000) * 100,
+          topPct: ((lo - windowStart) / 86400000) * 100,
           heightPct: ((hi - lo) / 86400000) * 100,
           type: s.sleep_type,
           sessionId: s.id,
@@ -294,16 +317,16 @@ export default function Heatmap() {
       }
       return out;
     });
-  }, [sessions, allDays]);
+  }, [sessions, allDays, originMin]);
 
   const interruptionsPerDay = useMemo(() => {
     return allDays.map((day) => {
-      const dayStart = startOfDay(day).getTime();
-      const dayEnd = dayStart + 86400000;
+      const windowStart = startOfDay(day).getTime() + originMin * 60000;
+      const windowEnd = windowStart + 86400000;
       const items = interruptions
         .map((i) => {
           const ts = new Date(i.start_time).getTime();
-          if (ts < dayStart || ts >= dayEnd) return null;
+          if (ts < windowStart || ts >= windowEnd) return null;
           const session = sessions.find((s) => s.id === i.sleep_session_id);
           if (!session) return null;
           const sStart = new Date(session.start_time).getTime();
@@ -311,7 +334,7 @@ export default function Heatmap() {
           if (ts < sStart || ts > sEnd) return null;
           return {
             id: i.id,
-            topPct: ((ts - dayStart) / 86400000) * 100,
+            topPct: ((ts - windowStart) / 86400000) * 100,
             name: i.settling_method_name,
             session,
           };
@@ -331,9 +354,18 @@ export default function Heatmap() {
       }
       return clusters;
     });
-  }, [interruptions, sessions, allDays]);
+  }, [interruptions, sessions, allDays, originMin]);
 
-  const timeMarks = [0, 6, 12, 18, 24];
+  // Gridline / axis marks every 6h, labelled from the axis origin (night_start
+  // when not splitting by date, else midnight). `pos` is the 0–1 fraction down
+  // the grid; `label` is the wall-clock time at that line.
+  const axisMarks = useMemo(
+    () => [0, 6, 12, 18, 24].map((offset) => ({
+      pos: offset / 24,
+      label: minsToClock(originMin + offset * 60),
+    })),
+    [originMin],
+  );
 
   if (!activeChild) {
     return <div className="px-4 text-center text-muted-foreground mt-12">{t("sleep.noChildSelected")}</div>;
@@ -430,11 +462,11 @@ export default function Heatmap() {
               <div className="flex" style={{ height: GRID_HEIGHT + 2 * CHART_PAD_PX }}>
                 {/* Time axis — never moves */}
                 <div className="relative w-10 flex-shrink-0" style={{ height: GRID_HEIGHT + 2 * CHART_PAD_PX }}>
-                  {timeMarks.map((h) => (
-                    <div key={h}
+                  {axisMarks.map((m, i) => (
+                    <div key={i}
                       className="absolute right-1 text-[10px] text-muted-foreground leading-none"
-                      style={{ top: CHART_PAD_PX + (h / 24) * GRID_HEIGHT, transform: "translateY(-50%)" }}>
-                      {h === 24 ? "00:00" : `${String(h).padStart(2, "0")}:00`}
+                      style={{ top: CHART_PAD_PX + m.pos * GRID_HEIGHT, transform: "translateY(-50%)" }}>
+                      {m.label}
                     </div>
                   ))}
                 </div>
@@ -442,10 +474,10 @@ export default function Heatmap() {
                 {/* Clipping container for day columns */}
                 <div className="flex-1 overflow-hidden relative">
                   {/* Horizontal grid lines — static, pixel-aligned with time scale */}
-                  {timeMarks.map((h) => (
-                    <div key={h}
+                  {axisMarks.map((m, i) => (
+                    <div key={i}
                       className="absolute left-0 right-0 border-t border-border/60 z-10 pointer-events-none"
-                      style={{ top: CHART_PAD_PX + (h / 24) * GRID_HEIGHT }} />
+                      style={{ top: CHART_PAD_PX + m.pos * GRID_HEIGHT }} />
                   ))}
 
                   {/* Track: all TOTAL columns, translated to show BUFFER offset */}

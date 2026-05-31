@@ -1,4 +1,4 @@
-package app.lullaby;
+package app.alinamikh.lullaby;
 
 import com.getcapacitor.BridgeActivity;
 

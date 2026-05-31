@@ -84,6 +84,13 @@
     padding-top: env(safe-area-inset-top);
     background-color: #A78BDA;
   }
+  /* react-remove-scroll-bar injects `body[data-scroll-locked] { padding-top: 0px }` when
+     any modal/drawer opens. Its attribute-selector specificity (0,1,0,1) beats our plain
+     body rule (0,0,0,1), which shifts content up into the safe-area and hides the header
+     behind body::before. Force-restore the safe-area padding while scroll is locked. */
+  body[data-scroll-locked] {
+    padding-top: env(safe-area-inset-top) !important;
+  }
   /* Fixed lavender panel that sits permanently behind the system status bar.
      position:fixed keeps it in the viewport regardless of document scroll,
      so child elements scrolling into the safe-area region cannot cover it.
