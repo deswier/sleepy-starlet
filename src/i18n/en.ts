@@ -370,7 +370,11 @@ OUTPUT FORMAT:
       },
       weekChart: {
         title: "Sleep by day",
-        body: "The dashed line is the weekly average. The green band is the age norm.\n\nTap a bar for details.",
+        body: "The dashed line is the weekly average. The green band is the age norm.\n\nTap a bar for details. The grey bar is today — shown for reference but not counted in the averages.",
+      },
+      wakeChart: {
+        title: "Awake time by day",
+        body: "Each bar is the day's total awake time, split into wake windows by shade.\n\nTap a bar for details.",
       },
       heatmap: {
         title: "Sleep diagram",

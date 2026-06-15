@@ -24,14 +24,14 @@ import {
   ageInMonthsAt, wakeWindowForAge,
 } from "@/lib/sleep-utils";
 import { getSleepNorms } from "@/lib/sleep-norms";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcDayNightSleep, calcDayNightTimes, avgNightTimes } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcDayNightSleep, calcDayNightTimes, avgNightTimes, calcWakeSegments } from "@/lib/analytics-calc";
 import { useTimeFormat } from "@/lib/use-time-format";
 import {
   isSameDay, startOfDay, subDays, addDays, format,
 } from "date-fns";
 import { enUS, ru } from "date-fns/locale";
 import i18n from "@/i18n";
-import { WeekStackedSleepChart, type WeekCompareDayDatum } from "@/components/analytics/DayBarChart";
+import { WeekStackedSleepChart, type WeekCompareDayDatum, WeekStackedWakeChart, type WeekWakeDayDatum, WW_SLOTS } from "@/components/analytics/DayBarChart";
 import { useTour } from "@/hooks/use-tour";
 import { getTourProgress } from "@/lib/tour-storage";
 
@@ -44,6 +44,17 @@ const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
 function parseHM(hm: string): { h: number; m: number } {
   const [h, m] = hm.split(":").map(Number);
   return { h: h || 0, m: m || 0 };
+}
+
+// Fits wake-window gaps into WW_SLOTS fixed bars for stacking — extra gaps
+// beyond the last slot are folded into it so the total height is preserved.
+function toWakeSlots(segments: number[]): number[] {
+  const slots = new Array(WW_SLOTS).fill(0);
+  segments.forEach((v, i) => {
+    const slot = Math.min(i, WW_SLOTS - 1);
+    slots[slot] += v;
+  });
+  return slots;
 }
 
 function getScoreDetails(
@@ -115,13 +126,14 @@ export default function Analytics() {
     try { localStorage.setItem("analytics.tab", tab); } catch {}
   }, [tab]);
 
-  // Tapping a day bar in the week view drills into that day. We persist the
-  // target into DayView's own localStorage key, switch tabs, and bump a token
-  // so DayView remounts and re-reads it (covers both Radix mount behaviours).
+  // Tapping a day bar in the week view drills into that day. We pass the target
+  // via React state (not localStorage) and bump a token so DayView remounts with
+  // the new initialDay prop (covers both Radix mount behaviours).
+  const [drillDay, setDrillDay] = useState<string | null>(null);
   const [dayNav, setDayNav] = useState(0);
   const selectDay = (dateKey: string) => {
     if (!activeChild) return;
-    try { localStorage.setItem(`analytics.day.${activeChild.id}`, dateKey); } catch {}
+    setDrillDay(dateKey);
     setDayNav((n) => n + 1);
     setTab("day");
   };
@@ -153,7 +165,7 @@ export default function Analytics() {
           <TabsTrigger value="day">{t("analytics.daily")}</TabsTrigger>
           <TabsTrigger value="week">{t("analytics.weekly")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="day"><DayView key={`${activeChild.id}:${dayNav}`} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} /></TabsContent>
+        <TabsContent value="day"><DayView key={`${activeChild.id}:${dayNav}`} childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} initialDay={drillDay} /></TabsContent>
         <TabsContent value="week"><WeekView childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} onSelectDay={selectDay} /></TabsContent>
       </Tabs>
       {tour.active && (
@@ -166,24 +178,16 @@ export default function Analytics() {
 }
 
 // ---------- DAY ----------
-function DayView({ childId, birthDate, night, splitByDate }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean }) {
+function DayView({ childId, birthDate, night, splitByDate, initialDay }: { childId: string; birthDate: string | null; night: NightWindow; splitByDate: boolean; initialDay?: string | null }) {
   const { t } = useTranslation();
   const { fmtTime } = useTimeFormat();
-  const dayKey = `analytics.day.${childId}`;
   const [day, setDay] = useState<Date>(() => {
-    try {
-      const v = localStorage.getItem(dayKey);
-      if (v) {
-        const d = startOfDay(new Date(v));
-        const today = startOfDay(new Date());
-        if (!isNaN(d.getTime()) && d.getTime() <= today.getTime()) return d;
-      }
-    } catch {}
+    if (initialDay) {
+      const d = startOfDay(new Date(initialDay));
+      if (!isNaN(d.getTime())) return d;
+    }
     return startOfDay(new Date());
   });
-  useEffect(() => {
-    try { localStorage.setItem(dayKey, format(day, "yyyy-MM-dd")); } catch {}
-  }, [day, dayKey]);
   const isOnline = useNetworkStatus();
   const dateStr = format(day, "yyyy-MM-dd");
   const sinceDate = subDays(startOfDay(day), 1);
@@ -469,18 +473,8 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
   const today = startOfDay(now);
 
   // weekOffset: 0 = last 7 completed days (yesterday..-6), 1 = the 7 before that, etc.
-  const offsetKey = `analytics.weekOffset.${childId}`;
   const excludedKey = `analytics.weekExcluded.${childId}`;
-  const [weekOffset, setWeekOffset] = useState<number>(() => {
-    try {
-      const v = localStorage.getItem(offsetKey);
-      const n = v ? parseInt(v, 10) : 0;
-      return Number.isFinite(n) && n >= 0 && n < 52 ? n : 0;
-    } catch { return 0; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(offsetKey, String(weekOffset)); } catch {}
-  }, [weekOffset, offsetKey]);
+  const [weekOffset, setWeekOffset] = useState(0);
   const isOnline = useNetworkStatus();
   const [pickerOpen, setPickerOpen] = useState(false);
   // Days the user has manually excluded from the average (by date key yyyy-MM-dd).
@@ -713,6 +707,74 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
     };
   });
 
+  // Always render 8 columns so bar width/position stay fixed when switching weeks.
+  // Current week appends today (always dimmed — never part of the averages);
+  // past weeks append an empty placeholder so the visible 7 columns keep their slots.
+  if (weekOffset === 0) {
+    const tNight = calcDayNightSleep(sessions, today, splitByDate, night, now);
+    const tDay = calcTotalDaySleep(sessions, today, now);
+    const tNaps = calcNapsCount(sessions, today, now);
+    chartData.push({
+      dateKey: dayKey(today),
+      label: format(today, "EEEEEE", { locale }),
+      nightSleep: tNight,
+      daySleep: tDay,
+      totalWake: calcTotalWake(sessions, today, now),
+      avgWW: 0,
+      napsCount: tNaps,
+      active: false,
+      hasData: tNight + tDay > 0 || tNaps > 0,
+    });
+  } else {
+    chartData.push({
+      dateKey: "__placeholder__",
+      label: "",
+      nightSleep: 0,
+      daySleep: 0,
+      totalWake: 0,
+      avgWW: 0,
+      napsCount: 0,
+      active: false,
+      hasData: false,
+    });
+  }
+
+  // Per-day series for the wake-time chart: full bar height = totalWake,
+  // split into wake-window gaps plus the leftover "other" wake time.
+  const wakeChartData: WeekWakeDayDatum[] = days.map((d, i) => {
+    const { segments, other } = calcWakeSegments(sessions, d, now);
+    return {
+      dateKey: dayKey(d),
+      label: format(d, "EEEEEE", { locale }),
+      ww: toWakeSlots(segments),
+      other,
+      active: activeFlags[i],
+      hasData: dayHasData[i],
+    };
+  });
+
+  if (weekOffset === 0) {
+    const { segments, other } = calcWakeSegments(sessions, today, now);
+    const ww = toWakeSlots(segments);
+    wakeChartData.push({
+      dateKey: dayKey(today),
+      label: format(today, "EEEEEE", { locale }),
+      ww,
+      other,
+      active: false,
+      hasData: ww.reduce((a, b) => a + b, 0) + other > 0,
+    });
+  } else {
+    wakeChartData.push({
+      dateKey: "__placeholder__",
+      label: "",
+      ww: new Array(WW_SLOTS).fill(0),
+      other: 0,
+      active: false,
+      hasData: false,
+    });
+  }
+
   const midDay = days[Math.floor(days.length / 2)];
   const norm = ageNorm(birthDate, midDay);
 
@@ -842,10 +904,31 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
         )}
       </Card>
 
-      <Stat icon={<Sun className="w-5 h-5" />} label={t("analytics.totalWake")}
-        value={formatDuration(avgTotalWake)} sub={t("analytics.avgPerDay")}
-        secondary={norm ? normLabel(t, avgTotalWake, norm.totalWake) : undefined}
-        arrow={<NormArrow value={avgTotalWake} norm={norm?.totalWake} />} />
+      <Card className="p-5 shadow-card border-border/50" data-tour="analytics.wake-chart">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-muted-foreground text-sm">
+            <span className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+              <Sun className="w-5 h-5" />
+            </span>
+            {t("analytics.totalWake")}
+          </div>
+          <div className="text-right">
+            <div className="font-display text-2xl font-semibold flex items-center gap-1.5 justify-end">
+              {formatDuration(avgTotalWake)}
+              <NormArrow value={avgTotalWake} norm={norm?.totalWake} />
+            </div>
+            <div className="text-xs text-muted-foreground">{t("analytics.avgPerDay")}</div>
+          </div>
+        </div>
+        <WeekStackedWakeChart
+          data={wakeChartData}
+          normTotal={norm?.totalWake}
+          avgTotal={avgTotalWake}
+          fmtDur={formatDuration}
+          onSelectDay={onSelectDay}
+        />
+        {norm && <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgTotalWake, norm.totalWake)}</p>}
+      </Card>
 
       <Card className="p-5 shadow-card border-border/50">
         <Header icon={<Activity className="w-5 h-5" />} label={t("analytics.avgWW")}

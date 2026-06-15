@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, calcNightTimes, avgNightTimes, type CalcSession } from "@/lib/analytics-calc";
+import { calcTotalWake, calcTotalDaySleep, calcNapsCount, calcNightSleep, calcNightTimes, calcDayNightTimes, avgNightTimes, type CalcSession } from "@/lib/analytics-calc";
 
 // All times are constructed in LOCAL timezone to match how the component works.
 // Using Date(year, month, day, h, m) avoids UTC-offset ambiguity.
@@ -394,6 +394,62 @@ describe("calcNightTimes", () => {
     // Not attributed to tomorrow in splitByDate mode.
     const tomorrow = calcNightTimes(sessions, startOfDay(at(0, 0, 1)), true, NIGHT);
     expect(tomorrow.bedtime).toBeNull();
+  });
+});
+
+// ─── calcDayNightTimes ──────────────────────────────────────────────────────────
+
+describe("calcDayNightTimes", () => {
+  it("returns bedtime and wakeup of the overnight block", () => {
+    const sessions: CalcSession[] = [s(at(21, 0, -1), at(7, 0), "night")];
+    const r = calcDayNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(r.bedtime?.getHours()).toBe(21);
+    expect(r.wakeup?.getHours()).toBe(7);
+    expect(r.wakeup?.getMinutes()).toBe(0);
+  });
+
+  it("aggregates a fragmented night: bedtime of first segment, wakeup of last", () => {
+    // Night logged as two segments after a 3am rousing.
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), at(3, 0), "night"), // 21:00 → 03:00
+      s(at(3, 30), at(7, 0), "night"),     // 03:30 → 07:00
+    ];
+    const r = calcDayNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(r.bedtime?.getHours()).toBe(21);
+    expect(r.wakeup?.getHours()).toBe(7);
+  });
+
+  it("ignores an evening night micro-sleep when picking the wake-up time", () => {
+    // Real overnight ends at 07:00. Later the same evening a short "night" sleep
+    // 20:30→20:50 is logged; it does not cross midnight, so it is attributed to
+    // this day. Its end must NOT become the day's wake-up time.
+    const sessions: CalcSession[] = [
+      s(at(21, 0, -1), at(7, 0), "night"), // overnight → wakeup 07:00
+      s(at(20, 30), at(20, 50), "night"),  // evening micro-sleep, same day
+    ];
+    const r = calcDayNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(r.bedtime?.getHours()).toBe(21);
+    expect(r.wakeup?.getHours()).toBe(7);
+    expect(r.wakeup?.getMinutes()).toBe(0);
+  });
+
+  it("splitByDate: evening micro-sleep does not steal bedtime/wakeup", () => {
+    // Both the main night (22:00 → 06:00 next day) and an evening micro-sleep
+    // (19:30 → 19:50) start today, so both are attributed to today by start date.
+    const sessions: CalcSession[] = [
+      s(at(22, 0), at(6, 0, 1), "night"), // main night, crosses midnight
+      s(at(19, 30), at(19, 50), "night"), // evening micro-sleep
+    ];
+    const r = calcDayNightTimes(sessions, startOfDay(), true, NIGHT);
+    expect(r.bedtime?.getHours()).toBe(22); // not 19:30
+    expect(r.wakeup?.getHours()).toBe(6);   // not 19:50
+  });
+
+  it("keeps an ongoing night as bedtime with null wakeup", () => {
+    const sessions: CalcSession[] = [s(at(21, 0, -1), null, "night")];
+    const r = calcDayNightTimes(sessions, startOfDay(), false, NIGHT);
+    expect(r.bedtime?.getHours()).toBe(21);
+    expect(r.wakeup).toBeNull();
   });
 });
 

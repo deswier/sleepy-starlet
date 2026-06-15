@@ -90,6 +90,57 @@ export function calcTotalWake(sessions: CalcSession[], day: Date, now: Date): nu
   return Math.max(0, periodMin - sleepMin);
 }
 
+export interface WakeSegments {
+  /** Gaps between sleep sessions within the day — the day's wake windows, in order. */
+  segments: number[];
+  /** Wake time before the first sleep and after the last sleep (or the whole day if none). */
+  other: number;
+}
+
+/**
+ * Breaks a calendar day's wake time into wake-window gaps between sleep
+ * sessions plus a leftover "other" bucket (before the first / after the last
+ * sleep). `sum(segments) + other` always equals `calcTotalWake` for the same
+ * inputs (both derive from the same clipped, merged sleep intervals).
+ */
+export function calcWakeSegments(sessions: CalcSession[], day: Date, now: Date): WakeSegments {
+  const nowMs = now.getTime();
+  const { dayStartMs, dayEndMs } = dayBounds(day, now);
+
+  const intervals: [number, number][] = [];
+  for (const s of sessions) {
+    const sStart = new Date(s.start_time).getTime();
+    const sEnd = s.end_time ? new Date(s.end_time).getTime() : nowMs;
+    const start = Math.max(sStart, dayStartMs);
+    const end = Math.min(sEnd, dayEndMs);
+    if (end > start) intervals.push([start, end]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+
+  const merged: [number, number][] = [];
+  for (const [s, e] of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+
+  const segments: number[] = [];
+  let other = 0;
+  let cursor = dayStartMs;
+  merged.forEach(([s, e], i) => {
+    const gap = s - cursor;
+    if (gap > 0) {
+      if (i === 0) other += Math.round(gap / 60000);
+      else segments.push(Math.round(gap / 60000));
+    }
+    cursor = Math.max(cursor, e);
+  });
+  const trailing = dayEndMs - cursor;
+  if (trailing > 0) other += Math.round(trailing / 60000);
+
+  return { segments, other };
+}
+
 /**
  * Total day-sleep time for a calendar day.
  * Only sleep_type === "day" sessions, clipped to [dayStart, dayEnd).
@@ -222,21 +273,35 @@ export function calcDayNightTimes(
 
   if (matching.length === 0) return { bedtime: null, wakeup: null };
 
-  matching.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  // A completed night session that neither crosses midnight nor ends before noon
+  // is a self-contained evening sleep — the START of the NEXT night, logged before
+  // midnight and therefore attributed to its start day. It must be ignored here:
+  // otherwise a short evening "night" sleep on this day would overwrite the real
+  // morning wake-up (its later end_time / start_time wins both selections).
+  const overnight = matching.filter((s) => {
+    if (!s.end_time) return true; // ongoing → the night currently in progress
+    const start = new Date(s.start_time);
+    const end = new Date(s.end_time);
+    const crossesMidnight = localDayStart(start).getTime() !== localDayStart(end).getTime();
+    const endMin = end.getHours() * 60 + end.getMinutes();
+    return crossesMidnight || endMin < 12 * 60;
+  });
 
-  const first = matching[0];
-  let lastCompleted: CalcSession | null = null;
-  for (let i = matching.length - 1; i >= 0; i--) {
-    if (matching[i].end_time) {
-      lastCompleted = matching[i];
-      break;
-    }
+  if (overnight.length === 0) return { bedtime: null, wakeup: null };
+
+  overnight.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+  // Bedtime = start of the overnight block. Wake-up = latest morning end across its
+  // segments (a night may be logged as several sessions, e.g. after a 3am rousing).
+  const bedtime = new Date(overnight[0].start_time);
+  let wakeup: Date | null = null;
+  for (const seg of overnight) {
+    if (!seg.end_time) continue;
+    const end = new Date(seg.end_time);
+    if (!wakeup || end.getTime() > wakeup.getTime()) wakeup = end;
   }
 
-  return {
-    bedtime: new Date(first.start_time),
-    wakeup: lastCompleted ? new Date(lastCompleted.end_time!) : null,
-  };
+  return { bedtime, wakeup };
 }
 
 /**
