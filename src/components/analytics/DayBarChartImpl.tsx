@@ -237,7 +237,10 @@ export function WeekStackedWakeChart({
   const selectedDatum = selectedKey ? data.find((d) => d.dateKey === selectedKey) ?? null : null;
 
   const chartData = data.map((d) => {
-    const row: Record<string, unknown> = { dateKey: d.dateKey, label: d.label, other: d.other };
+    const row: Record<string, unknown> = {
+      dateKey: d.dateKey, label: d.label, other: d.other,
+      active: d.active, hasData: d.hasData,
+    };
     d.ww.forEach((v, i) => { row[`ww${i}`] = v; });
     return row;
   });
