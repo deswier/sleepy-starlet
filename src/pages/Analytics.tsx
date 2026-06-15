@@ -612,6 +612,8 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
     navigate(`/heatmap?anchor=${format(days[0], "yyyy-MM-dd")}`);
   };
 
+  const openHistoryDay = (dateKey: string) => navigate(`/history?date=${dateKey}`);
+
   const picker = (
     <WeekPicker
       days={days}
@@ -925,7 +927,7 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
           normTotal={norm?.totalWake}
           avgTotal={avgTotalWake}
           fmtDur={formatDuration}
-          onSelectDay={onSelectDay}
+          onSelectDay={openHistoryDay}
         />
         {norm && <p className="text-xs text-muted-foreground mt-2">{normLabel(t, avgTotalWake, norm.totalWake)}</p>}
       </Card>

@@ -374,7 +374,7 @@ OUTPUT FORMAT:
       },
       wakeChart: {
         title: "Awake time by day",
-        body: "Each bar is the day's total awake time, split into wake windows by shade.\n\nTap a bar for details.",
+        body: "Each bar is the day's total awake time, split into wake windows by shade.\n\nTap a bar for details, double-tap to open that day in History.",
       },
       heatmap: {
         title: "Sleep diagram",
