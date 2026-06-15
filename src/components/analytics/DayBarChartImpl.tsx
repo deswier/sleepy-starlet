@@ -189,6 +189,20 @@ const WW_OPACITIES = [0.85, 0.7, 0.55, 0.4, 0.28, 0.18];
 const WAKE_OTHER_COLOR = "hsl(var(--muted-foreground) / 0.15)";
 const WAKE_DIMMED_COLOR = "hsl(var(--muted-foreground) / 0.15)";
 
+// The visually topmost non-zero segment of a day's stack gets the rounded
+// top corners — which segment that is varies per day (e.g. "other" may be 0).
+function topmostWakeSegment(d: WeekWakeDayDatum): number | "other" | null {
+  if (d.other > 0) return "other";
+  for (let i = WW_SLOTS - 1; i >= 0; i--) {
+    if (d.ww[i] > 0) return i;
+  }
+  return null;
+}
+
+function wakeRadius(d: WeekWakeDayDatum, slot: number | "other"): [number, number, number, number] | undefined {
+  return topmostWakeSegment(d) === slot ? [4, 4, 0, 0] : undefined;
+}
+
 function wakeFill(d: WeekWakeDayDatum, slot: number | "other", selected: boolean): string {
   if (!d.hasData) return "transparent";
   if (!d.active) return WAKE_DIMMED_COLOR;
@@ -270,16 +284,16 @@ export function WeekStackedWakeChart({
                 isAnimationActive={false} cursor="pointer" onClick={handleClick}
               >
                 {data.map((d, i) => (
-                  <Cell key={i} fill={wakeFill(d, slot, d.dateKey === selectedKey)} />
+                  <Cell key={i} fill={wakeFill(d, slot, d.dateKey === selectedKey)} radius={wakeRadius(d, slot)} />
                 ))}
               </Bar>
             ))}
             <Bar
-              dataKey="other" stackId="w" radius={[4, 4, 0, 0]}
+              dataKey="other" stackId="w"
               isAnimationActive={false} cursor="pointer" onClick={handleClick}
             >
               {data.map((d, i) => (
-                <Cell key={i} fill={wakeFill(d, "other", d.dateKey === selectedKey)} />
+                <Cell key={i} fill={wakeFill(d, "other", d.dateKey === selectedKey)} radius={wakeRadius(d, "other")} />
               ))}
             </Bar>
           </BarChart>
