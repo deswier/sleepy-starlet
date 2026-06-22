@@ -26,16 +26,19 @@ import {
   fetchSleepForExport,
   buildSleepCsv,
   shareOrDownloadCsv,
+  type NightWindow,
 } from "@/lib/export-sleep";
 
 interface Props {
   childId: string;
   birthDate: string;
+  night: NightWindow;
+  splitByDate: boolean;
 }
 
 const PRESETS = [7, 14, 30] as const;
 
-export default function ExportSleepDialog({ childId, birthDate }: Props) {
+export default function ExportSleepDialog({ childId, birthDate, night, splitByDate }: Props) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [range, setRange] = useState<DateRange | undefined>();
@@ -78,7 +81,7 @@ export default function ExportSleepDialog({ childId, birthDate }: Props) {
 
     setBusy(true);
     try {
-      const sessions = await fetchSleepForExport(childId, from, to);
+      const sessions = await fetchSleepForExport(childId, from, to, night, splitByDate);
       if (sessions.length === 0) {
         toast.info(t("analytics.export.empty"));
         return;

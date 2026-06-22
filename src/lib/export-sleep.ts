@@ -7,7 +7,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { isNative } from "@/lib/native";
-import { format } from "date-fns";
+import { format, startOfDay, addDays, subDays, isSameDay } from "date-fns";
+
+export interface NightWindow {
+  start: string; // "HH:MM"
+  end: string;
+}
 
 type TFn = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -24,13 +29,43 @@ export interface ExportSession {
 const diffMin = (a: string, b: string) =>
   Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
 
+function parseHM(hm: string): [number, number] {
+  const [h, m] = hm.split(":").map(Number);
+  return [h || 0, m || 0];
+}
+
+// Returns the calendar day a session is attributed to — mirrors sessionDay()
+// in Analytics.tsx. Evening night sessions (start ≥ night_start, before
+// midnight) belong to the NEXT day (when splitByDate is false).
+function attributedDay(s: ExportSession, night: NightWindow, splitByDate: boolean): Date {
+  const start = new Date(s.start_time);
+  if (splitByDate || s.sleep_type !== "night") return startOfDay(start);
+  const [nsH, nsM] = parseHM(night.start);
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const nsMin = nsH * 60 + nsM;
+  if (startMin >= nsMin && startMin >= 12 * 60) {
+    if (!s.end_time) return startOfDay(addDays(start, 1));
+    const end = new Date(s.end_time);
+    if (!isSameDay(start, end)) return startOfDay(end);
+  }
+  return startOfDay(start);
+}
+
 // Range is [from, to) — `to` is already the exclusive upper bound (next day's
-// start) so a session that begins anywhere on the last selected day is included.
+// start). When splitByDate is false, night sessions that started the evening
+// before `from` can be attributed to the first selected day, so we fetch one
+// extra day back and then filter by attributed day.
 export async function fetchSleepForExport(
   childId: string,
   from: Date,
   to: Date,
+  night: NightWindow,
+  splitByDate: boolean,
 ): Promise<ExportSession[]> {
+  // Fetch 1 extra day before `from` to catch evening night sessions that
+  // belong to the first selected day (start 21:30, end next morning).
+  const queryFrom = splitByDate ? from : subDays(from, 1);
+
   const { data, error } = await supabase
     .from("sleep_sessions")
     .select(`
@@ -40,11 +75,20 @@ export async function fetchSleepForExport(
       interruptions:sleep_interruptions(start_time,end_time)
     `)
     .eq("child_id", childId)
-    .gte("start_time", from.toISOString())
+    .gte("start_time", queryFrom.toISOString())
     .lt("start_time", to.toISOString())
     .order("start_time", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as unknown as ExportSession[];
+
+  const sessions = (data ?? []) as unknown as ExportSession[];
+
+  // Keep only sessions whose attributed analytics day falls within [from, to).
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
+  return sessions.filter((s) => {
+    const day = attributedDay(s, night, splitByDate).getTime();
+    return day >= fromMs && day < toMs;
+  });
 }
 
 const escapeCell = (v: string): string => {

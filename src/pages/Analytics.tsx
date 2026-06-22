@@ -38,7 +38,7 @@ import { getTourProgress } from "@/lib/tour-storage";
 const TourSpotlight = lazy(() => import("@/components/tour/TourSpotlight"));
 const ExportSleepDialog = lazy(() => import("@/components/analytics/ExportSleepDialog"));
 
-export type NightWindow = { start: string; end: string };
+export type { NightWindow } from "@/lib/export-sleep";
 const DEFAULT_NIGHT: NightWindow = { start: "19:00", end: "07:00" };
 
 function parseHM(hm: string): { h: number; m: number } {
@@ -157,7 +157,7 @@ export default function Analytics() {
       <div className="flex items-center justify-between my-4">
         <h2 className="font-display text-2xl font-semibold">{t("analytics.title")}</h2>
         <Suspense fallback={null}>
-          <ExportSleepDialog childId={activeChild.id} birthDate={activeChild.birth_date} />
+          <ExportSleepDialog childId={activeChild.id} birthDate={activeChild.birth_date} night={night} splitByDate={splitByDate} />
         </Suspense>
       </div>
       <Tabs value={tab} onValueChange={setTab}>
