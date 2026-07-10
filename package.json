@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,7 +17,8 @@
     "db:push": "supabase db push",
     "db:diff": "supabase db diff -f new_migration",
     "db:reset": "supabase db reset",
-    "db:types": "supabase gen types typescript --linked > src/integrations/supabase/types.ts"
+    "db:types": "supabase gen types typescript --linked > src/integrations/supabase/types.ts",
+    "version:patch": "node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const [ma,mi,pa]=p.version.split('.');p.version=ma+'.'+mi+'.'+(+pa+1);fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('version bumped to '+p.version)\""
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

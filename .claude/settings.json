@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "cd /Users/eignatenko/Documents/alina/sleepy-starlet && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const [ma,mi,pa]=p.version.split('.');p.version=ma+'.'+mi+'.'+(+pa+1);fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('[version] bumped to '+p.version);\" && git add package.json",
+            "statusMessage": "Bumping patch version..."
+          }
+        ]
+      }
+    ]
+  }
+}

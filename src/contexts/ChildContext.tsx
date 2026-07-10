@@ -2,6 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, Re
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
 import { devError } from "@/lib/logger";
+import {
+  getChildSettings, putChildSettings,
+  getChildRole, putChildRole,
+  type CachedChildRole,
+} from "@/lib/child-resources-cache";
 
 export interface Child {
   id: string;
@@ -59,29 +64,57 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
 
   // Role is per (child, user). Single source of truth — pages and components
   // read it from this context instead of each running their own query.
+  // Cache-first: paint from Dexie immediately (offline / cold-start), then
+  // refresh from network. `networkResolved` prevents a slow Dexie read from
+  // clobbering a faster network response.
   useEffect(() => {
     if (!user || !activeId) { setRole(null); return; }
     let cancelled = false;
+    let networkResolved = false;
+    const uid = user.id;
+    getChildRole(activeId, uid).then((cached) => {
+      if (cancelled || networkResolved) return;
+      if (cached) setRole(cached);
+    });
     supabase.from("child_user_roles")
       .select("role")
-      .eq("child_id", activeId).eq("user_id", user.id)
+      .eq("child_id", activeId).eq("user_id", uid)
       .maybeSingle()
-      .then(({ data }) => { if (!cancelled) setRole((data?.role as ChildRole) ?? "user"); });
+      .then(({ data }) => {
+        if (cancelled) return;
+        networkResolved = true;
+        const role = (data?.role as ChildRole) ?? "user";
+        setRole(role);
+        // Write-through so the next cold-start has the freshest role.
+        if (role) putChildRole(activeId, uid, role as CachedChildRole).catch(() => { /* ignore */ });
+      });
     return () => { cancelled = true; };
   }, [activeId, user?.id]);
 
   // Fetch settings whenever active child changes.
   // activeId is available from localStorage on first render, so this fires immediately —
   // no need to wait for the children list to load first.
-  // Cancel-ref guards against a stale response from a previous activeId
-  // overwriting the new one when the user switches children mid-fetch.
+  // Cache-first: paint from Dexie immediately, then refresh. Cancel-ref guards
+  // against a stale response overwriting a newer activeId's data;
+  // networkResolved guards against a slow cache read overwriting fresh data.
   useEffect(() => {
     if (!activeId) { setSettings(null); return; }
     let cancelled = false;
+    let networkResolved = false;
+    getChildSettings(activeId).then((cached) => {
+      if (cancelled || networkResolved) return;
+      if (cached) setSettings(cached as ChildSettings);
+    });
     supabase.from("child_settings")
       .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
       .eq("child_id", activeId).single()
-      .then(({ data }) => { if (!cancelled) setSettings(data as ChildSettings | null); });
+      .then(({ data }) => {
+        if (cancelled) return;
+        networkResolved = true;
+        const s = data as ChildSettings | null;
+        setSettings(s);
+        if (s) putChildSettings(s).catch(() => { /* ignore */ });
+      });
     return () => { cancelled = true; };
   }, [activeId]);
 
@@ -90,7 +123,11 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
     supabase.from("child_settings")
       .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
       .eq("child_id", activeId).single()
-      .then(({ data }) => setSettings(data as ChildSettings | null));
+      .then(({ data }) => {
+        const s = data as ChildSettings | null;
+        setSettings(s);
+        if (s) putChildSettings(s).catch(() => { /* ignore */ });
+      });
   }, [activeId]);
 
   const refresh = useCallback(async () => {

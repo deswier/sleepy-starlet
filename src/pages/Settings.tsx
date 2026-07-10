@@ -31,6 +31,7 @@ import { useTimeFormat } from "@/lib/use-time-format";
 import { useTranslation } from "react-i18next";
 import { useChildRole, canCreateSleep, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
+import { putPlaces, putMethods } from "@/lib/child-resources-cache";
 import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
 import { useSwipeBack } from "@/hooks/use-swipe-back";
@@ -117,7 +118,13 @@ export default function Settings() {
         supabase.from("child_user_roles").select("user_id,role").eq("child_id", activeChild.id),
         supabase.from("profiles").select("id,display_name"),
       ]);
-      setS(se.data); setPlaces(p.data ?? []); setMethods(m.data ?? []);
+      const placesData = (p.data ?? []) as { id: string; name: string }[];
+      const methodsData = (m.data ?? []) as { id: string; name: string }[];
+      setS(se.data); setPlaces(placesData); setMethods(methodsData);
+      // Write-through so CurrentSleep / SleepForm see additions and soft-deletes
+      // even if the user goes offline before those pages refresh.
+      putPlaces(activeChild.id, placesData).catch(() => { /* ignore */ });
+      putMethods(activeChild.id, methodsData).catch(() => { /* ignore */ });
       setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
       const roleMap = new Map((roles.data ?? []).map((r: any) => [r.user_id, r.role]));
       const profMap = new Map((profs.data ?? []).map((p: any) => [p.id, p.display_name]));
@@ -600,6 +607,10 @@ export default function Settings() {
             <TourSpotlight tourId="settings" {...tour} />
           </Suspense>
         )}
+
+        <p className="text-center text-xs text-muted-foreground/50 pt-2">
+          v{__APP_VERSION__}
+        </p>
       </div>
     </main>
   );

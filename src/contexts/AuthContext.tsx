@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import i18n from "@/i18n";
 import { clearLastRoute } from "@/lib/last-route";
 import { registerAuthDeepLinkListener } from "@/lib/native";
+import { wipeChildResourceCaches } from "@/lib/child-resources-cache";
 import type { TimeFormat } from "@/lib/sleep-utils";
 
 interface AuthCtx {
@@ -68,6 +69,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       toRemove.forEach((k) => localStorage.removeItem(k));
     } catch { /* ignore quota / private-mode errors */ }
+    // Wipe per-child Dexie caches so the next account on a shared device
+    // doesn't see the previous user's settings / role / places / methods.
+    await wipeChildResourceCaches().catch(() => { /* best effort */ });
     await supabase.auth.signOut();
   }, []);
 

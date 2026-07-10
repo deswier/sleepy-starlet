@@ -36,6 +36,7 @@ import { useTranslation } from "react-i18next";
 import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "@/hooks/useChildRole";
 import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
+import { getActiveMethods, putMethods } from "@/lib/child-resources-cache";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
@@ -105,8 +106,25 @@ export default function CurrentSleep() {
 
   useEffect(() => {
     if (!activeChild) return;
-    supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name")
-      .then(({ data: mList }) => setMethods(mList ?? []));
+    let cancelled = false;
+    let networkResolved = false;
+    const childId = activeChild.id;
+    // Cache-first so the stop-interruption modal opened offline still has
+    // the methods dropdown populated. networkResolved guards against a slow
+    // cache read overwriting fresher network data.
+    getActiveMethods(childId).then((m) => {
+      if (!cancelled && !networkResolved && m.length) setMethods(m);
+    });
+    supabase.from("settling_methods").select("id,name").eq("child_id", childId).is("deleted_at", null).order("name")
+      .then(({ data: mList }) => {
+        if (cancelled) return;
+        networkResolved = true;
+        const methods = (mList ?? []) as { id: string; name: string }[];
+        setMethods(methods);
+        putMethods(childId, methods).catch(() => { /* ignore */ });
+      })
+      .catch(() => { /* offline: keep cache paint */ });
+    return () => { cancelled = true; };
   }, [activeChild?.id]);
 
   const load = async () => {

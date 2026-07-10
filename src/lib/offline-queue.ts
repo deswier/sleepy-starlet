@@ -30,6 +30,10 @@ class LullabyDB extends Dexie {
   sleep_sessions_cache!: Table<any, string>;
   sleep_interruptions_cache!: Table<any, string>;
   cache_meta!: Table<{ key: string; value: string }, string>;
+  child_settings_cache!: Table<any, string>;
+  child_user_roles_cache!: Table<any, string>;
+  sleep_places_cache!: Table<any, string>;
+  settling_methods_cache!: Table<any, string>;
 
   constructor() {
     super("lullaby_offline");
@@ -42,6 +46,15 @@ class LullabyDB extends Dexie {
       sleep_sessions_cache: "id, child_id, start_time, [child_id+start_time]",
       sleep_interruptions_cache: "id, sleep_session_id, start_time",
       cache_meta: "key",
+    });
+    // v3: read-cache for per-child context (settings, current user's role,
+    // places, methods) — enables CurrentSleep and SleepForm to render offline
+    // without falsely disabling gated UI due to a null role.
+    this.version(3).stores({
+      child_settings_cache: "child_id",
+      child_user_roles_cache: "[child_id+user_id], child_id, user_id",
+      sleep_places_cache: "id, child_id, deleted_at, [child_id+deleted_at]",
+      settling_methods_cache: "id, child_id, deleted_at, [child_id+deleted_at]",
     });
   }
 }

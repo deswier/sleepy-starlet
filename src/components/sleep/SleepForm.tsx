@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import DateTimeField from "@/components/DateTimeField";
 import { useTranslation } from "react-i18next";
 import { enqueue } from "@/lib/offline-queue";
+import { getActivePlaces, getActiveMethods, putPlaces, putMethods } from "@/lib/child-resources-cache";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import InterruptionsEditor, { DraftInterruption, validateInterruptions } from "./InterruptionsEditor";
@@ -89,13 +90,32 @@ export default function SleepForm({ mode, sessionId, initial, onDone, defaultDat
 
   useEffect(() => {
     if (!activeChild) return;
-    Promise.all([
-      supabase.from("sleep_places").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
-      supabase.from("settling_methods").select("id,name").eq("child_id", activeChild.id).is("deleted_at", null).order("name"),
-    ]).then(([p, m]) => {
-      setPlaces(p.data ?? []);
-      setMethods(m.data ?? []);
+    let cancelled = false;
+    let networkResolved = false;
+    const childId = activeChild.id;
+    // Paint from Dexie first so offline / cold-start shows real options
+    // instead of empty selects — then refresh from network in the background.
+    // networkResolved guard prevents a slow cache read from clobbering a
+    // faster network response (e.g. entries the user just soft-deleted).
+    Promise.all([getActivePlaces(childId), getActiveMethods(childId)]).then(([p, m]) => {
+      if (cancelled || networkResolved) return;
+      if (p.length) setPlaces(p);
+      if (m.length) setMethods(m);
     });
+    Promise.all([
+      supabase.from("sleep_places").select("id,name").eq("child_id", childId).is("deleted_at", null).order("name"),
+      supabase.from("settling_methods").select("id,name").eq("child_id", childId).is("deleted_at", null).order("name"),
+    ]).then(([p, m]) => {
+      if (cancelled) return;
+      networkResolved = true;
+      const places = (p.data ?? []) as { id: string; name: string }[];
+      const methods = (m.data ?? []) as { id: string; name: string }[];
+      setPlaces(places);
+      setMethods(methods);
+      putPlaces(childId, places).catch(() => { /* ignore */ });
+      putMethods(childId, methods).catch(() => { /* ignore */ });
+    }).catch(() => { /* offline: keep cache paint */ });
+    return () => { cancelled = true; };
   }, [activeChild?.id]);
 
   // Load interruptions from DB when editing, unless the caller pre-populated
