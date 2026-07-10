@@ -32,6 +32,7 @@ import { useTranslation } from "react-i18next";
 import { useChildRole, canCreateSleep, canEditChild, canManageMembers, type ChildRole } from "@/hooks/useChildRole";
 import { localizePlace, localizeMethod } from "@/lib/localize-default";
 import { getActivePlaces, getActiveMethods, putPlaces, putMethods } from "@/lib/child-resources-cache";
+import { withTimeout } from "@/lib/net-utils";
 import { iconForMethod } from "@/lib/method-icons";
 import ImageCropDialog from "@/components/ImageCropDialog";
 import { useSwipeBack } from "@/hooks/use-swipe-back";
@@ -99,33 +100,32 @@ export default function Settings() {
 
   const load = async () => {
     if (!activeChild) return;
+    const childId = activeChild.id;
     setChildName(activeChild.name ?? "");
     setBirthDate(activeChild.birth_date ?? "");
 
-    // Paint places and methods from Dexie immediately so offline / cold-start
-    // shows real data instead of empty lists.
-    const childId = activeChild.id;
-    Promise.all([getActivePlaces(childId), getActiveMethods(childId)]).then(([p, m]) => {
-      if (p.length) setPlaces(p);
-      if (m.length) setMethods(m);
-    });
+    // 1. Paint from cache/context instantly — no network wait.
+    //    ChildContext.settings is Dexie-cached so this is always fast.
+    if (ctxSettings) setS(ctxSettings);
+    const [cachedPlaces, cachedMethods] = await Promise.all([
+      getActivePlaces(childId),
+      getActiveMethods(childId),
+    ]);
+    if (cachedPlaces.length) setPlaces(cachedPlaces);
+    if (cachedMethods.length) setMethods(cachedMethods);
 
-    // Offline: fall back to ChildContext.settings (already Dexie-cached) and
-    // skip network queries that would fail and toast an error.
-    if (!navigator.onLine) {
-      if (ctxSettings) setS(ctxSettings);
-      return;
-    }
+    // 2. Refresh from network with an 8-second timeout.
+    //    On "WiFi with no internet" navigator.onLine lies, so we time-out
+    //    rather than hang until the OS TCP timeout fires (30-90 s).
+    if (!navigator.onLine) return;
 
-    // Always load invites — RLS already restricts visibility to linked users,
-    // and we render the section based on `canManageMembers(role)` which may
-    // resolve after the first load() call.
     const invitesQuery = supabase.from("child_invites").select("*")
       .eq("child_id", childId)
       .is("redeemed_at", null).is("revoked_at", null)
       .order("created_at", { ascending: false });
-    try {
-      const [se, p, m, inv, links, roles, profs] = await Promise.all([
+
+    const results = await withTimeout(
+      Promise.all([
         supabase.from("child_settings").select("*").eq("child_id", childId).single(),
         supabase.from("sleep_places").select("id,name").eq("child_id", childId).is("deleted_at", null).order("name"),
         supabase.from("settling_methods").select("id,name").eq("child_id", childId).is("deleted_at", null).order("name"),
@@ -133,12 +133,18 @@ export default function Settings() {
         supabase.from("child_users").select("user_id").eq("child_id", childId),
         supabase.from("child_user_roles").select("user_id,role").eq("child_id", childId),
         supabase.from("profiles").select("id,display_name"),
-      ]);
+      ]) as any,
+      8000,
+    );
+
+    // Timed out — cache already on screen, nothing more to do.
+    if (!results) return;
+
+    try {
+      const [se, p, m, inv, links, roles, profs] = results as any[];
       const placesData = (p.data ?? []) as { id: string; name: string }[];
       const methodsData = (m.data ?? []) as { id: string; name: string }[];
       setS(se.data); setPlaces(placesData); setMethods(methodsData);
-      // Write-through so CurrentSleep / SleepForm see additions and soft-deletes
-      // even if the user goes offline before those pages refresh.
       putPlaces(childId, placesData).catch(() => { /* ignore */ });
       putMethods(childId, methodsData).catch(() => { /* ignore */ });
       setInvites(((inv as any)?.data ?? []).filter((i: any) => new Date(i.expires_at) > new Date()));
@@ -151,7 +157,6 @@ export default function Settings() {
       })));
     } catch (e) {
       devError("[Settings] load failed", e);
-      toast.error(t("common.loadFailed"));
     }
   };
   useEffect(() => { load(); }, [activeChild]);

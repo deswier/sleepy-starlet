@@ -38,6 +38,7 @@ import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
 import { getActiveMethods, putMethods } from "@/lib/child-resources-cache";
 import { getActiveSession, getInterruptionsForSession, putSessions, putInterruptions } from "@/lib/sessions-cache";
+import { withTimeout } from "@/lib/net-utils";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
@@ -154,43 +155,47 @@ export default function CurrentSleep() {
 
   const load = async () => {
     if (!activeChild) return;
+    const childId = activeChild.id;
 
-    // Offline: serve from Dexie cache immediately — no network round-trip.
-    if (!navigator.onLine) {
-      const cached = await getActiveSession(activeChild.id);
-      const intrs = cached ? await getInterruptionsForSession(cached.id) : [];
-      applySessionData(cached, intrs);
-      return;
-    }
+    // 1. Show Dexie cache immediately — always, regardless of online status.
+    //    This makes the UI interactive in < 50 ms even when online, and avoids
+    //    any blank screen when navigator.onLine lies (WiFi with no internet).
+    const cached = await getActiveSession(childId);
+    const cachedIntrs = cached ? await getInterruptionsForSession(cached.id) : [];
+    applySessionData(cached, cachedIntrs);
 
-    const { data, error } = await supabase
-      .from("sleep_sessions").select("*")
-      .eq("child_id", activeChild.id)
-      .is("end_time", null)
-      .order("start_time", { ascending: false })
-      .limit(1).maybeSingle();
+    // 2. Refresh from network in the background with a 5-second timeout.
+    //    If the network answers in time we silently update; if it times out or
+    //    we're truly offline we keep the cache that's already on screen.
+    if (!navigator.onLine) return;
 
-    // Network failed despite navigator.onLine (rare but possible).
-    if (error) {
-      const cached = await getActiveSession(activeChild.id);
-      const intrs = cached ? await getInterruptionsForSession(cached.id) : [];
-      applySessionData(cached, intrs);
-      return;
-    }
+    const sessionResult = await withTimeout(
+      supabase.from("sleep_sessions").select("*")
+        .eq("child_id", childId)
+        .is("end_time", null)
+        .order("start_time", { ascending: false })
+        .limit(1).maybeSingle(),
+      5000,
+    );
+    if (!sessionResult || sessionResult.error) return;
 
-    // Write active session to cache so next offline open has it.
-    if (data) putSessions([data as SleepSession]).catch(() => { /* ignore */ });
+    const session = sessionResult.data as SleepSession | null;
+    if (session) putSessions([session]).catch(() => { /* ignore */ });
 
-    const { data: allIntrs } = await supabase
-      .from("sleep_interruptions").select("id,start_time,end_time,settling_method_id")
-      .eq("sleep_session_id", (data as any)?.id ?? "");
-    const list = allIntrs ?? [];
+    const intrsResult = session
+      ? await withTimeout(
+          supabase.from("sleep_interruptions")
+            .select("id,start_time,end_time,settling_method_id")
+            .eq("sleep_session_id", session.id) as any,
+          5000,
+        )
+      : null;
+    const list = (intrsResult as any)?.data ?? [];
 
-    // Cache interruptions for the active session.
-    if (data && list.length) {
+    if (session && list.length) {
       putInterruptions(list.map((i: any) => ({
         id: i.id,
-        sleep_session_id: i.sleep_session_id ?? (data as any).id,
+        sleep_session_id: i.sleep_session_id ?? session.id,
         start_time: i.start_time,
         end_time: i.end_time ?? null,
         settling_method_id: i.settling_method_id ?? null,
@@ -198,7 +203,7 @@ export default function CurrentSleep() {
       }))).catch(() => { /* ignore */ });
     }
 
-    applySessionData(data as SleepSession | null, list);
+    applySessionData(session, list);
   };
 
   // Re-read cache when child changes (initial state above only runs once).

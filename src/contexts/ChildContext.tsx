@@ -7,6 +7,7 @@ import {
   getChildRole, putChildRole,
   type CachedChildRole,
 } from "@/lib/child-resources-cache";
+import { withTimeout } from "@/lib/net-utils";
 
 export interface Child {
   id: string;
@@ -76,18 +77,19 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       if (cancelled || networkResolved) return;
       if (cached) setRole(cached);
     });
-    supabase.from("child_user_roles")
-      .select("role")
-      .eq("child_id", activeId).eq("user_id", uid)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
-        networkResolved = true;
-        const role = (data?.role as ChildRole) ?? "user";
-        setRole(role);
-        // Write-through so the next cold-start has the freshest role.
-        if (role) putChildRole(activeId, uid, role as CachedChildRole).catch(() => { /* ignore */ });
-      });
+    withTimeout(
+      supabase.from("child_user_roles")
+        .select("role")
+        .eq("child_id", activeId).eq("user_id", uid)
+        .maybeSingle(),
+      5000,
+    ).then((res) => {
+      if (cancelled || !res) return;
+      networkResolved = true;
+      const role = (res.data?.role as ChildRole) ?? "user";
+      setRole(role);
+      if (role) putChildRole(activeId, uid, role as CachedChildRole).catch(() => { /* ignore */ });
+    });
     return () => { cancelled = true; };
   }, [activeId, user?.id]);
 
@@ -105,16 +107,18 @@ export const ChildProvider = ({ children }: { children: ReactNode }) => {
       if (cancelled || networkResolved) return;
       if (cached) setSettings(cached as ChildSettings);
     });
-    supabase.from("child_settings")
-      .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
-      .eq("child_id", activeId).single()
-      .then(({ data }) => {
-        if (cancelled) return;
-        networkResolved = true;
-        const s = data as ChildSettings | null;
-        setSettings(s);
-        if (s) putChildSettings(s).catch(() => { /* ignore */ });
-      });
+    withTimeout(
+      supabase.from("child_settings")
+        .select("child_id,night_start_time,night_end_time,split_night_sleep_by_date,show_sleep_place,show_falling_asleep_method,show_interruptions")
+        .eq("child_id", activeId).single(),
+      5000,
+    ).then((res) => {
+      if (cancelled || !res) return;
+      networkResolved = true;
+      const s = res.data as ChildSettings | null;
+      setSettings(s);
+      if (s) putChildSettings(s).catch(() => { /* ignore */ });
+    });
     return () => { cancelled = true; };
   }, [activeId]);
 
