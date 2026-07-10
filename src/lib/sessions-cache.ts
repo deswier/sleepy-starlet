@@ -46,6 +46,25 @@ export async function getInterruptionsForRange(
     .toArray() as Promise<CachedInterruption[]>;
 }
 
+// Returns the most recent active (no end_time) session for a child from cache.
+export async function getActiveSession(childId: string): Promise<SleepSession | null> {
+  const rows = await db.sleep_sessions_cache
+    .where("child_id").equals(childId)
+    .toArray();
+  const active = rows.filter((s) => !s.end_time);
+  if (!active.length) return null;
+  return active.sort(
+    (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
+  )[0] as SleepSession;
+}
+
+// Returns all cached interruptions for a specific session.
+export async function getInterruptionsForSession(sessionId: string): Promise<CachedInterruption[]> {
+  return db.sleep_interruptions_cache
+    .where("sleep_session_id").equals(sessionId)
+    .toArray() as Promise<CachedInterruption[]>;
+}
+
 // ─── projection ───────────────────────────────────────────────────────────────
 
 // Applies pending sleep_sessions mutations on top of cached rows so that

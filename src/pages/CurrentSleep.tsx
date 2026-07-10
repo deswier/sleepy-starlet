@@ -37,6 +37,7 @@ import { useChildRole, canCreateSleep, canEditOwnSleep, canEditAnySleep } from "
 import type { DraftInterruption } from "@/components/sleep/InterruptionsEditor";
 import { localizeMethod } from "@/lib/localize-default";
 import { getActiveMethods, putMethods } from "@/lib/child-resources-cache";
+import { getActiveSession, getInterruptionsForSession, putSessions, putInterruptions } from "@/lib/sessions-cache";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
@@ -127,28 +128,19 @@ export default function CurrentSleep() {
     return () => { cancelled = true; };
   }, [activeChild?.id]);
 
-  const load = async () => {
-    if (!activeChild) return;
-    const { data } = await supabase
-      .from("sleep_sessions").select("*")
-      .eq("child_id", activeChild.id)
-      .is("end_time", null)
-      .order("start_time", { ascending: false })
-      .limit(1).maybeSingle();
-    setActive(data as SleepSession | null);
+  const applySessionData = (
+    session: SleepSession | null,
+    intrs: { id: string; start_time: string; end_time?: string | null }[],
+  ) => {
+    setActive(session);
     setCheckingActive(false);
-    // Persist last known state so the skeleton colors correctly next time.
     if (cacheKey) {
-      try { window.localStorage.setItem(cacheKey, data ? "1" : "0"); } catch {}
+      try { window.localStorage.setItem(cacheKey, session ? "1" : "0"); } catch {}
     }
-    setOptimisticSleeping(!!data);
-    if (data) {
-      const { data: allIntrs } = await supabase
-        .from("sleep_interruptions").select("id,start_time,end_time")
-        .eq("sleep_session_id", data.id);
-      const list = allIntrs ?? [];
-      const open = list.find((i: any) => !i.end_time) ?? null;
-      const closed = list.filter((i: any) => i.end_time) as { end_time: string }[];
+    setOptimisticSleeping(!!session);
+    if (session) {
+      const open = intrs.find((i) => !i.end_time) ?? null;
+      const closed = intrs.filter((i) => i.end_time) as { end_time: string }[];
       const lastEnd = closed.length
         ? closed.reduce((a, b) => (new Date(a.end_time) > new Date(b.end_time) ? a : b)).end_time
         : null;
@@ -158,6 +150,55 @@ export default function CurrentSleep() {
       setInterruption(null);
       setIntrStats({ count: 0, lastEnd: null });
     }
+  };
+
+  const load = async () => {
+    if (!activeChild) return;
+
+    // Offline: serve from Dexie cache immediately — no network round-trip.
+    if (!navigator.onLine) {
+      const cached = await getActiveSession(activeChild.id);
+      const intrs = cached ? await getInterruptionsForSession(cached.id) : [];
+      applySessionData(cached, intrs);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("sleep_sessions").select("*")
+      .eq("child_id", activeChild.id)
+      .is("end_time", null)
+      .order("start_time", { ascending: false })
+      .limit(1).maybeSingle();
+
+    // Network failed despite navigator.onLine (rare but possible).
+    if (error) {
+      const cached = await getActiveSession(activeChild.id);
+      const intrs = cached ? await getInterruptionsForSession(cached.id) : [];
+      applySessionData(cached, intrs);
+      return;
+    }
+
+    // Write active session to cache so next offline open has it.
+    if (data) putSessions([data as SleepSession]).catch(() => { /* ignore */ });
+
+    const { data: allIntrs } = await supabase
+      .from("sleep_interruptions").select("id,start_time,end_time,settling_method_id")
+      .eq("sleep_session_id", (data as any)?.id ?? "");
+    const list = allIntrs ?? [];
+
+    // Cache interruptions for the active session.
+    if (data && list.length) {
+      putInterruptions(list.map((i: any) => ({
+        id: i.id,
+        sleep_session_id: i.sleep_session_id ?? (data as any).id,
+        start_time: i.start_time,
+        end_time: i.end_time ?? null,
+        settling_method_id: i.settling_method_id ?? null,
+        settling_method_name: null,
+      }))).catch(() => { /* ignore */ });
+    }
+
+    applySessionData(data as SleepSession | null, list);
   };
 
   // Re-read cache when child changes (initial state above only runs once).
