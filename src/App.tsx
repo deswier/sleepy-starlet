@@ -33,7 +33,12 @@ const queryClient = new QueryClient({
       staleTime: 30_000,
       gcTime: 5 * 60_000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      // Refetch when the app returns to the foreground: mobile browsers and
+      // iOS PWAs drop the Realtime WebSocket while hidden, and events
+      // emitted meanwhile — e.g. a sleep ended on another device — would
+      // otherwise stay invisible. staleTime still gates: fresh data
+      // (<30s since last fetch) is served from cache without a network hit.
+      refetchOnWindowFocus: true,
     },
   },
 });

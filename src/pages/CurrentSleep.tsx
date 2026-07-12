@@ -213,6 +213,31 @@ export default function CurrentSleep() {
   }, [activeChild?.id]);
 
   useEffect(() => { load(); }, [activeChild?.id]);
+
+  // Refetch when the app returns to the foreground. Mobile browsers and
+  // iOS PWAs drop the Realtime WebSocket while the tab is hidden, so any
+  // sleep_sessions change that happened on another device (e.g. partner
+  // ended the sleep) would otherwise stay invisible until the next mount.
+  // `pageshow` with e.persisted handles Safari's back-forward cache path.
+  useEffect(() => {
+    if (!activeChild) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) load();
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChild?.id]);
+
   useEffect(() => {
     const i = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(i);
