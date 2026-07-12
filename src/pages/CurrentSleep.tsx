@@ -149,62 +149,58 @@ export default function CurrentSleep() {
     if (!activeChild) return;
     const childId = activeChild.id;
 
-    if (navigator.onLine) {
-      // Fresh-first: never show cached sleep state online — another device may
-      // have ended the session and the cache would say "still sleeping".
-      // Cache is only touched if the network times out (see fallback below).
-      const sessionResult = await withTimeout(
-        supabase.from("sleep_sessions").select("*")
-          .eq("child_id", childId)
-          .is("end_time", null)
-          .order("start_time", { ascending: false })
-          .limit(1).maybeSingle(),
-        5000,
-      );
-      if (sessionResult && !sessionResult.error) {
-        const session = sessionResult.data as SleepSession | null;
-        if (session) putSessions([session]).catch(() => { /* ignore */ });
+    // Always try network first — never gate on navigator.onLine upfront.
+    // In airplane mode that flag can lag (returns true on cold start for
+    // hundreds of milliseconds), causing a long skeleton and wrong stale mark.
+    // We let withTimeout decide: fast failure → cache without stale mark;
+    // 5s timeout while supposedly online → cache with stale mark.
+    const sessionResult = await withTimeout(
+      supabase.from("sleep_sessions").select("*")
+        .eq("child_id", childId)
+        .is("end_time", null)
+        .order("start_time", { ascending: false })
+        .limit(1).maybeSingle(),
+      5000,
+    );
+    if (sessionResult && !sessionResult.error) {
+      // Network responded — fresh data, never show stale mark.
+      const session = sessionResult.data as SleepSession | null;
+      if (session) putSessions([session]).catch(() => { /* ignore */ });
 
-        const intrsResult = session
-          ? await withTimeout(
-              supabase.from("sleep_interruptions")
-                .select("id,start_time,end_time,settling_method_id")
-                .eq("sleep_session_id", session.id) as any,
-              5000,
-            )
-          : null;
-        const list = (intrsResult as any)?.data ?? [];
+      const intrsResult = session
+        ? await withTimeout(
+            supabase.from("sleep_interruptions")
+              .select("id,start_time,end_time,settling_method_id")
+              .eq("sleep_session_id", session.id) as any,
+            5000,
+          )
+        : null;
+      const list = (intrsResult as any)?.data ?? [];
 
-        if (session && list.length) {
-          putInterruptions(list.map((i: any) => ({
-            id: i.id,
-            sleep_session_id: i.sleep_session_id ?? session.id,
-            start_time: i.start_time,
-            end_time: i.end_time ?? null,
-            settling_method_id: i.settling_method_id ?? null,
-            settling_method_name: null,
-          }))).catch(() => { /* ignore */ });
-        }
-
-        applySessionData(session, list);
-        setStaleFallback(false);
-        return;
+      if (session && list.length) {
+        putInterruptions(list.map((i: any) => ({
+          id: i.id,
+          sleep_session_id: i.sleep_session_id ?? session.id,
+          start_time: i.start_time,
+          end_time: i.end_time ?? null,
+          settling_method_id: i.settling_method_id ?? null,
+          settling_method_name: null,
+        }))).catch(() => { /* ignore */ });
       }
-      // Timeout or error while online → fallback to cache with a stale mark
-      // so the user knows the shown state is not confirmed with the server.
-      const cached = await getActiveSession(childId);
-      const cachedIntrs = cached ? await getInterruptionsForSession(cached.id) : [];
-      applySessionData(cached, cachedIntrs);
-      setStaleFallback(true);
+
+      applySessionData(session, list);
+      setStaleFallback(false);
       return;
     }
 
-    // Offline: cache immediately; the shell SyncStatus banner already
-    // communicates "Offline", so no per-page stale mark is needed.
+    // Network failed (fast error) or timed out. Fall back to cache.
+    // Show stale mark only when the device still claims to be online after
+    // the failure — that means degraded connection, not airplane mode.
+    // In airplane mode SyncStatus banner already communicates the state.
     const cached = await getActiveSession(childId);
     const cachedIntrs = cached ? await getInterruptionsForSession(cached.id) : [];
     applySessionData(cached, cachedIntrs);
-    setStaleFallback(false);
+    setStaleFallback(navigator.onLine);
   };
 
   // Reset skeleton flag on child change so the new child gets a fresh load.

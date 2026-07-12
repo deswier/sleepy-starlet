@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { devError } from "@/lib/logger";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -13,10 +12,10 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
+import { withTimeout } from "@/lib/net-utils";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 import {
   formatDuration, sessionDuration, SleepSession,
   ageInMonthsAt, wakeWindowForAge,
@@ -189,26 +188,23 @@ function DayView({ childId, birthDate, night, splitByDate }: { childId: string; 
   const { data: sessions = [], isLoading: loadingDay } = useQuery<SleepSession[]>({
     queryKey: ["analytics-day", childId, dateStr],
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase.from("sleep_sessions").select("*")
+      const result = await withTimeout(
+        supabase.from("sleep_sessions").select("*")
           .eq("child_id", childId)
           .gte("start_time", sinceDate.toISOString())
           .lt("start_time", untilDate.toISOString())
-          .order("start_time");
-        if (error) throw error;
-        const rows = (data ?? []) as SleepSession[];
+          .order("start_time"),
+        5000,
+      );
+      if (result && !result.error) {
+        const rows = (result.data ?? []) as SleepSession[];
         await putSessions(rows);
         return rows;
-      } catch (e) {
-        if (!navigator.onLine) {
-          const cached = await getSessions(childId, sinceDate, untilDate);
-          const pending = await db.mutations.toArray();
-          return projectSessionMutations(cached, pending);
-        }
-        devError("[DayView] load failed", e);
-        toast.error(t("common.loadFailed"));
-        throw e;
       }
+      // Network unavailable or timed out — serve local cache.
+      const cached = await getSessions(childId, sinceDate, untilDate);
+      const pending = await db.mutations.toArray();
+      return projectSessionMutations(cached, pending);
     },
     staleTime: 30_000,
     networkMode: "always",
@@ -508,26 +504,23 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
   const { data: sessions = [], isLoading: loadingWeek } = useQuery<SleepSession[]>({
     queryKey: ["analytics-week", childId, weekOffset],
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase.from("sleep_sessions").select("*")
+      const result = await withTimeout(
+        supabase.from("sleep_sessions").select("*")
           .eq("child_id", childId)
           .gte("start_time", sinceDate.toISOString())
           .lt("start_time", untilDate.toISOString())
-          .order("start_time");
-        if (error) throw error;
-        const rows = (data ?? []) as SleepSession[];
+          .order("start_time"),
+        5000,
+      );
+      if (result && !result.error) {
+        const rows = (result.data ?? []) as SleepSession[];
         await putSessions(rows);
         return rows;
-      } catch (e) {
-        if (!navigator.onLine) {
-          const cached = await getSessions(childId, sinceDate, untilDate);
-          const pending = await db.mutations.toArray();
-          return projectSessionMutations(cached, pending);
-        }
-        devError("[WeekView] load failed", e);
-        toast.error(t("common.loadFailed"));
-        throw e;
       }
+      // Network unavailable or timed out — serve local cache.
+      const cached = await getSessions(childId, sinceDate, untilDate);
+      const pending = await db.mutations.toArray();
+      return projectSessionMutations(cached, pending);
     },
     staleTime: 30_000,
     networkMode: "always",

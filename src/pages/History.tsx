@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
+import { withTimeout } from "@/lib/net-utils";
 import {
   sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
@@ -123,19 +124,24 @@ export default function History() {
       const since = sinceDate.toISOString();
       const until = untilDate.toISOString();
 
-      if (navigator.onLine) {
-        const { data, error } = await supabase.from("sleep_sessions").select("*")
+      // Always try the network first (with a timeout so we don't hang
+      // indefinitely when navigator.onLine lies — common on cold start in
+      // airplane mode). If the call fails or times out, serve local cache.
+      const result = await withTimeout(
+        supabase.from("sleep_sessions").select("*")
           .eq("child_id", activeChild!.id)
           .gte("start_time", since)
           .lt("start_time", until)
-          .order("start_time", { ascending: false });
-        if (error) throw error;
-        const rows = (data ?? []) as SleepSession[];
+          .order("start_time", { ascending: false }),
+        5000,
+      );
+      if (result && !result.error) {
+        const rows = (result.data ?? []) as SleepSession[];
         await putSessions(rows);
         return rows;
       }
 
-      // Offline: serve cached rows + apply any pending queue mutations.
+      // Network unavailable or timed out — serve cached rows + pending mutations.
       const cached = await getSessions(activeChild!.id, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       const projected = projectSessionMutations(cached, pending);

@@ -21,7 +21,18 @@ export default function SyncStatus() {
     const onDown = () => setOnline(false);
     window.addEventListener("online", onUp);
     window.addEventListener("offline", onDown);
-    return () => { off(); window.removeEventListener("online", onUp); window.removeEventListener("offline", onDown); };
+
+    // navigator.onLine can return true for 100-500ms after the app opens in
+    // airplane mode (the "offline" event fired before our listener registered).
+    // Re-read the flag after a short delay to catch this case.
+    const recheckTimer = setTimeout(() => setOnline(navigator.onLine), 300);
+
+    return () => {
+      off();
+      window.removeEventListener("online", onUp);
+      window.removeEventListener("offline", onDown);
+      clearTimeout(recheckTimer);
+    };
   }, []);
 
   if (online && pending === 0 && conflicts === 0) return null;
