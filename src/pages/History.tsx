@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
 import { withTimeout } from "@/lib/net-utils";
+import { markOnline, markOffline } from "@/lib/connectivity";
 import {
   sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
@@ -136,12 +137,14 @@ export default function History() {
         5000,
       );
       if (result && !result.error) {
+        markOnline();
         const rows = (result.data ?? []) as SleepSession[];
         await putSessions(rows);
         return rows;
       }
 
       // Network unavailable or timed out — serve cached rows + pending mutations.
+      markOffline();
       const cached = await getSessions(activeChild!.id, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       const projected = projectSessionMutations(cached, pending);

@@ -39,6 +39,7 @@ import { localizeMethod } from "@/lib/localize-default";
 import { getActiveMethods, putMethods } from "@/lib/child-resources-cache";
 import { getActiveSession, getInterruptionsForSession, putSessions, putInterruptions } from "@/lib/sessions-cache";
 import { withTimeout } from "@/lib/net-utils";
+import { markOnline, markOffline } from "@/lib/connectivity";
 import { MethodOptionLabel } from "@/lib/method-icons";
 import { DiscardChangesDialog } from "@/components/ui/discard-changes-dialog";
 
@@ -188,15 +189,18 @@ export default function CurrentSleep() {
         }))).catch(() => { /* ignore */ });
       }
 
+      markOnline();
       applySessionData(session, list);
       setStaleFallback(false);
       return;
     }
 
     // Network failed (fast error) or timed out. Fall back to cache.
-    // Show stale mark only when the device still claims to be online after
-    // the failure — that means degraded connection, not airplane mode.
-    // In airplane mode SyncStatus banner already communicates the state.
+    // markOffline() drives SyncStatus in iOS PWA where navigator.onLine
+    // and window events are unreliable — the actual request failure is the
+    // authoritative signal. staleFallback is shown only for degraded
+    // connections (device still thinks it's online after failure).
+    markOffline();
     const cached = await getActiveSession(childId);
     const cachedIntrs = cached ? await getInterruptionsForSession(cached.id) : [];
     applySessionData(cached, cachedIntrs);

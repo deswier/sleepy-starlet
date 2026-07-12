@@ -3,10 +3,14 @@ import { Link } from "react-router-dom";
 import { CloudOff, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { conflictCount, onQueueChange, pendingCount, flush } from "@/lib/offline-queue";
+import { getOnline, onConnectivityChange } from "@/lib/connectivity";
 
 export default function SyncStatus() {
   const { t } = useTranslation();
-  const [online, setOnline] = useState(navigator.onLine);
+  // Use connectivity.ts as the source of truth — it is updated by actual
+  // network call results, making it reliable in iOS PWAs where navigator.onLine
+  // and window online/offline events are broken.
+  const [online, setOnline] = useState(getOnline);
   const [pending, setPending] = useState(0);
   const [conflicts, setConflicts] = useState(0);
 
@@ -16,23 +20,12 @@ export default function SyncStatus() {
       setConflicts(await conflictCount());
     };
     update();
-    const off = onQueueChange(update);
-    const onUp = () => { setOnline(true); flush(); update(); };
-    const onDown = () => setOnline(false);
-    window.addEventListener("online", onUp);
-    window.addEventListener("offline", onDown);
-
-    // navigator.onLine can return true for 100-500ms after the app opens in
-    // airplane mode (the "offline" event fired before our listener registered).
-    // Re-read the flag after a short delay to catch this case.
-    const recheckTimer = setTimeout(() => setOnline(navigator.onLine), 300);
-
-    return () => {
-      off();
-      window.removeEventListener("online", onUp);
-      window.removeEventListener("offline", onDown);
-      clearTimeout(recheckTimer);
-    };
+    const offQueue = onQueueChange(update);
+    const offConn = onConnectivityChange((isOnline) => {
+      setOnline(isOnline);
+      if (isOnline) { flush(); update(); }
+    });
+    return () => { offQueue(); offConn(); };
   }, []);
 
   if (online && pending === 0 && conflicts === 0) return null;

@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
 import { withTimeout } from "@/lib/net-utils";
+import { markOnline, markOffline } from "@/lib/connectivity";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslation } from "react-i18next";
@@ -197,11 +198,13 @@ function DayView({ childId, birthDate, night, splitByDate }: { childId: string; 
         5000,
       );
       if (result && !result.error) {
+        markOnline();
         const rows = (result.data ?? []) as SleepSession[];
         await putSessions(rows);
         return rows;
       }
       // Network unavailable or timed out — serve local cache.
+      markOffline();
       const cached = await getSessions(childId, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       return projectSessionMutations(cached, pending);
@@ -513,11 +516,13 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
         5000,
       );
       if (result && !result.error) {
+        markOnline();
         const rows = (result.data ?? []) as SleepSession[];
         await putSessions(rows);
         return rows;
       }
       // Network unavailable or timed out — serve local cache.
+      markOffline();
       const cached = await getSessions(childId, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       return projectSessionMutations(cached, pending);
