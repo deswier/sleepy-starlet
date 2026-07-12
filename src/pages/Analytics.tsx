@@ -13,7 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
 import { withTimeout } from "@/lib/net-utils";
-import { markOnline, markOffline } from "@/lib/connectivity";
+import { markOnline, markOffline, getOnline } from "@/lib/connectivity";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslation } from "react-i18next";
@@ -189,22 +189,24 @@ function DayView({ childId, birthDate, night, splitByDate }: { childId: string; 
   const { data: sessions = [], isLoading: loadingDay } = useQuery<SleepSession[]>({
     queryKey: ["analytics-day", childId, dateStr],
     queryFn: async () => {
-      const result = await withTimeout(
-        supabase.from("sleep_sessions").select("*")
-          .eq("child_id", childId)
-          .gte("start_time", sinceDate.toISOString())
-          .lt("start_time", untilDate.toISOString())
-          .order("start_time"),
-        5000,
-      );
-      if (result && !result.error) {
-        markOnline();
-        const rows = (result.data ?? []) as SleepSession[];
-        await putSessions(rows);
-        return rows;
+      if (getOnline()) {
+        const result = await withTimeout(
+          supabase.from("sleep_sessions").select("*")
+            .eq("child_id", childId)
+            .gte("start_time", sinceDate.toISOString())
+            .lt("start_time", untilDate.toISOString())
+            .order("start_time"),
+          5000,
+        );
+        if (result && !result.error) {
+          markOnline();
+          const rows = (result.data ?? []) as SleepSession[];
+          await putSessions(rows);
+          return rows;
+        }
+        markOffline();
       }
-      // Network unavailable or timed out — serve local cache.
-      markOffline();
+      // Offline or network failed — serve local cache.
       const cached = await getSessions(childId, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       return projectSessionMutations(cached, pending);
@@ -507,22 +509,24 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
   const { data: sessions = [], isLoading: loadingWeek } = useQuery<SleepSession[]>({
     queryKey: ["analytics-week", childId, weekOffset],
     queryFn: async () => {
-      const result = await withTimeout(
-        supabase.from("sleep_sessions").select("*")
-          .eq("child_id", childId)
-          .gte("start_time", sinceDate.toISOString())
-          .lt("start_time", untilDate.toISOString())
-          .order("start_time"),
-        5000,
-      );
-      if (result && !result.error) {
-        markOnline();
-        const rows = (result.data ?? []) as SleepSession[];
-        await putSessions(rows);
-        return rows;
+      if (getOnline()) {
+        const result = await withTimeout(
+          supabase.from("sleep_sessions").select("*")
+            .eq("child_id", childId)
+            .gte("start_time", sinceDate.toISOString())
+            .lt("start_time", untilDate.toISOString())
+            .order("start_time"),
+          5000,
+        );
+        if (result && !result.error) {
+          markOnline();
+          const rows = (result.data ?? []) as SleepSession[];
+          await putSessions(rows);
+          return rows;
+        }
+        markOffline();
       }
-      // Network unavailable or timed out — serve local cache.
-      markOffline();
+      // Offline or network failed — serve local cache.
       const cached = await getSessions(childId, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       return projectSessionMutations(cached, pending);

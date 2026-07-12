@@ -20,7 +20,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
 import { withTimeout } from "@/lib/net-utils";
-import { markOnline, markOffline } from "@/lib/connectivity";
+import { markOnline, markOffline, getOnline } from "@/lib/connectivity";
 import {
   sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
@@ -125,26 +125,28 @@ export default function History() {
       const since = sinceDate.toISOString();
       const until = untilDate.toISOString();
 
-      // Always try the network first (with a timeout so we don't hang
-      // indefinitely when navigator.onLine lies — common on cold start in
-      // airplane mode). If the call fails or times out, serve local cache.
-      const result = await withTimeout(
-        supabase.from("sleep_sessions").select("*")
-          .eq("child_id", activeChild!.id)
-          .gte("start_time", since)
-          .lt("start_time", until)
-          .order("start_time", { ascending: false }),
-        5000,
-      );
-      if (result && !result.error) {
-        markOnline();
-        const rows = (result.data ?? []) as SleepSession[];
-        await putSessions(rows);
-        return rows;
+      // Skip network entirely if we already know we're offline (e.g. CurrentSleep
+      // called markOffline() moments ago). This gives instant cache on navigation
+      // instead of waiting for the 5s timeout to fire.
+      if (getOnline()) {
+        const result = await withTimeout(
+          supabase.from("sleep_sessions").select("*")
+            .eq("child_id", activeChild!.id)
+            .gte("start_time", since)
+            .lt("start_time", until)
+            .order("start_time", { ascending: false }),
+          5000,
+        );
+        if (result && !result.error) {
+          markOnline();
+          const rows = (result.data ?? []) as SleepSession[];
+          await putSessions(rows);
+          return rows;
+        }
+        markOffline();
       }
 
-      // Network unavailable or timed out — serve cached rows + pending mutations.
-      markOffline();
+      // Offline or network failed — serve cached rows + pending mutations.
       const cached = await getSessions(activeChild!.id, sinceDate, untilDate);
       const pending = await db.mutations.toArray();
       const projected = projectSessionMutations(cached, pending);
