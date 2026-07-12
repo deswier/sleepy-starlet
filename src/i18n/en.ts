@@ -12,7 +12,6 @@ const en = {
     pendingChanges_other: "{{count}} pending changes",
     offline: "Offline",
     online: "Online",
-    cachedData: "Showing previously loaded data",
     adjustPhoto: "Adjust photo",
     loadFailed: "Failed to load data. Check your connection.",
     discardChanges: "Discard changes?",
@@ -121,6 +120,7 @@ const en = {
   sleep: {
     awake: "{{name}} is awake", sleeping: "{{name}} is sleeping",
     readyWhen: "Ready when sleep starts",
+    staleData: "Data may be outdated — refresh failed",
     startSleep: "Start sleep",
     wakeUp: "Wake up",
     wakeUp_male: "Wake up", wakeUp_female: "Wake up", wakeUp_other: "Wake up",

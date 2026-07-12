@@ -19,8 +19,6 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
-import { useNetworkStatus } from "@/hooks/use-network-status";
-import { WifiOff } from "lucide-react";
 import {
   sessionDuration, wakeWindowMinutes,
   wwStatus, SleepSession, wwThresholdsAt, fmtWeekday,
@@ -107,7 +105,6 @@ export default function History() {
   // react-query handles: race conditions on rapid day switches (stale results
   // discarded), retry on transient errors, cache (revisiting a day is instant
   // within staleTime), and dedup if multiple consumers query the same key.
-  const isOnline = useNetworkStatus();
   const dayKey = format(day, "yyyy-MM-dd");
   const { data: sessions = [], isLoading: loading } = useQuery({
     queryKey: [...SESSIONS_QUERY_KEY, activeChild?.id, dayKey],
@@ -249,13 +246,6 @@ export default function History() {
           <ChevronRight className="w-4 h-4" />
         </Button>
       </div>
-
-      {!isOnline && (
-        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground py-1 mb-2">
-          <WifiOff className="w-3 h-3" />
-          {t("common.cachedData")}
-        </div>
-      )}
 
       {loading && (
         <Card className="p-5 shadow-card border-border/50 space-y-3">

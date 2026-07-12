@@ -13,8 +13,6 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { putSessions, getSessions, projectSessionMutations } from "@/lib/sessions-cache";
 import { db } from "@/lib/offline-queue";
-import { useNetworkStatus } from "@/hooks/use-network-status";
-import { WifiOff } from "lucide-react";
 import { useChildren } from "@/contexts/ChildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTranslation } from "react-i18next";
@@ -184,7 +182,6 @@ function DayView({ childId, birthDate, night, splitByDate }: { childId: string; 
   useEffect(() => {
     try { localStorage.setItem(dayKey, format(day, "yyyy-MM-dd")); } catch {}
   }, [day, dayKey]);
-  const isOnline = useNetworkStatus();
   const dateStr = format(day, "yyyy-MM-dd");
   const sinceDate = subDays(startOfDay(day), 1);
   const untilDate = addDays(startOfDay(day), 1);
@@ -335,13 +332,6 @@ function DayView({ childId, birthDate, night, splitByDate }: { childId: string; 
     <div className="space-y-3">
       <DayPicker day={day} setDay={setDay} />
 
-      {!isOnline && (
-        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground py-0.5">
-          <WifiOff className="w-3 h-3" />
-          {t("common.cachedData")}
-        </div>
-      )}
-
       {dayScore && (
         <Card className="p-4 shadow-card border-border/50">
           <div className="flex items-end gap-3 mb-3">
@@ -481,7 +471,6 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
   useEffect(() => {
     try { localStorage.setItem(offsetKey, String(weekOffset)); } catch {}
   }, [weekOffset, offsetKey]);
-  const isOnline = useNetworkStatus();
   const [pickerOpen, setPickerOpen] = useState(false);
   // Days the user has manually excluded from the average (by date key yyyy-MM-dd).
   const [excludedMap, setExcludedMap] = useState<Record<string, string[]>>(() => {
@@ -733,12 +722,6 @@ function WeekView({ childId, birthDate, night, splitByDate, onSelectDay }: { chi
   return (
     <div className="space-y-3">
       {picker}
-      {!isOnline && (
-        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground py-0.5">
-          <WifiOff className="w-3 h-3" />
-          {t("common.cachedData")}
-        </div>
-      )}
       <div data-tour="analytics.day-chips">
         <DayChips
           days={days}

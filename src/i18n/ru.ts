@@ -12,7 +12,6 @@ const ru = {
     pendingChanges_other: "{{count}} изменений ожидают синхронизации",
     offline: "Нет сети",
     online: "Онлайн",
-    cachedData: "Отображаются ранее загруженные данные",
     adjustPhoto: "Изменить фото",
     loadFailed: "Не удалось загрузить данные. Проверьте соединение.",
     discardChanges: "Отменить изменения?",
@@ -118,6 +117,7 @@ const ru = {
   sleep: {
     awake: "{{name}} не спит", sleeping: "{{name}} спит",
     readyWhen: "Готовы начать, когда уснёт",
+    staleData: "Данные могут быть устаревшими — не удалось обновить",
     startSleep: "Начать сон",
     wakeUp: "Проснулся(ась)",
     wakeUp_male: "Проснулся",

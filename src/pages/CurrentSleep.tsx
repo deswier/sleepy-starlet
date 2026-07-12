@@ -59,18 +59,14 @@ export default function CurrentSleep() {
   const [interruption, setInterruption] = useState<{ id: string; start_time: string } | null>(null);
   // Stats about completed interruptions in the current sleep session.
   const [intrStats, setIntrStats] = useState<{ count: number; lastEnd: string | null }>({ count: 0, lastEnd: null });
-  // Two-phase loading: first resolve "is child sleeping?" so we can render the
-  // correctly-colored shell immediately, then load secondary details
-  // (interruption) without blocking the initial paint.
+  // Skeleton flag: true until the first load() call resolves (network or
+  // cache fallback). Rendered as a neutral muted card — no themed color —
+  // so a last-known-sleeping state can't paint a misleading night skeleton
+  // before the fresh answer arrives.
   const [checkingActive, setCheckingActive] = useState(true);
-  // Optimistic guess for the skeleton color, taken from the last known state
-  // in localStorage (per child). Avoids a neutral flash before the first
-  // network response resolves.
-  const cacheKey = activeChild ? `cs:isSleeping:${activeChild.id}` : null;
-  const [optimisticSleeping, setOptimisticSleeping] = useState<boolean>(() => {
-    if (typeof window === "undefined" || !cacheKey) return false;
-    return window.localStorage.getItem(cacheKey) === "1";
-  });
+  // True when the online network path timed out and we're showing a Dexie
+  // fallback that may not reflect what happened on another device.
+  const [staleFallback, setStaleFallback] = useState(false);
   const [now, setNow] = useState(new Date());
   const [starting, setStarting] = useState(false);
   const [waking, setWaking] = useState(false);
@@ -135,10 +131,6 @@ export default function CurrentSleep() {
   ) => {
     setActive(session);
     setCheckingActive(false);
-    if (cacheKey) {
-      try { window.localStorage.setItem(cacheKey, session ? "1" : "0"); } catch {}
-    }
-    setOptimisticSleeping(!!session);
     if (session) {
       const open = intrs.find((i) => !i.end_time) ?? null;
       const closed = intrs.filter((i) => i.end_time) as { end_time: string }[];
@@ -157,61 +149,68 @@ export default function CurrentSleep() {
     if (!activeChild) return;
     const childId = activeChild.id;
 
-    // 1. Show Dexie cache immediately — always, regardless of online status.
-    //    This makes the UI interactive in < 50 ms even when online, and avoids
-    //    any blank screen when navigator.onLine lies (WiFi with no internet).
+    if (navigator.onLine) {
+      // Fresh-first: never show cached sleep state online — another device may
+      // have ended the session and the cache would say "still sleeping".
+      // Cache is only touched if the network times out (see fallback below).
+      const sessionResult = await withTimeout(
+        supabase.from("sleep_sessions").select("*")
+          .eq("child_id", childId)
+          .is("end_time", null)
+          .order("start_time", { ascending: false })
+          .limit(1).maybeSingle(),
+        5000,
+      );
+      if (sessionResult && !sessionResult.error) {
+        const session = sessionResult.data as SleepSession | null;
+        if (session) putSessions([session]).catch(() => { /* ignore */ });
+
+        const intrsResult = session
+          ? await withTimeout(
+              supabase.from("sleep_interruptions")
+                .select("id,start_time,end_time,settling_method_id")
+                .eq("sleep_session_id", session.id) as any,
+              5000,
+            )
+          : null;
+        const list = (intrsResult as any)?.data ?? [];
+
+        if (session && list.length) {
+          putInterruptions(list.map((i: any) => ({
+            id: i.id,
+            sleep_session_id: i.sleep_session_id ?? session.id,
+            start_time: i.start_time,
+            end_time: i.end_time ?? null,
+            settling_method_id: i.settling_method_id ?? null,
+            settling_method_name: null,
+          }))).catch(() => { /* ignore */ });
+        }
+
+        applySessionData(session, list);
+        setStaleFallback(false);
+        return;
+      }
+      // Timeout or error while online → fallback to cache with a stale mark
+      // so the user knows the shown state is not confirmed with the server.
+      const cached = await getActiveSession(childId);
+      const cachedIntrs = cached ? await getInterruptionsForSession(cached.id) : [];
+      applySessionData(cached, cachedIntrs);
+      setStaleFallback(true);
+      return;
+    }
+
+    // Offline: cache immediately; the shell SyncStatus banner already
+    // communicates "Offline", so no per-page stale mark is needed.
     const cached = await getActiveSession(childId);
     const cachedIntrs = cached ? await getInterruptionsForSession(cached.id) : [];
     applySessionData(cached, cachedIntrs);
-
-    // 2. Refresh from network in the background with a 5-second timeout.
-    //    If the network answers in time we silently update; if it times out or
-    //    we're truly offline we keep the cache that's already on screen.
-    if (!navigator.onLine) return;
-
-    const sessionResult = await withTimeout(
-      supabase.from("sleep_sessions").select("*")
-        .eq("child_id", childId)
-        .is("end_time", null)
-        .order("start_time", { ascending: false })
-        .limit(1).maybeSingle(),
-      5000,
-    );
-    if (!sessionResult || sessionResult.error) return;
-
-    const session = sessionResult.data as SleepSession | null;
-    if (session) putSessions([session]).catch(() => { /* ignore */ });
-
-    const intrsResult = session
-      ? await withTimeout(
-          supabase.from("sleep_interruptions")
-            .select("id,start_time,end_time,settling_method_id")
-            .eq("sleep_session_id", session.id) as any,
-          5000,
-        )
-      : null;
-    const list = (intrsResult as any)?.data ?? [];
-
-    if (session && list.length) {
-      putInterruptions(list.map((i: any) => ({
-        id: i.id,
-        sleep_session_id: i.sleep_session_id ?? session.id,
-        start_time: i.start_time,
-        end_time: i.end_time ?? null,
-        settling_method_id: i.settling_method_id ?? null,
-        settling_method_name: null,
-      }))).catch(() => { /* ignore */ });
-    }
-
-    applySessionData(session, list);
+    setStaleFallback(false);
   };
 
-  // Re-read cache when child changes (initial state above only runs once).
+  // Reset skeleton flag on child change so the new child gets a fresh load.
   useEffect(() => {
-    if (!cacheKey || typeof window === "undefined") return;
-    setOptimisticSleeping(window.localStorage.getItem(cacheKey) === "1");
     setCheckingActive(true);
-  }, [cacheKey]);
+  }, [activeChild?.id]);
 
   useEffect(() => { load(); }, [activeChild?.id]);
   useEffect(() => {
@@ -492,27 +491,16 @@ export default function CurrentSleep() {
   return (
     <section className="px-4 max-w-md mx-auto w-full">
       {checkingActive ? (
-        // Skeleton uses the last-known sleep state from localStorage so the
-        // background color matches what the resolved card will be — avoids
-        // a flash from white → blue (or vice versa) when the query returns.
-        optimisticSleeping ? (
-          <Card className="p-8 text-center bg-night text-primary-foreground shadow-glow border-0 mt-4">
-            <div className="w-20 h-20 rounded-full bg-white/10 animate-pulse mx-auto mb-4" />
-            <div className="h-7 bg-white/10 animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
-            <div className="h-4 bg-white/10 animate-pulse rounded w-1/2 mx-auto mb-4" />
-            <div className="h-12 bg-white/10 animate-pulse rounded-lg w-2/3 mx-auto my-4" />
-            <div className="h-14 bg-white/10 animate-pulse rounded-xl w-full mb-2" />
-            <div className="h-10 bg-white/10 animate-pulse rounded-xl w-full" />
-          </Card>
-        ) : (
-          <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
-            <div className="w-20 h-20 rounded-full bg-primary/10 animate-pulse mx-auto mb-4" />
-            <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
-            <div className="h-4 bg-muted animate-pulse rounded w-1/2 mx-auto mb-6" />
-            <div className="h-14 bg-muted animate-pulse rounded-xl w-full mb-3" />
-            <div className="h-10 bg-muted animate-pulse rounded-xl w-full" />
-          </Card>
-        )
+        // Neutral muted skeleton — same shell for both awake and sleeping
+        // outcomes so the load flow can't flash a misleading themed color
+        // before the fresh state resolves.
+        <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
+          <div className="w-20 h-20 rounded-full bg-primary/10 animate-pulse mx-auto mb-4" />
+          <div className="h-7 bg-muted animate-pulse rounded-lg w-3/4 mx-auto mb-2" />
+          <div className="h-4 bg-muted animate-pulse rounded w-1/2 mx-auto mb-6" />
+          <div className="h-14 bg-muted animate-pulse rounded-xl w-full mb-3" />
+          <div className="h-10 bg-muted animate-pulse rounded-xl w-full" />
+        </Card>
       ) : !active ? (
         <Card className="p-8 text-center shadow-soft border-border/50 mt-4">
           <div className="inline-flex w-20 h-20 rounded-full bg-primary/10 items-center justify-center mb-4">
@@ -541,6 +529,9 @@ export default function CurrentSleep() {
             <Moon className="w-10 h-10" strokeWidth={1.5} />
           </div>
           <h2 className="font-display text-2xl font-semibold mb-1">{t("sleep.sleeping", { name: activeChild.name })}</h2>
+          {staleFallback && (
+            <div className="text-xs opacity-70 mb-2">{t("sleep.staleData")}</div>
+          )}
           {editingStart ? (
             <div className="flex items-center gap-2 justify-center mb-1 text-foreground bg-background/95 rounded-lg p-2">
               <DateTimeField value={startDraft} onChange={setStartDraft} />

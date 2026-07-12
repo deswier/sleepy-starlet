@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronLeft, ChevronRight, Minus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { putSessions, putInterruptions, getSessions, getInterruptionsForRange } from "@/lib/sessions-cache";
-import { useNetworkStatus } from "@/hooks/use-network-status";
-import { WifiOff } from "lucide-react";
 import { useChildren } from "@/contexts/ChildContext";
 import { useTranslation } from "react-i18next";
 import { SleepSession } from "@/lib/sleep-utils";
@@ -55,12 +53,10 @@ export default function Heatmap() {
   const handleBack = () => navigate(-1);
   const { activeChild, settings } = useChildren();
   const [searchParams] = useSearchParams();
-  const isOnline = useNetworkStatus();
   const [sessions, setSessions] = useState<SleepSession[]>([]);
   const [interruptions, setInterruptions] = useState<InterruptionLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasFetched, setHasFetched] = useState(false);
-  const [fromCache, setFromCache] = useState(false);
   const [openSession, setOpenSession] = useState<SleepSession | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
 
@@ -258,7 +254,7 @@ export default function Heatmap() {
           putSessions(sess),
           putInterruptions(intrs.map((i) => ({ ...i, end_time: null }))),
         ]);
-        if (!cancelled) { setSessions(sess); setInterruptions(intrs); setFromCache(false); }
+        if (!cancelled) { setSessions(sess); setInterruptions(intrs); }
       } catch (e) {
         if (cancelled) return;
         if (!navigator.onLine) {
@@ -269,7 +265,6 @@ export default function Heatmap() {
           if (!cancelled) {
             setSessions(cachedSess);
             setInterruptions(mapInterruptions(cachedIntrs));
-            setFromCache(true);
           }
         } else {
           devError("[Heatmap] load failed", e);
@@ -384,12 +379,6 @@ export default function Heatmap() {
         </Button>
         <h1 className="font-display text-2xl font-semibold mb-1">{t("analytics.heatmapTitle")}</h1>
         <p className="text-xs text-muted-foreground mb-1">{t("analytics.heatmapHelp")}</p>
-        {(fromCache || !isOnline) && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-            <WifiOff className="w-3 h-3" />
-            {t("common.cachedData")}
-          </div>
-        )}
 
         <div className="flex items-center justify-between mb-3">
           <Button variant="ghost" size="icon" onClick={() => setAnchor(subDays(anchor, 7))}>
